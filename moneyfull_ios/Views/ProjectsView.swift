@@ -107,14 +107,29 @@ struct ProjectsView: View {
 struct ProjectDetailCard: View {
     let project: Project
     
-    private var progressColor: Color {
+    // 进度条百分比预警色（超支用红，接近满用橙）
+    private var progressPctColor: Color {
         let p = project.budgetProgress
         if p >= 1.0 { return Color.App.redExpense }
         if p >= 0.8 { return Color(hex: "#FFA500") }
-        return Color.App.darkGreen
+        return progressEndColor
     }
     
-    // 标签样式：进行中=绿，已归档=黄，和设计稿一致
+    // 进度条渐变：同色系，从浅到深，不跨色系（避免颜色"脏"）
+    private var progressStartColor: Color {
+        Color(hex: progressColorPair(for: project.colorHex).start)
+    }
+    private var progressEndColor: Color {
+        Color(hex: progressColorPair(for: project.colorHex).end)
+    }
+    
+    // 按钮背景色 = 项目主题色，文字色 = 对应深色
+    private var buttonBgColor: Color { Color(hex: project.colorHex) }
+    private var buttonFgColor: Color {
+        Color(hex: progressColorPair(for: project.colorHex).end)
+    }
+    
+    // 标签样式：进行中=绿，已归档=黄
     private var tagBg: Color {
         project.isArchived ? Color.App.lightYellow : Color.App.primaryGreen.opacity(0.5)
     }
@@ -128,7 +143,7 @@ struct ProjectDetailCard: View {
                 .fill(Color.white)
                 .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 4)
             
-            // 装饰模糊圆（透明度提高，更有存在感）
+            // 装饰模糊圆
             Circle()
                 .fill(Color(hex: project.colorHex).opacity(0.45))
                 .frame(width: 120)
@@ -139,13 +154,12 @@ struct ProjectDetailCard: View {
                 // 标题行
                 HStack(alignment: .top) {
                     HStack(spacing: 14) {
-                        // 图标圆圈：透明度从 0.25 → 0.4，更清晰
                         Circle()
                             .fill(Color(hex: project.colorHex).opacity(0.4))
                             .frame(width: 48, height: 48)
                             .overlay(
                                 Image(systemName: project.icon)
-                                    .foregroundColor(Color(hex: project.colorHex))
+                                    .foregroundColor(progressEndColor)
                                     .font(.system(size: 20, weight: .semibold))
                             )
                         VStack(alignment: .leading, spacing: 4) {
@@ -158,7 +172,6 @@ struct ProjectDetailCard: View {
                         }
                     }
                     Spacer()
-                    // 标签：进行中用绿色（对标设计稿），已归档用黄色
                     Text(project.isArchived ? "已归档" : "进行中")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(tagFg)
@@ -185,18 +198,18 @@ struct ProjectDetailCard: View {
                             Spacer()
                             Text("\(Int(project.budgetProgress * 100))%")
                                 .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(progressColor)
+                                .foregroundColor(progressPctColor)
                         }
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                // 轨道：暖灰色，和设计稿一致
+                                // 轨道：干净浅灰
                                 Capsule()
-                                    .fill(Color(hex: "#E8E0D8"))
+                                    .fill(Color(hex: "#F0F0F0"))
                                     .frame(height: 10)
-                                // 填充：饱和渐变，从项目色到深绿
+                                // 填充：同色系渐变
                                 Capsule()
                                     .fill(LinearGradient(
-                                        colors: [Color(hex: project.colorHex), progressColor],
+                                        colors: [progressStartColor, progressEndColor],
                                         startPoint: .leading, endPoint: .trailing
                                     ))
                                     .frame(width: max(0, min(geo.size.width, geo.size.width * project.budgetProgress)), height: 10)
@@ -217,20 +230,55 @@ struct ProjectDetailCard: View {
                         .foregroundColor(.gray)
                 }
                 
-                // 查看详情按钮：实心绿色，和设计稿一致
+                // 查看详情按钮：使用项目自己的颜色（对标原型）
                 HStack {
                     Text("查看详情")
                     Image(systemName: "arrow.right")
                 }
                 .font(.system(size: 16, weight: .heavy))
-                .foregroundColor(project.isArchived ? Color.App.darkYellow : Color.App.darkGreen)
+                .foregroundColor(project.isArchived ? Color.App.darkYellow : buttonFgColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(project.isArchived ? Color.App.lightYellow : Color.App.primaryGreen)
+                .background(project.isArchived ? Color.App.lightYellow : buttonBgColor)
                 .clipShape(Capsule())
             }
             .padding(24)
         }
+    }
+}
+
+// MARK: - 进度条同色系色对（对标 React 原型色号）
+struct ProgressColorPair {
+    let start: String  // 渐变起点（浅色）
+    let end: String    // 渐变终点（深色）
+}
+
+func progressColorPair(for colorHex: String) -> ProgressColorPair {
+    switch colorHex.uppercased().trimmingCharacters(in: CharacterSet(charactersIn: "#")) {
+    // 绿色系
+    case "A8E6CF", "DCEDC1":
+        return ProgressColorPair(start: "#A8E6CF", end: "#2C6956")
+    // 橙/暖色系
+    case "FDD1B4":
+        return ProgressColorPair(start: "#E8BEA2", end: "#785741")
+    // 黄色系
+    case "DCDE8D":
+        return ProgressColorPair(start: "#DCDE8D", end: "#5F621F")
+    // 蓝色系
+    case "DBEAFE":
+        return ProgressColorPair(start: "#BFDBFE", end: "#1D4ED8")
+    // 紫色系
+    case "F3E8FF":
+        return ProgressColorPair(start: "#E9D5FF", end: "#7C3AED")
+    // 浅橙/粉橙系
+    case "FFEDD5":
+        return ProgressColorPair(start: "#FED7AA", end: "#C2410C")
+    // 粉色系
+    case "FCE7F3":
+        return ProgressColorPair(start: "#FBCFE8", end: "#BE185D")
+    default:
+        // 兜底：绿色系
+        return ProgressColorPair(start: "#A8E6CF", end: "#2C6956")
     }
 }
 

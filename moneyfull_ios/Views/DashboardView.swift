@@ -145,27 +145,28 @@ struct FinanceInfoCard: View {
 struct ProjectCard: View {
     let project: Project
     
-    private var progressColor: Color {
+    private var progressPair: ProgressColorPair {
+        progressColorPair(for: project.colorHex)
+    }
+    private var progressPctColor: Color {
         let p = project.budgetProgress
         if p >= 1.0 { return Color.App.redExpense }
         if p >= 0.8 { return Color(hex: "#FFA500") }
-        return Color.App.darkGreen
+        return Color(hex: progressPair.end)
     }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                // 图标圆圈：透明度 0.4，颜色更鲜明
                 Circle()
                     .fill(Color(hex: project.colorHex).opacity(0.4))
                     .frame(width: 40, height: 40)
                     .overlay(
                         Image(systemName: project.icon)
-                            .foregroundColor(Color(hex: project.colorHex))
+                            .foregroundColor(Color(hex: progressPair.end))
                             .font(.system(size: 16, weight: .semibold))
                     )
                 Spacer(minLength: 4)
-                // 进行中标签：绿色系，与设计稿一致
                 Text("进行中")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(Color.App.darkGreen)
@@ -190,10 +191,10 @@ struct ProjectCard: View {
                 
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color(hex: "#E8E0D8")).frame(height: 6)
+                        Capsule().fill(Color(hex: "#F0F0F0")).frame(height: 6)
                         Capsule()
                             .fill(LinearGradient(
-                                colors: [Color(hex: project.colorHex), progressColor],
+                                colors: [Color(hex: progressPair.start), Color(hex: progressPair.end)],
                                 startPoint: .leading, endPoint: .trailing
                             ))
                             .frame(width: max(0, min(geo.size.width, geo.size.width * project.budgetProgress)), height: 6)
