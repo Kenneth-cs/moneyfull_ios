@@ -42,7 +42,7 @@ struct CustomBottomTabBar: View {
     
     var body: some View {
         HStack {
-            TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) {
+            TabBarItem(icon: "house", title: "首页", isSelected: selectedTab == 0) {
                 selectedTab = 0
             }
             Spacer()

@@ -6,24 +6,34 @@ struct DashboardView: View {
             VStack(spacing: 24) {
                 // Header
                 HStack {
-                    HStack(spacing: 8) {
-                        // Small logo dots
-                        HStack(spacing: 4) {
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 9, height: 9)
+                    Spacer()
+                    
+                    VStack(spacing: 2) {
+                        HStack(alignment: .bottom, spacing: 2) {
+                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 8, height: 8)
+                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 12, height: 12)
                             Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 6, height: 6)
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 3, height: 3)
                         }
+                        
                         Text("首页看板")
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)
                     }
+                    
                     Spacer()
-                    Image(systemName: "bell")
-                        .font(.system(size: 22))
-                        .foregroundColor(.gray)
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 24)
+                .overlay(
+                    HStack {
+                        Spacer()
+                        Image(systemName: "bell")
+                            .font(.system(size: 22))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                )
                 
                 // Top Card
                 ZStack(alignment: .topTrailing) {
@@ -45,20 +55,27 @@ struct DashboardView: View {
                     
                     // Mascot Speech
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text("早安，今天也是平静的一天呢~")
+                        Text("早安，今天也是平静的一天\n呢~")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(Color.App.darkGreen)
+                            .multilineTextAlignment(.center)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .background(Color.white.opacity(0.8).background(.ultraThinMaterial))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(.trailing, 24)
                             .padding(.top, 24)
                         
-                        // Capybara Mascot placeholder
-                        Text("🦫 🍊")
-                            .font(.system(size: 40))
-                            .padding(.trailing, 32)
+                        // Capybara Mascot
+                        ZStack {
+                            Text("🍊")
+                                .font(.system(size: 20))
+                                .offset(y: -24)
+                            Text("🦫")
+                                .font(.system(size: 40))
+                        }
+                        .padding(.trailing, 48)
+                        .padding(.top, 8)
                     }
                     
                     // Content
@@ -68,39 +85,30 @@ struct DashboardView: View {
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(Color.App.darkGreen.opacity(0.8))
                             
-                            Text("¥ 12,840.00")
-                                .font(.system(size: 36, weight: .heavy))
+                            Text("¥ 678.00")
+                                .font(.system(size: 44, weight: .heavy))
                                 .foregroundColor(Color.App.darkGreen)
                         }
                         
-                        HStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 32) {
+                            VStack(alignment: .leading, spacing: 8) {
                                 Text("收入")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(Color.App.darkGreen.opacity(0.7))
-                                Text("¥ 24k")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen.opacity(0.8))
+                                Text("¥ 0")
                                     .font(.system(size: 20, weight: .bold))
                                     .foregroundColor(Color.App.darkGreen)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                            .background(Color.white.opacity(0.4).background(.ultraThinMaterial))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
                             
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: 8) {
                                 Text("储蓄")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(Color.App.darkGreen.opacity(0.7))
-                                Text("¥ 11k")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen.opacity(0.8))
+                                Text("¥ -678")
                                     .font(.system(size: 20, weight: .bold))
                                     .foregroundColor(Color.App.darkGreen)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                            .background(Color.white.opacity(0.4).background(.ultraThinMaterial))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
                         }
-                        .frame(width: 200) // limit width of bottom cards
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
@@ -120,26 +128,18 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal, 24)
                     
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
-                            Spacer().frame(width: 8)
-                            
-                            ProjectCard(
-                                icon: "airplane", iconColor: Color.App.darkGreen, iconBg: Color.App.primaryGreen.opacity(0.3),
-                                title: "新疆之旅", spent: "8,500", budget: "15,000", progress: 0.56, progressColor: Color.App.darkGreen
-                            )
-                            ProjectCard(
-                                icon: "house.fill", iconColor: Color.App.darkYellow, iconBg: Color.App.lightYellow.opacity(0.3),
-                                title: "日常开销", spent: "3,200", budget: "4,000", progress: 0.8, progressColor: Color.App.darkYellow
-                            )
-                            ProjectCard(
-                                icon: "briefcase.fill", iconColor: Color.App.darkOrangeBrown, iconBg: Color.App.lightOrange.opacity(0.3),
-                                title: "品牌重塑", spent: "3,200", budget: "6,800", progress: 0.32, progressColor: Color.App.darkOrangeBrown
-                            )
-                            
-                            Spacer().frame(width: 8)
-                        }
+                    HStack(spacing: 16) {
+                        ProjectCard(
+                            icon: "paintpalette.fill", iconColor: Color.App.darkOrangeBrown, iconBg: Color.App.lightOrange.opacity(0.3),
+                            title: "品牌重塑项目", spent: "3k", budget: "7k", progress: 0.42, progressColor: Color.App.darkGreen
+                        )
+                        
+                        ProjectCard(
+                            icon: "house.fill", iconColor: Color.App.darkGreen, iconBg: Color.App.primaryGreen.opacity(0.3),
+                            title: "海景房装修", spent: "75k", budget: "100k", progress: 0.75, progressColor: Color.App.darkGreen
+                        )
                     }
+                    .padding(.horizontal, 24)
                 }
                 
                 // Recent Transactions
@@ -214,6 +214,7 @@ struct ProjectCard: View {
             Text(title)
                 .font(.system(size: 18, weight: .bold))
                 .foregroundColor(Color.App.textBlack)
+                .lineLimit(1)
             
             HStack {
                 Text("已用 ¥\(spent)")
@@ -236,7 +237,7 @@ struct ProjectCard: View {
             .frame(height: 8)
         }
         .padding(20)
-        .frame(width: 280)
+        .frame(maxWidth: .infinity)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
