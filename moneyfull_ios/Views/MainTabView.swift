@@ -50,56 +50,42 @@ struct CustomBottomTabBar: View {
     @Binding var isAddRecordPresented: Bool
     
     var body: some View {
-        VStack(spacing: 0) {
-            // 悬浮胶囊
-            HStack {
-                TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) { selectedTab = 0 }
-                Spacer()
-                TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) { selectedTab = 1 }
-                Spacer()
-                
-                // 中央加号按钮（上浮效果）
-                Button(action: { isAddRecordPresented = true }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.App.primaryGreen)
-                            .frame(width: 64, height: 64)
-                            .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
-                        Image(systemName: "plus")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(Color.App.darkGreen)
-                    }
-                }
-                .offset(y: -18)
-                
-                Spacer()
-                TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) { selectedTab = 3 }
-                Spacer()
-                TabBarItem(icon: "person.fill", title: "我的", isSelected: selectedTab == 4) { selectedTab = 4 }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 14)
-            .padding(.bottom, 14)
-            .background(
-                Color.App.cardBackground
-                    .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                    .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
-            )
-            .padding(.horizontal, 16)
+        // 悬浮胶囊，直接浮在背景色上，不加任何底部填充块
+        HStack {
+            TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) { selectedTab = 0 }
+            Spacer()
+            TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) { selectedTab = 1 }
+            Spacer()
             
-            // ④ 底部安全区填充：与卡片同色，彻底遮住内容
-            Color.App.cardBackground
-                .frame(height: bottomSafeAreaHeight())
+            // 中央加号按钮（上浮效果）
+            Button(action: { isAddRecordPresented = true }) {
+                ZStack {
+                    Circle()
+                        .fill(Color.App.primaryGreen)
+                        .frame(width: 64, height: 64)
+                        .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
+                    Image(systemName: "plus")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(Color.App.darkGreen)
+                }
+            }
+            .offset(y: -18)
+            
+            Spacer()
+            TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) { selectedTab = 3 }
+            Spacer()
+            TabBarItem(icon: "person.fill", title: "我的", isSelected: selectedTab == 4) { selectedTab = 4 }
         }
-    }
-    
-    /// 获取底部安全区高度（适配 iPhone 各机型）
-    private func bottomSafeAreaHeight() -> CGFloat {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }
-        return window?.safeAreaInsets.bottom ?? 0
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
+        .background(
+            Color.App.cardBackground
+                .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+                .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
 }
 
