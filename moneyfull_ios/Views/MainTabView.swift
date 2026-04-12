@@ -8,7 +8,10 @@ struct MainTabView: View {
     
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Main Content
+            // ① 底层铺满整屏的背景色，消除顶部/底部白条
+            Color.App.backgroundGray.ignoresSafeArea()
+            
+            // ② 内容区域：TabView 透明背景，内容向上缩进避免被 Tab 栏遮住
             TabView(selection: $selectedTab) {
                 DashboardView()
                     .tag(0)
@@ -19,9 +22,7 @@ struct MainTabView: View {
                 .navigationViewStyle(.stack)
                 .tag(1)
                 
-                // Placeholder for center button space
-                Color.clear
-                    .tag(2)
+                Color.clear.tag(2)
                 
                 AnalyticsView()
                     .tag(3)
@@ -29,9 +30,10 @@ struct MainTabView: View {
                 ProfileView()
                     .tag(4)
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never)) // Optional: can use normal TabView if we want native, but custom bottom bar is better for this design.
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+            .background(Color.clear) // TabView 本身透明，背景由底层提供
             
-            // We use a custom bottom navigation bar
+            // ③ 自定义底部 Tab 栏（含底部安全区填充）
             CustomBottomTabBar(selectedTab: $selectedTab, isAddRecordPresented: $isAddRecordPresented)
         }
         .fullScreenCover(isPresented: $isAddRecordPresented) {
@@ -42,61 +44,66 @@ struct MainTabView: View {
     }
 }
 
+// MARK: - 自定义底部导航栏
 struct CustomBottomTabBar: View {
     @Binding var selectedTab: Int
     @Binding var isAddRecordPresented: Bool
     
     var body: some View {
-        HStack {
-            TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) {
-                selectedTab = 0
-            }
-            Spacer()
-            TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) {
-                selectedTab = 1
-            }
-            Spacer()
-            
-            // Center Add Button
-            Button(action: {
-                isAddRecordPresented = true
-            }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.App.primaryGreen)
-                        .frame(width: 64, height: 64)
-                        .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 10)
-                    
-                    Image(systemName: "plus")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(Color.App.darkGreen)
+        VStack(spacing: 0) {
+            // 悬浮胶囊
+            HStack {
+                TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) { selectedTab = 0 }
+                Spacer()
+                TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) { selectedTab = 1 }
+                Spacer()
+                
+                // 中央加号按钮（上浮效果）
+                Button(action: { isAddRecordPresented = true }) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.App.primaryGreen)
+                            .frame(width: 64, height: 64)
+                            .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
+                        Image(systemName: "plus")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(Color.App.darkGreen)
+                    }
                 }
+                .offset(y: -18)
+                
+                Spacer()
+                TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) { selectedTab = 3 }
+                Spacer()
+                TabBarItem(icon: "person.fill", title: "我的", isSelected: selectedTab == 4) { selectedTab = 4 }
             }
-            .offset(y: -20)
+            .padding(.horizontal, 24)
+            .padding(.top, 14)
+            .padding(.bottom, 14)
+            .background(
+                Color.App.cardBackground
+                    .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+                    .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
+            )
+            .padding(.horizontal, 16)
             
-            Spacer()
-            TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) {
-                selectedTab = 3
-            }
-            Spacer()
-            TabBarItem(icon: "person.fill", title: "我的", isSelected: selectedTab == 4) {
-                selectedTab = 4
-            }
+            // ④ 底部安全区填充：与卡片同色，彻底遮住内容
+            Color.App.cardBackground
+                .frame(height: bottomSafeAreaHeight())
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 34) // Safe area padding approximation
-        .background(
-            Color.App.cardBackground.opacity(0.95)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                .shadow(color: Color.black.opacity(0.08), radius: 20, x: 0, y: -5)
-        )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
+    }
+    
+    /// 获取底部安全区高度（适配 iPhone 各机型）
+    private func bottomSafeAreaHeight() -> CGFloat {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+        return window?.safeAreaInsets.bottom ?? 0
     }
 }
 
+// MARK: - Tab 图标 + 文字
 struct TabBarItem: View {
     let icon: String
     let title: String
@@ -128,4 +135,5 @@ struct TabBarItem: View {
 
 #Preview {
     MainTabView()
+        .environmentObject(ThemeManager())
 }

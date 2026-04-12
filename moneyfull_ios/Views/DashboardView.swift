@@ -120,8 +120,12 @@ struct DashboardView: View {
                     }
                 }
                 
-                Spacer().frame(height: 120)
+                Spacer().frame(height: 16)
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            // 为浮动 Tab 栏留出空间，防止内容被遮住
+            Color.clear.frame(height: 110)
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
     }

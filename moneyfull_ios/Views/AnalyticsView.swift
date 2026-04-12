@@ -221,8 +221,11 @@ struct AnalyticsView: View {
                                 income: store.monthlyIncome)
                     .padding(.horizontal, 24)
                 
-                Spacer().frame(height: 120)
+                Spacer().frame(height: 16)
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 110)
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
         .sheet(isPresented: $showMonthPicker) {
