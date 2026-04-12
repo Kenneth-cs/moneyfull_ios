@@ -114,30 +114,39 @@ struct ProjectDetailCard: View {
         return Color.App.darkGreen
     }
     
+    // 标签样式：进行中=绿，已归档=黄，和设计稿一致
+    private var tagBg: Color {
+        project.isArchived ? Color.App.lightYellow : Color.App.primaryGreen.opacity(0.5)
+    }
+    private var tagFg: Color {
+        project.isArchived ? Color.App.darkYellow : Color.App.darkGreen
+    }
+    
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 32)
                 .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
+                .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 4)
             
-            // 装饰模糊圆
+            // 装饰模糊圆（透明度提高，更有存在感）
             Circle()
-                .fill(Color(hex: project.colorHex).opacity(0.25))
+                .fill(Color(hex: project.colorHex).opacity(0.45))
                 .frame(width: 120)
-                .blur(radius: 30)
+                .blur(radius: 28)
                 .offset(x: 100, y: -80)
             
             VStack(alignment: .leading, spacing: 18) {
                 // 标题行
                 HStack(alignment: .top) {
                     HStack(spacing: 14) {
+                        // 图标圆圈：透明度从 0.25 → 0.4，更清晰
                         Circle()
-                            .fill(Color(hex: project.colorHex).opacity(0.25))
+                            .fill(Color(hex: project.colorHex).opacity(0.4))
                             .frame(width: 48, height: 48)
                             .overlay(
                                 Image(systemName: project.icon)
                                     .foregroundColor(Color(hex: project.colorHex))
-                                    .font(.system(size: 20))
+                                    .font(.system(size: 20, weight: .semibold))
                             )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(project.name)
@@ -149,11 +158,12 @@ struct ProjectDetailCard: View {
                         }
                     }
                     Spacer()
+                    // 标签：进行中用绿色（对标设计稿），已归档用黄色
                     Text(project.isArchived ? "已归档" : "进行中")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(project.isArchived ? Color.App.darkYellow : Color.App.darkOrangeBrown)
+                        .foregroundColor(tagFg)
                         .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(project.isArchived ? Color.App.lightYellow : Color.App.lightOrange)
+                        .background(tagBg)
                         .clipShape(Capsule())
                 }
                 
@@ -179,10 +189,16 @@ struct ProjectDetailCard: View {
                         }
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                Capsule().fill(Color.gray.opacity(0.1)).frame(height: 10)
+                                // 轨道：暖灰色，和设计稿一致
                                 Capsule()
-                                    .fill(LinearGradient(colors: [Color(hex: project.colorHex).opacity(0.6), progressColor],
-                                                        startPoint: .leading, endPoint: .trailing))
+                                    .fill(Color(hex: "#E8E0D8"))
+                                    .frame(height: 10)
+                                // 填充：饱和渐变，从项目色到深绿
+                                Capsule()
+                                    .fill(LinearGradient(
+                                        colors: [Color(hex: project.colorHex), progressColor],
+                                        startPoint: .leading, endPoint: .trailing
+                                    ))
                                     .frame(width: max(0, min(geo.size.width, geo.size.width * project.budgetProgress)), height: 10)
                             }
                         }
@@ -201,16 +217,16 @@ struct ProjectDetailCard: View {
                         .foregroundColor(.gray)
                 }
                 
-                // 查看详情按钮
+                // 查看详情按钮：实心绿色，和设计稿一致
                 HStack {
                     Text("查看详情")
                     Image(systemName: "arrow.right")
                 }
                 .font(.system(size: 16, weight: .heavy))
-                .foregroundColor(Color(hex: project.colorHex))
+                .foregroundColor(project.isArchived ? Color.App.darkYellow : Color.App.darkGreen)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Color(hex: project.colorHex).opacity(0.15))
+                .background(project.isArchived ? Color.App.lightYellow : Color.App.primaryGreen)
                 .clipShape(Capsule())
             }
             .padding(24)
