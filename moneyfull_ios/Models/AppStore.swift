@@ -123,46 +123,22 @@ class AppStore: ObservableObject {
         try? modelContext.save()
     }
     
-    /// 首次启动时插入示例数据，方便演示
+    /// 首次启动时创建默认「日常收支」项目，作为用户的起点
+    /// 不插入任何示例账单，让用户从干净状态开始
     private func setupDefaultDataIfNeeded() {
         let descriptor = FetchDescriptor<Project>()
         let count = (try? modelContext.fetch(descriptor).count) ?? 0
         guard count == 0 else { return }
         
-        // 默认创建「日常收支」常驻项目
-        let daily = Project(name: "日常收支", icon: "house.fill", colorHex: "#A8E6CF",
-                            desc: "日常吃喝玩乐的流水账，真实反映基础生活成本。", isPinned: true)
+        // 只创建「日常收支」常驻项目，让用户从这里开始记录
+        let daily = Project(
+            name: "日常收支",
+            icon: "house.fill",
+            colorHex: "#A8E6CF",
+            desc: "日常吃喝玩乐的流水账，真实反映基础生活成本。",
+            isPinned: true
+        )
         modelContext.insert(daily)
-        
-        // 海景房装修
-        let renovation = Project(name: "海景房装修", icon: "hammer.fill", colorHex: "#DCEDC1",
-                                 desc: "温馨自然的北欧风格，注重采光与海景视野的最大化。", budget: 100000)
-        modelContext.insert(renovation)
-        
-        // 品牌重塑项目
-        let branding = Project(name: "品牌重塑项目", icon: "paintpalette.fill", colorHex: "#FDD1B4",
-                               desc: "为本地精品咖啡馆设计的全新视觉系统。", budget: 10000)
-        modelContext.insert(branding)
-        
-        // 插入一些示例账单
-        let sampleData: [(Project, Double, TransactionType, String, String, String, Int)] = [
-            (daily,      458, .expense, "海鲜餐厅",  "fork.knife",      "#FDD1B4", -0),
-            (daily,      120, .expense, "设计素材",  "pencil.tip",      "#A8E6CF", -1),
-            (daily,      100, .expense, "交通充值",  "tram.fill",       "#DCDE8D", -1),
-            (renovation, 75000, .expense, "装修款",  "hammer.fill",     "#DCEDC1", -10),
-            (branding,   3200, .expense, "设计支出", "paintpalette.fill","#FDD1B4", -5),
-            (branding,   5000, .income,  "项目结款", "briefcase.fill",  "#A8E6CF", -3),
-        ]
-        
-        for (proj, amount, type, name, icon, color, dayOffset) in sampleData {
-            let date = Calendar.current.date(byAdding: .day, value: dayOffset, to: Date())!
-            let tx = Transaction(amount: amount, type: type, categoryName: name,
-                                 categoryIcon: icon, categoryColorHex: color, date: date)
-            tx.project = proj
-            proj.transactions.append(tx)
-            modelContext.insert(tx)
-        }
-        
         try? modelContext.save()
     }
 }

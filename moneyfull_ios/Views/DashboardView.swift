@@ -83,10 +83,19 @@ struct DashboardView: View {
                     .padding(.horizontal, 24)
                     
                     if sortedActiveProjects.isEmpty {
-                        Text("还没有进行中的项目，点击 + 新建一个吧！")
-                            .font(.system(size: 14))
-                            .foregroundColor(.gray)
-                            .padding(24)
+                        // 空状态：卡皮巴拉引导新建项目
+                        VStack(spacing: 12) {
+                            Text("🦫")
+                                .font(.system(size: 40))
+                            Text("还没有项目，点击下方「+」\n新建一个专属账本吧～")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(4)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .padding(.horizontal, 24)
                     } else {
                         // 横向可滑动卡片列表（onTapGesture 不会被 ScrollView 滑动误触发）
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -116,10 +125,24 @@ struct DashboardView: View {
                         .padding(.horizontal, 24)
                     
                     if store.recentTransactions.isEmpty {
-                        Text("还没有交易记录")
-                            .font(.system(size: 14))
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 24)
+                        VStack(spacing: 12) {
+                            Text("🦫")
+                                .font(.system(size: 40))
+                            Text("还没有任何记录")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                            Text("点击底部「+」记录今天的\n第一笔收支吧")
+                                .font(.system(size: 13))
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(4)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
+                        .padding(.horizontal, 24)
+                        .background(Color.white.opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .padding(.horizontal, 24)
                     } else {
                         VStack(spacing: 12) {
                             ForEach(store.recentTransactions.prefix(10)) { tx in

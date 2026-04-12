@@ -30,12 +30,29 @@ struct ProjectsView: View {
                         VStack(spacing: 16) {
                             Text("🦫")
                                 .font(.system(size: 60))
-                            Text("慢慢规划，不着急，\n我在这儿陪你。")
-                                .font(.system(size: 16, weight: .medium))
+                            Text(selectedTab == 0 ? "还没有进行中的项目" : "还没有归档的项目")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                            Text(selectedTab == 0
+                                 ? "可以新建一个项目，比如：\n「旅行」「装修」「日常开销」"
+                                 : "完成的项目可以归档整理，\n这里会保留所有历史数据")
+                                .font(.system(size: 14))
                                 .foregroundColor(.gray)
                                 .multilineTextAlignment(.center)
+                                .lineSpacing(5)
+                            
+                            if selectedTab == 0 {
+                                Text("慢慢规划，不着急，我在这儿陪你 🌱")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(Color.App.darkGreen.opacity(0.7))
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                    .background(Color.App.primaryGreen.opacity(0.2))
+                                    .clipShape(Capsule())
+                            }
                         }
-                        .padding(.top, 40)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 48)
+                        .padding(.horizontal, 32)
                     } else {
                         ForEach(projects) { project in
                             NavigationLink(destination: ProjectDetailView(project: project)) {

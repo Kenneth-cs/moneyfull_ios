@@ -526,11 +526,15 @@ struct InsightMiniCard: View {
 struct EmptyStateView: View {
     let message: String
     var body: some View {
-        Text(message)
-            .font(.system(size: 14))
-            .foregroundColor(.gray)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
+        HStack(spacing: 10) {
+            Text("🦫")
+                .font(.system(size: 20))
+            Text(message)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.gray)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
     }
 }
 
