@@ -88,15 +88,14 @@ struct DashboardView: View {
                             .foregroundColor(.gray)
                             .padding(24)
                     } else {
-                        // 横向可滑动卡片列表
+                        // 横向可滑动卡片列表（onTapGesture 不会被 ScrollView 滑动误触发）
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(sortedActiveProjects) { project in
-                                    Button(action: { detailProject = project }) {
-                                        ProjectCard(project: project)
-                                            .frame(width: 160)
-                                    }
-                                    .buttonStyle(.plain)
+                                    ProjectCard(project: project)
+                                        .frame(width: 160)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { detailProject = project }
                                 }
                             }
                             .padding(.horizontal, 24)

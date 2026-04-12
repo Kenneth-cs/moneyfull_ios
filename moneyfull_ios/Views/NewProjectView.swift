@@ -60,13 +60,16 @@ struct NewProjectView: View {
                                     selectedIcon = icon
                                     selectedColor = color
                                 }) {
+                                    let pair = progressColorPair(for: color)
                                     Circle()
-                                        .fill(Color(hex: color).opacity(0.3))
+                                        // 背景透明度提高，颜色更饱和
+                                        .fill(Color(hex: color).opacity(0.55))
                                         .frame(width: 56, height: 56)
                                         .overlay(
                                             Image(systemName: icon)
                                                 .font(.system(size: 22))
-                                                .foregroundColor(Color(hex: color))
+                                                // 图标使用深色版本，对比更清晰
+                                                .foregroundColor(Color(hex: pair.end))
                                         )
                                         .overlay(
                                             Circle()
@@ -82,11 +85,11 @@ struct NewProjectView: View {
                         Text("预览").sectionTitle()
                         HStack(spacing: 14) {
                             Circle()
-                                .fill(Color(hex: selectedColor).opacity(0.25))
+                                .fill(Color(hex: selectedColor).opacity(0.55))
                                 .frame(width: 52, height: 52)
                                 .overlay(
                                     Image(systemName: selectedIcon)
-                                        .foregroundColor(Color(hex: selectedColor))
+                                        .foregroundColor(Color(hex: progressColorPair(for: selectedColor).end))
                                         .font(.system(size: 22))
                                 )
                             VStack(alignment: .leading, spacing: 4) {

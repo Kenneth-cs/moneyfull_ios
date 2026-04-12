@@ -204,15 +204,15 @@ struct AddRecordView: View {
                             KeyButton(label: ".") { handleKey(".") }
                             KeyButton(label: "0") { handleKey("0") }
                             KeyButton(icon: "delete.left.fill") { handleKey("del") }
-                            Button(action: handleSave) {
-                                Text("完成")
+                            // 「确认」仅收起键盘，不提交表单（顶部"完成"按钮才是提交）
+                            Button(action: { showKeypad = false }) {
+                                Text("确认")
                                     .font(.system(size: 18, weight: .heavy))
                                     .foregroundColor(Color.App.darkGreen)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .background(amount.isEmpty ? Color.App.primaryGreen.opacity(0.4) : Color.App.primaryGreen)
+                                    .background(Color.App.primaryGreen)
                                     .clipShape(RoundedRectangle(cornerRadius: 24))
                             }
-                            .disabled(amount.isEmpty)
                         }
                     }
                     .padding(.horizontal, 20)
