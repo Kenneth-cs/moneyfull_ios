@@ -1,17 +1,14 @@
 import SwiftUI
 
 struct ProfileView: View {
+    @EnvironmentObject var store: AppStore
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
                 // Header
                 HStack {
                     HStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 9, height: 9)
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 6, height: 6)
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 3, height: 3)
-                        }
+                        AppLogo()
                         Text("个人中心")
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)

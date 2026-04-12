@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MainTabView: View {
+    @EnvironmentObject var store: AppStore
     @State private var selectedTab = 0
     @State private var isAddRecordPresented = false
     
@@ -31,6 +32,7 @@ struct MainTabView: View {
         }
         .fullScreenCover(isPresented: $isAddRecordPresented) {
             AddRecordView()
+                .environmentObject(store)
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
@@ -42,7 +44,7 @@ struct CustomBottomTabBar: View {
     
     var body: some View {
         HStack {
-            TabBarItem(icon: "house", title: "首页", isSelected: selectedTab == 0) {
+            TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) {
                 selectedTab = 0
             }
             Spacer()
@@ -100,16 +102,21 @@ struct TabBarItem: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 22))
-                    .frame(width: 44, height: 32)
-                    .background(isSelected ? Color.App.primaryGreen.opacity(0.3) : Color.clear)
-                    .clipShape(Capsule())
-                    .foregroundColor(isSelected ? Color.App.textBlack : Color.gray.opacity(0.5))
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.App.primaryGreen.opacity(0.3))
+                            .frame(width: 44, height: 44)
+                    }
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: isSelected ? .bold : .regular))
+                        .foregroundColor(isSelected ? Color.App.darkGreen : Color.gray.opacity(0.5))
+                }
+                .frame(width: 44, height: 44)
                 
                 Text(title)
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(isSelected ? Color.App.textBlack : Color.gray.opacity(0.5))
+                    .foregroundColor(isSelected ? Color.App.darkGreen : Color.gray.opacity(0.5))
             }
         }
     }

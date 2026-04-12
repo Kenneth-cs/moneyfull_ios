@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AnalyticsView: View {
+    @EnvironmentObject var store: AppStore
     @State private var trendTab = "month"
     
     var body: some View {
@@ -9,11 +10,7 @@ struct AnalyticsView: View {
                 // Header
                 HStack {
                     HStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 9, height: 9)
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 6, height: 6)
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 3, height: 3)
-                        }
+                        AppLogo()
                         Text("财务统计")
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)

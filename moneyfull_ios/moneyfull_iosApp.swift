@@ -1,11 +1,5 @@
-//
-//  moneyfull_iosApp.swift
-//  moneyfull_ios
-//
-//  Created by cs on 2026/4/11.
-//
-
 import SwiftUI
+import SwiftData
 
 @main
 struct moneyfull_iosApp: App {
@@ -13,5 +7,7 @@ struct moneyfull_iosApp: App {
         WindowGroup {
             ContentView()
         }
+        // 注册所有 SwiftData 模型，开启本地持久化
+        .modelContainer(for: [Project.self, Transaction.self, Category.self])
     }
 }

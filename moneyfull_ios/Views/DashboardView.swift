@@ -1,121 +1,73 @@
 import SwiftUI
+import SwiftData
 
 struct DashboardView: View {
+    @EnvironmentObject var store: AppStore
+    
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
-                // Header
+                // MARK: Header
                 HStack {
-                    Spacer()
-                    
-                    VStack(spacing: 2) {
-                        HStack(alignment: .bottom, spacing: 2) {
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 8, height: 8)
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 12, height: 12)
-                            Circle().stroke(Color.App.primaryGreen, lineWidth: 2).frame(width: 6, height: 6)
-                        }
-                        
+                    HStack(spacing: 8) {
+                        AppLogo()
                         Text("首页看板")
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)
                     }
-                    
                     Spacer()
+                    Image(systemName: "bell")
+                        .font(.system(size: 22))
+                        .foregroundColor(.gray)
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 24)
-                .overlay(
-                    HStack {
-                        Spacer()
-                        Image(systemName: "bell")
-                            .font(.system(size: 22))
-                            .foregroundColor(.gray)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                )
                 
-                // Top Card
+                // MARK: 顶部财务看板（真实数据）
                 ZStack(alignment: .topTrailing) {
-                    // Card Background
                     RoundedRectangle(cornerRadius: 32)
                         .fill(LinearGradient(
                             colors: [Color.App.primaryGreen, Color.App.lightGreen],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                            startPoint: .topLeading, endPoint: .bottomTrailing
                         ))
                         .shadow(color: Color.App.primaryGreen.opacity(0.4), radius: 20, x: 0, y: 10)
                     
-                    // Decorative blur circle
                     Circle()
                         .fill(Color.white.opacity(0.2))
                         .frame(width: 160, height: 160)
                         .blur(radius: 20)
                         .offset(x: 40, y: -40)
                     
-                    // Mascot Speech
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("早安，今天也是平静的一天\n呢~")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(Color.App.darkGreen)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.8).background(.ultraThinMaterial))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding(.trailing, 24)
-                            .padding(.top, 24)
-                        
-                        // Capybara Mascot
-                        ZStack {
-                            Text("🍊")
-                                .font(.system(size: 20))
-                                .offset(y: -24)
-                            Text("🦫")
-                                .font(.system(size: 40))
-                        }
-                        .padding(.trailing, 48)
-                        .padding(.top, 8)
-                    }
+                    // 卡皮 + 气泡
+                    GreetingMascotView()
+                        .padding(.trailing, 24)
+                        .padding(.top, 20)
                     
-                    // Content
+                    // 财务数据
                     VStack(alignment: .leading, spacing: 24) {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text("当前支出")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(Color.App.darkGreen.opacity(0.8))
-                            
-                            Text("¥ 678.00")
-                                .font(.system(size: 44, weight: .heavy))
+                            Text("¥ \(store.monthlyExpense.formatted(.number.precision(.fractionLength(2))))")
+                                .font(.system(size: 34, weight: .heavy))
                                 .foregroundColor(Color.App.darkGreen)
+                                .minimumScaleFactor(0.7)
+                                .lineLimit(1)
                         }
                         
-                        HStack(spacing: 32) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("收入")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(Color.App.darkGreen.opacity(0.8))
-                                Text("¥ 0")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(Color.App.darkGreen)
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("储蓄")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(Color.App.darkGreen.opacity(0.8))
-                                Text("¥ -678")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(Color.App.darkGreen)
-                            }
+                        HStack(spacing: 12) {
+                            FinanceInfoCard(title: "收入", value: store.monthlyIncome)
+                            FinanceInfoCard(title: "储蓄", value: store.monthlySaving)
                         }
+                        .frame(maxWidth: 240)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
                 }
                 .padding(.horizontal, 24)
                 
-                // Ongoing Projects
+                // MARK: 进行中的项目（真实数据）
                 VStack(spacing: 16) {
                     HStack {
                         Text("进行中的项目")
@@ -128,156 +80,173 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal, 24)
                     
-                    HStack(spacing: 16) {
-                        ProjectCard(
-                            icon: "paintpalette.fill", iconColor: Color.App.darkOrangeBrown, iconBg: Color.App.lightOrange.opacity(0.3),
-                            title: "品牌重塑项目", spent: "3k", budget: "7k", progress: 0.42, progressColor: Color.App.darkGreen
-                        )
-                        
-                        ProjectCard(
-                            icon: "house.fill", iconColor: Color.App.darkGreen, iconBg: Color.App.primaryGreen.opacity(0.3),
-                            title: "海景房装修", spent: "75k", budget: "100k", progress: 0.75, progressColor: Color.App.darkGreen
-                        )
+                    if store.activeProjects.isEmpty {
+                        Text("还没有进行中的项目，点击 + 新建一个吧！")
+                            .font(.system(size: 14))
+                            .foregroundColor(.gray)
+                            .padding(24)
+                    } else {
+                        LazyVGrid(
+                            columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
+                            spacing: 16
+                        ) {
+                            ForEach(store.activeProjects.prefix(4)) { project in
+                                ProjectCard(project: project)
+                            }
+                        }
+                        .padding(.horizontal, 24)
                     }
-                    .padding(.horizontal, 24)
                 }
                 
-                // Recent Transactions
+                // MARK: 最近交易（真实数据）
                 VStack(alignment: .leading, spacing: 16) {
                     Text("最近交易")
                         .font(.system(size: 20, weight: .heavy))
                         .foregroundColor(Color.App.textBlack)
                         .padding(.horizontal, 24)
                     
-                    VStack(spacing: 12) {
-                        TransactionItem(
-                            icon: "fork.knife", iconColor: Color.App.darkOrange, iconBg: Color.App.lightOrange.opacity(0.3),
-                            title: "海鲜餐厅", desc: "餐饮 • 今天 12:45", amount: "- ¥ 458.00", isExpense: true
-                        )
-                        TransactionItem(
-                            icon: "pencil.tip", iconColor: Color.App.darkGreen, iconBg: Color.App.primaryGreen.opacity(0.3),
-                            title: "设计素材", desc: "工作 • 昨天 18:20", amount: "- ¥ 120.00", isExpense: true
-                        )
-                        TransactionItem(
-                            icon: "tram.fill", iconColor: Color.App.darkYellow, iconBg: Color.App.lightYellow.opacity(0.3),
-                            title: "交通充值", desc: "交通 • 昨天 08:30", amount: "- ¥ 100.00", isExpense: true
-                        )
-                        TransactionItem(
-                            icon: "briefcase.fill", iconColor: Color.App.darkGreen, iconBg: Color.App.primaryGreen.opacity(0.3),
-                            title: "项目结款", desc: "收入 • 10月24日", amount: "+ ¥ 5,000.00", isExpense: false
-                        )
+                    if store.recentTransactions.isEmpty {
+                        Text("还没有交易记录")
+                            .font(.system(size: 14))
+                            .foregroundColor(.gray)
+                            .padding(.horizontal, 24)
+                    } else {
+                        VStack(spacing: 12) {
+                            ForEach(store.recentTransactions.prefix(10)) { tx in
+                                TransactionItem(transaction: tx)
+                            }
+                        }
+                        .padding(.horizontal, 24)
                     }
-                    .padding(.horizontal, 24)
                 }
                 
-                Spacer().frame(height: 120) // padding for bottom nav
+                Spacer().frame(height: 120)
             }
-            .background(Color.App.backgroundGray.ignoresSafeArea())
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
     }
 }
 
-struct ProjectCard: View {
-    let icon: String
-    let iconColor: Color
-    let iconBg: Color
+// MARK: - 收入/储蓄小卡片
+struct FinanceInfoCard: View {
     let title: String
-    let spent: String
-    let budget: String
-    let progress: Double
-    let progressColor: Color
+    let value: Double
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(Color.App.darkGreen.opacity(0.8))
+            Text("¥ \(value.formatted(.number.precision(.fractionLength(0))))")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(Color.App.darkGreen)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.white.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+// MARK: - 项目卡片（绑定真实 Project）
+struct ProjectCard: View {
+    let project: Project
+    
+    private var progressColor: Color {
+        let p = project.budgetProgress
+        if p >= 1.0 { return Color.App.redExpense }
+        if p >= 0.8 { return Color(hex: "#FFA500") }
+        return Color.App.darkGreen
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Circle()
-                    .fill(iconBg)
-                    .frame(width: 48, height: 48)
+                    .fill(Color(hex: project.colorHex).opacity(0.3))
+                    .frame(width: 40, height: 40)
                     .overlay(
-                        Image(systemName: icon)
-                            .foregroundColor(iconColor)
-                            .font(.system(size: 20))
+                        Image(systemName: project.icon)
+                            .foregroundColor(Color(hex: project.colorHex))
+                            .font(.system(size: 16))
                     )
-                
-                Spacer()
-                
+                Spacer(minLength: 4)
                 Text("进行中")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(Color.App.darkOrangeBrown)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Color.App.lightOrange)
                     .clipShape(Capsule())
             }
             
-            Text(title)
-                .font(.system(size: 18, weight: .bold))
+            Text(project.name)
+                .font(.system(size: 15, weight: .bold))
                 .foregroundColor(Color.App.textBlack)
                 .lineLimit(1)
             
-            HStack {
-                Text("已用 ¥\(spent)")
-                Spacer()
-                Text("预算 ¥\(budget)")
-            }
-            .font(.system(size: 12))
-            .foregroundColor(.gray)
-            
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.gray.opacity(0.1))
-                        .frame(height: 8)
-                    Capsule()
-                        .fill(progressColor)
-                        .frame(width: geo.size.width * progress, height: 8)
+            if project.budget > 0 {
+                HStack {
+                    Text("¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0))))")
+                    Spacer()
+                    Text("预算¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
                 }
+                .font(.system(size: 10))
+                .foregroundColor(.gray)
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.gray.opacity(0.1)).frame(height: 6)
+                        Capsule()
+                            .fill(progressColor)
+                            .frame(width: max(0, min(geo.size.width, geo.size.width * project.budgetProgress)), height: 6)
+                    }
+                }
+                .frame(height: 6)
+            } else {
+                Text("已用 ¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0))))")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray)
+                Spacer().frame(height: 6)
             }
-            .frame(height: 8)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity)
+        .padding(16)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 24))
-        .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
+        .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 5)
     }
 }
 
+// MARK: - 交易记录行（绑定真实 Transaction）
 struct TransactionItem: View {
-    let icon: String
-    let iconColor: Color
-    let iconBg: Color
-    let title: String
-    let desc: String
-    let amount: String
-    let isExpense: Bool
+    let transaction: Transaction
     
     var body: some View {
         HStack(spacing: 16) {
             Circle()
-                .fill(iconBg)
+                .fill(Color(hex: transaction.categoryColorHex).opacity(0.3))
                 .frame(width: 48, height: 48)
                 .overlay(
-                    Image(systemName: icon)
-                        .foregroundColor(iconColor)
+                    Image(systemName: transaction.categoryIcon)
+                        .foregroundColor(Color(hex: transaction.categoryColorHex))
                         .font(.system(size: 20))
                 )
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(transaction.note.isEmpty ? transaction.categoryName : transaction.note)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(Color.App.textBlack)
-                Text(desc)
+                Text("\(transaction.categoryName) · \(transaction.date.relativeDisplay)")
                     .font(.system(size: 12))
                     .foregroundColor(.gray)
             }
             
             Spacer()
             
-            Text(amount)
-                .font(.system(size: 16, weight: .heavy))
-                .foregroundColor(isExpense ? Color.App.redExpense : Color.App.darkGreen)
+            Text("\(transaction.type == .expense ? "-" : "+") ¥\(transaction.amount.formatted(.number.precision(.fractionLength(2))))")
+                .font(.system(size: 15, weight: .heavy))
+                .foregroundColor(transaction.type == .expense ? Color.App.redExpense : Color.App.darkGreen)
         }
         .padding(16)
         .background(Color.white)
@@ -286,6 +255,17 @@ struct TransactionItem: View {
     }
 }
 
+// MARK: - 日期相对显示扩展
+extension Date {
+    var relativeDisplay: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(self) { return "今天 " + formatted(date: .omitted, time: .shortened) }
+        if calendar.isDateInYesterday(self) { return "昨天 " + formatted(date: .omitted, time: .shortened) }
+        return formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
 #Preview {
     DashboardView()
+        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
 }
