@@ -20,7 +20,7 @@ struct DashboardView: View {
                         .shadow(color: Color.App.primaryGreen.opacity(0.4), radius: 20, x: 0, y: 10)
                     
                     Circle()
-                        .fill(Color.App.cardBackground.opacity(0.2))
+                        .fill(Color.white.opacity(0.2))
                         .frame(width: 160, height: 160)
                         .blur(radius: 20)
                         .offset(x: 40, y: -40)
@@ -136,7 +136,7 @@ struct FinanceInfoCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.App.cardBackground.opacity(0.5))
+        .background(Color.white.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
@@ -203,7 +203,7 @@ struct ProjectCard: View {
             }
         }
         .padding(16)
-        .background(Color.App.cardBackground)
+        .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 5)
     }
@@ -240,7 +240,7 @@ struct TransactionItem: View {
                 .foregroundColor(transaction.type == .expense ? Color.App.redExpense : Color.App.darkGreen)
         }
         .padding(16)
-        .background(Color.App.cardBackground)
+        .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
     }

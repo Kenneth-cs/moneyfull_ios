@@ -197,7 +197,7 @@ struct AddRecordView: View {
             .padding(20)
             .padding(.bottom, 16)
             .background(
-                Color.App.cardBackground
+                Color.white
                     .clipShape(RoundedRectangle(cornerRadius: 40))
                     .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -10)
             )
@@ -231,7 +231,7 @@ struct AddRecordView: View {
                 .foregroundColor(type == t ? Color.App.textBlack : Color.gray)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(type == t ? Color.App.cardBackground : Color.clear)
+                .background(type == t ? Color.white : Color.clear)
                 .clipShape(Capsule())
                 .shadow(color: type == t ? Color.black.opacity(0.05) : Color.clear, radius: 2, x: 0, y: 1)
         }

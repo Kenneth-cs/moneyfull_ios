@@ -126,7 +126,7 @@ struct AnalyticsView: View {
                     }
                 }
                 .padding(28)
-                .background(Color.App.cardBackground)
+                .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
                 
@@ -169,7 +169,7 @@ struct AnalyticsView: View {
                     }
                 }
                 .padding(28)
-                .background(Color.App.cardBackground)
+                .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
                 
@@ -199,7 +199,7 @@ struct AnalyticsView: View {
                     }
                 }
                 .padding(28)
-                .background(Color.App.cardBackground)
+                .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
                 
@@ -488,7 +488,7 @@ struct TabButton: View {
                 .foregroundColor(isSelected ? Color.App.darkGreen : Color.App.textBlack.opacity(0.6))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.App.cardBackground : Color.clear)
+                .background(isSelected ? Color.white : Color.clear)
                 .clipShape(Capsule())
                 .shadow(color: isSelected ? Color.black.opacity(0.05) : Color.clear, radius: 2, x: 0, y: 1)
         }

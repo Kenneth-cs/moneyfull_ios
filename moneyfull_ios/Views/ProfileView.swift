@@ -124,7 +124,7 @@ struct ProfileView: View {
                                  hasBorder: false) {}
                     }
                     .padding(8)
-                    .background(Color.App.cardBackground)
+                    .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 32))
                     .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
                 }
@@ -219,7 +219,7 @@ struct MonthSummaryCard: View {
             }
         }
         .padding(20)
-        .background(Color.App.cardBackground)
+        .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 28))
         .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
     }
@@ -410,7 +410,7 @@ struct ThemePickerView: View {
                             .padding(18)
                             .background(
                                 RoundedRectangle(cornerRadius: 24)
-                                    .fill(Color.App.cardBackground)
+                                    .fill(Color.white)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 24)
                                             .stroke(theme.mode == mode ? Color.App.primaryGreen : Color.clear, lineWidth: 2.5)

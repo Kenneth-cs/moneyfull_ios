@@ -85,7 +85,7 @@ struct ProjectDetailView: View {
                     }
                 }
                 .padding(24)
-                .background(Color.App.cardBackground)
+                .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 32))
                 .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
                 .padding(.horizontal, 24)
@@ -197,7 +197,7 @@ struct TimelineTxRow: View {
                 .foregroundColor(transaction.type == .expense ? Color.App.redExpense : Color.App.darkGreen)
         }
         .padding(14)
-        .background(Color.App.cardBackground)
+        .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: Color.black.opacity(0.02), radius: 8, x: 0, y: 3)
     }

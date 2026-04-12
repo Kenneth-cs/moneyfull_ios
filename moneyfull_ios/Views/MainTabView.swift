@@ -79,7 +79,7 @@ struct CustomBottomTabBar: View {
         .padding(.top, 14)
         .padding(.bottom, 14)
         .background(
-            Color.App.cardBackground
+            Color.white
                 .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
                 .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
         )
