@@ -57,19 +57,18 @@ struct CustomBottomTabBar: View {
             TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) { selectedTab = 1 }
             Spacer()
             
-            // 中央加号按钮（上浮效果）
-            Button(action: { isAddRecordPresented = true }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.App.primaryGreen)
-                        .frame(width: 64, height: 64)
-                        .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
-                    Image(systemName: "plus")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(Color.App.darkGreen)
+                // 中央加号按钮（与其他图标平齐）
+                Button(action: { isAddRecordPresented = true }) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.App.primaryGreen)
+                            .frame(width: 64, height: 64)
+                            .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
+                        Image(systemName: "plus")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(Color.App.darkGreen)
+                    }
                 }
-            }
-            .offset(y: -18)
             
             Spacer()
             TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) { selectedTab = 3 }

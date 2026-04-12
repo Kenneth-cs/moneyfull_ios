@@ -60,20 +60,7 @@ struct AnalyticsView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
                 // MARK: Header
-                HStack {
-                    HStack(spacing: 8) {
-                        AppLogo()
-                        Text("财务统计")
-                            .font(.system(size: 20, weight: .heavy))
-                            .foregroundColor(Color.App.textBlack)
-                    }
-                    Spacer()
-                    Image(systemName: "bell")
-                        .font(.system(size: 22))
-                        .foregroundColor(.gray)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+                PageHeader(title: "财务统计")
                 
                 // MARK: 月份切换器
                 VStack(spacing: 8) {

@@ -10,20 +10,7 @@ struct ProjectsView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
                 // MARK: Header
-                HStack {
-                    HStack(spacing: 8) {
-                        AppLogo()
-                        Text("项目中心")
-                            .font(.system(size: 20, weight: .heavy))
-                            .foregroundColor(Color.App.textBlack)
-                    }
-                    Spacer()
-                    Image(systemName: "bell")
-                        .font(.system(size: 22))
-                        .foregroundColor(.gray)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+                PageHeader(title: "项目中心")
                 
                 // MARK: 进行中 / 已归档 Tab
                 HStack {

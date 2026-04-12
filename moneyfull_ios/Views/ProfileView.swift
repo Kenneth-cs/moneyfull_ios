@@ -19,20 +19,7 @@ struct ProfileView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
                 // MARK: Header
-                HStack {
-                    HStack(spacing: 8) {
-                        AppLogo()
-                        Text("个人中心")
-                            .font(.system(size: 20, weight: .heavy))
-                            .foregroundColor(Color.App.textBlack)
-                    }
-                    Spacer()
-                    Image(systemName: "bell")
-                        .font(.system(size: 22))
-                        .foregroundColor(.gray)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+                PageHeader(title: "个人中心")
                 
                 // MARK: 用户信息
                 VStack(spacing: 12) {

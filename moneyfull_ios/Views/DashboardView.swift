@@ -8,20 +8,7 @@ struct DashboardView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
                 // MARK: Header
-                HStack {
-                    HStack(spacing: 8) {
-                        AppLogo()
-                        Text("首页看板")
-                            .font(.system(size: 20, weight: .heavy))
-                            .foregroundColor(Color.App.textBlack)
-                    }
-                    Spacer()
-                    Image(systemName: "bell")
-                        .font(.system(size: 22))
-                        .foregroundColor(.gray)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+                PageHeader(title: "首页看板")
                 
                 // MARK: 顶部财务看板（真实数据）
                 ZStack(alignment: .topTrailing) {

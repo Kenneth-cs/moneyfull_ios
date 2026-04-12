@@ -1,5 +1,35 @@
 import SwiftUI
 
+// MARK: - 页面顶部标题栏（标题绝对居中，logo 在左，铃铛在右）
+struct PageHeader: View {
+    let title: String
+    
+    var body: some View {
+        ZStack {
+            // 标题绝对居中
+            Text(title)
+                .font(.system(size: 20, weight: .heavy))
+                .foregroundColor(Color.App.textBlack)
+            
+            // 左侧 Logo
+            HStack {
+                AppLogo()
+                Spacer()
+            }
+            
+            // 右侧铃铛
+            HStack {
+                Spacer()
+                Image(systemName: "bell")
+                    .font(.system(size: 22))
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+    }
+}
+
 struct AppLogo: View {
     var body: some View {
         ZStack {
