@@ -13,6 +13,7 @@ struct AddRecordView: View {
     @State private var date: Date = Date()
     @State private var showDatePicker = false
     @State private var showProjectPicker = false
+    @State private var showKeypad = true  // 控制数字键盘显示/收起
     
     // 触觉反馈生成器
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -53,6 +54,10 @@ struct AddRecordView: View {
             
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 20) {
+                    // 点 ScrollView 空白区域可收起键盘
+                    Color.clear.frame(height: 1)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showKeypad = false }
                     // MARK: 收支切换
                     HStack(spacing: 0) {
                         typeButton(label: "支出", t: .expense)
@@ -63,7 +68,7 @@ struct AddRecordView: View {
                     .background(Color.App.tabBackground)
                     .clipShape(Capsule())
                     
-                    // MARK: 金额展示区
+                    // MARK: 金额展示区（点击可展开键盘）
                     ZStack {
                         RoundedRectangle(cornerRadius: 40)
                             .fill(Color.App.amountBg)
@@ -83,13 +88,15 @@ struct AddRecordView: View {
                                     .foregroundColor(Color(hex: "#1C1D00"))
                                     .minimumScaleFactor(0.5)
                                     .lineLimit(1)
-                                // 光标闪烁动画
-                                BlinkingCursor()
+                                // 键盘收起时不显示光标
+                                if showKeypad { BlinkingCursor() }
                             }
                         }
                         .padding(.vertical, 28)
                     }
                     .padding(.horizontal, 24)
+                    // 点击金额区展开键盘
+                    .onTapGesture { showKeypad = true }
                     
                     // MARK: 分类选择
                     VStack(alignment: .leading, spacing: 14) {
@@ -159,43 +166,61 @@ struct AddRecordView: View {
                 }
             }
             
-            // MARK: 自定义数字键盘
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    KeyButton(label: "1") { handleKey("1") }
-                    KeyButton(label: "2") { handleKey("2") }
-                    KeyButton(label: "3") { handleKey("3") }
-                    KeyButton(icon: "calendar") { showDatePicker = true }
-                }
-                HStack(spacing: 12) {
-                    KeyButton(label: "4") { handleKey("4") }
-                    KeyButton(label: "5") { handleKey("5") }
-                    KeyButton(label: "6") { handleKey("6") }
-                    KeyButton(label: "+") { handleKey("+") }
-                }
-                HStack(spacing: 12) {
-                    KeyButton(label: "7") { handleKey("7") }
-                    KeyButton(label: "8") { handleKey("8") }
-                    KeyButton(label: "9") { handleKey("9") }
-                    KeyButton(label: "-") { handleKey("-") }
-                }
-                HStack(spacing: 12) {
-                    KeyButton(label: ".") { handleKey(".") }
-                    KeyButton(label: "0") { handleKey("0") }
-                    KeyButton(icon: "delete.left.fill") { handleKey("del") }
-                    Button(action: handleSave) {
-                        Text("完成")
-                            .font(.system(size: 18, weight: .heavy))
-                            .foregroundColor(Color.App.darkGreen)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(amount.isEmpty ? Color.App.primaryGreen.opacity(0.4) : Color.App.primaryGreen)
-                            .clipShape(RoundedRectangle(cornerRadius: 24))
+            // MARK: 数字键盘面板（可收起/展开）
+            VStack(spacing: 0) {
+                // 顶部收起/展开把手
+                Button(action: { showKeypad.toggle() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: showKeypad ? "chevron.down" : "keyboard")
+                            .font(.system(size: 12, weight: .bold))
+                        Text(showKeypad ? "收起键盘" : "展开键盘")
+                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .disabled(amount.isEmpty)
+                    .foregroundColor(Color.App.darkGreen.opacity(0.7))
+                    .padding(.vertical, 10)
+                }
+                
+                if showKeypad {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 12) {
+                            KeyButton(label: "1") { handleKey("1") }
+                            KeyButton(label: "2") { handleKey("2") }
+                            KeyButton(label: "3") { handleKey("3") }
+                            KeyButton(icon: "calendar") { showDatePicker = true }
+                        }
+                        HStack(spacing: 12) {
+                            KeyButton(label: "4") { handleKey("4") }
+                            KeyButton(label: "5") { handleKey("5") }
+                            KeyButton(label: "6") { handleKey("6") }
+                            KeyButton(label: "+") { handleKey("+") }
+                        }
+                        HStack(spacing: 12) {
+                            KeyButton(label: "7") { handleKey("7") }
+                            KeyButton(label: "8") { handleKey("8") }
+                            KeyButton(label: "9") { handleKey("9") }
+                            KeyButton(label: "-") { handleKey("-") }
+                        }
+                        HStack(spacing: 12) {
+                            KeyButton(label: ".") { handleKey(".") }
+                            KeyButton(label: "0") { handleKey("0") }
+                            KeyButton(icon: "delete.left.fill") { handleKey("del") }
+                            Button(action: handleSave) {
+                                Text("完成")
+                                    .font(.system(size: 18, weight: .heavy))
+                                    .foregroundColor(Color.App.darkGreen)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .background(amount.isEmpty ? Color.App.primaryGreen.opacity(0.4) : Color.App.primaryGreen)
+                                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                            }
+                            .disabled(amount.isEmpty)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .padding(20)
-            .padding(.bottom, 16)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showKeypad)
             .background(
                 Color.white
                     .clipShape(RoundedRectangle(cornerRadius: 40))

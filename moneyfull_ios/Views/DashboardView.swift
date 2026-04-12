@@ -1,8 +1,23 @@
 import SwiftUI
 import SwiftData
 
+// 智能金额格式化：整数不显示小数，有小数才保留2位
+private func smartFormat(_ value: Double) -> String {
+    if value.truncatingRemainder(dividingBy: 1) == 0 {
+        return value.formatted(.number.precision(.fractionLength(0)))
+    }
+    return value.formatted(.number.precision(.fractionLength(2)))
+}
+
 struct DashboardView: View {
     @EnvironmentObject var store: AppStore
+    // 选中的项目，用于弹出详情页（sheet）
+    @State private var detailProject: Project? = nil
+    
+    // 进行中项目按创建时间倒序（最新在前）
+    private var sortedActiveProjects: [Project] {
+        store.activeProjects.sorted { $0.createdAt > $1.createdAt }
+    }
     
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -36,7 +51,7 @@ struct DashboardView: View {
                             Text("当前支出")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(Color.App.darkGreen.opacity(0.8))
-                            Text("¥ \(store.monthlyExpense.formatted(.number.precision(.fractionLength(2))))")
+                            Text("¥ \(smartFormat(store.monthlyExpense))")
                                 .font(.system(size: 34, weight: .heavy))
                                 .foregroundColor(Color.App.darkGreen)
                                 .minimumScaleFactor(0.7)
@@ -54,7 +69,7 @@ struct DashboardView: View {
                 }
                 .padding(.horizontal, 24)
                 
-                // MARK: 进行中的项目（真实数据）
+                // MARK: 进行中的项目（横向滑动，最新在前）
                 VStack(spacing: 16) {
                     HStack {
                         Text("进行中的项目")
@@ -67,22 +82,31 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal, 24)
                     
-                    if store.activeProjects.isEmpty {
+                    if sortedActiveProjects.isEmpty {
                         Text("还没有进行中的项目，点击 + 新建一个吧！")
                             .font(.system(size: 14))
                             .foregroundColor(.gray)
                             .padding(24)
                     } else {
-                        LazyVGrid(
-                            columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
-                            spacing: 16
-                        ) {
-                            ForEach(store.activeProjects.prefix(4)) { project in
-                                ProjectCard(project: project)
+                        // 横向可滑动卡片列表
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 14) {
+                                ForEach(sortedActiveProjects) { project in
+                                    Button(action: { detailProject = project }) {
+                                        ProjectCard(project: project)
+                                            .frame(width: 160)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 4)
                         }
-                        .padding(.horizontal, 24)
                     }
+                }
+                .sheet(item: $detailProject) { project in
+                    ProjectDetailView(project: project)
+                        .environmentObject(store)
                 }
                 
                 // MARK: 最近交易（真实数据）
