@@ -12,8 +12,11 @@ struct MainTabView: View {
                 DashboardView()
                     .tag(0)
                 
-                ProjectsView()
-                    .tag(1)
+                NavigationView {
+                    ProjectsView()
+                }
+                .navigationViewStyle(.stack)
+                .tag(1)
                 
                 // Placeholder for center button space
                 Color.clear

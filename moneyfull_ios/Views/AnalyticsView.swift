@@ -1,13 +1,65 @@
 import SwiftUI
+import SwiftData
 
+// MARK: - 财务统计页（全真实数据）
 struct AnalyticsView: View {
     @EnvironmentObject var store: AppStore
     @State private var trendTab = "month"
+    @State private var selectedMonth: Date = {
+        // 默认展示本月
+        Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date()))!
+    }()
+    @State private var showMonthPicker = false
+    
+    // 当前月的所有交易
+    private var monthTransactions: [Transaction] {
+        store.recentTransactions.filter {
+            Calendar.current.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
+        }
+    }
+    
+    // 按项目汇总支出（用于环形图）
+    private var projectExpenseSummary: [(name: String, amount: Double, colorHex: String)] {
+        var dict: [String: (Double, String)] = [:]
+        for tx in monthTransactions where tx.type == .expense {
+            let pname = tx.project?.name ?? "未分类"
+            let pcolor = tx.project?.colorHex ?? "#EEEEEE"
+            let current = dict[pname]?.0 ?? 0
+            dict[pname] = (current + tx.amount, pcolor)
+        }
+        return dict.map { (name: $0.key, amount: $0.value.0, colorHex: $0.value.1) }
+            .sorted { $0.amount > $1.amount }
+    }
+    
+    private var totalExpense: Double { projectExpenseSummary.reduce(0) { $0 + $1.amount } }
+    
+    // 近6个月每月支出数据（用于折线图）
+    private var monthlyTrend: [(label: String, expense: Double, income: Double)] {
+        var result: [(label: String, expense: Double, income: Double)] = []
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月"
+        for i in stride(from: 5, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .month, value: -i, to: Date()) else { continue }
+            let txs = store.recentTransactions.filter {
+                calendar.isDate($0.date, equalTo: date, toGranularity: .month)
+            }
+            let expense = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+            let income = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+            result.append((label: formatter.string(from: date), expense: expense, income: income))
+        }
+        return result
+    }
+    
+    // 有预算的项目（用于预算健康度）
+    private var budgetProjects: [Project] {
+        store.activeProjects.filter { $0.budget > 0 }
+    }
     
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
-                // Header
+                // MARK: Header
                 HStack {
                     HStack(spacing: 8) {
                         AppLogo()
@@ -23,17 +75,19 @@ struct AnalyticsView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 24)
                 
-                // Date Selector
+                // MARK: 月份切换器
                 VStack(spacing: 8) {
-                    Text("本月财务概览与分析报告")
-                        .font(.system(size: 14, weight: .medium))
+                    Text("点击切换统计月份")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.gray)
-                    
-                    Button(action: {}) {
+                    Button(action: { showMonthPicker = true }) {
                         HStack(spacing: 8) {
-                            Text("2023年10月")
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(selectedMonth.monthYearDisplay)
                                 .font(.system(size: 14, weight: .bold))
-                            Image(systemName: "calendar")
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .bold))
                         }
                         .foregroundColor(Color.App.textBlack.opacity(0.8))
                         .padding(.horizontal, 24)
@@ -43,179 +97,400 @@ struct AnalyticsView: View {
                     }
                 }
                 
-                // Donut Chart Mockup
-                VStack(alignment: .leading, spacing: 24) {
-                    Text("项目占比")
-                        .font(.system(size: 20, weight: .heavy))
-                        .foregroundColor(Color.App.textBlack)
-                    
-                    ZStack {
-                        Circle()
-                            .stroke(Color.App.tabBackground, lineWidth: 40)
-                            .frame(width: 200, height: 200)
-                        
-                        // Fake chart segments
-                        Circle()
-                            .trim(from: 0, to: 0.42)
-                            .stroke(Color.App.primaryGreen, lineWidth: 40)
-                            .frame(width: 200, height: 200)
-                            .rotationEffect(.degrees(-90))
-                        
-                        Circle()
-                            .trim(from: 0.42, to: 0.84)
-                            .stroke(Color.App.lightOrange, lineWidth: 40)
-                            .frame(width: 200, height: 200)
-                            .rotationEffect(.degrees(-90))
-                        
-                        Circle()
-                            .trim(from: 0.84, to: 0.92)
-                            .stroke(Color.App.lightYellow, lineWidth: 40)
-                            .frame(width: 200, height: 200)
-                            .rotationEffect(.degrees(-90))
-                        
-                        VStack(spacing: 4) {
-                            Text("¥12,840")
-                                .font(.system(size: 28, weight: .heavy))
-                                .foregroundColor(Color.App.textBlack)
-                            Text("总支出")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    
-                    VStack(spacing: 16) {
-                        HStack {
-                            LegendItem(color: Color.App.primaryGreen, title: "软件开发", percentage: "42%")
-                            Spacer()
-                            LegendItem(color: Color.App.lightOrange, title: "市场营销", percentage: "42%")
-                        }
-                        HStack {
-                            LegendItem(color: Color.App.lightYellow, title: "办公租赁", percentage: "42%") // According to mockup text
-                            Spacer()
-                            LegendItem(color: Color.App.lightOrange.opacity(0.8), title: "其他杂项", percentage: "42%")
-                        }
-                    }
-                }
-                .padding(32)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 48))
-                .padding(.horizontal, 24)
-                
-                // Line Chart Mockup
+                // MARK: 环形图卡片（真实数据）
                 VStack(alignment: .leading, spacing: 24) {
                     HStack {
-                        Text("项目趋势")
+                        Text("项目支出占比")
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)
-                        
                         Spacer()
-                        
-                        HStack(spacing: 4) {
-                            TabButton(title: "日", isSelected: trendTab == "day") { trendTab = "day" }
-                            TabButton(title: "月", isSelected: trendTab == "month") { trendTab = "month" }
-                            TabButton(title: "年", isSelected: trendTab == "year") { trendTab = "year" }
-                        }
-                        .padding(4)
-                        .background(Color.App.primaryGreen.opacity(0.3))
-                        .clipShape(Capsule())
+                        Text("\(selectedMonth.monthDisplay)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.gray)
                     }
                     
-                    // Simple path representation for line chart
-                    GeometryReader { geo in
-                        Path { path in
-                            path.move(to: CGPoint(x: 0, y: geo.size.height * 0.8))
-                            path.addQuadCurve(to: CGPoint(x: geo.size.width * 0.2, y: geo.size.height * 0.7),
-                                              control: CGPoint(x: geo.size.width * 0.1, y: geo.size.height * 0.8))
-                            path.addQuadCurve(to: CGPoint(x: geo.size.width * 0.5, y: geo.size.height * 0.4),
-                                              control: CGPoint(x: geo.size.width * 0.35, y: geo.size.height * 0.6))
-                            path.addQuadCurve(to: CGPoint(x: geo.size.width * 0.8, y: geo.size.height * 0.2),
-                                              control: CGPoint(x: geo.size.width * 0.65, y: geo.size.height * 0.3))
-                            path.addQuadCurve(to: CGPoint(x: geo.size.width, y: geo.size.height * 0.1),
-                                              control: CGPoint(x: geo.size.width * 0.9, y: geo.size.height * 0.15))
-                        }
-                        .stroke(Color.App.primaryGreen, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    if totalExpense == 0 {
+                        EmptyStateView(message: "本月暂无支出记录")
+                    } else {
+                        // 环形图
+                        DonutChartView(segments: projectExpenseSummary, total: totalExpense)
+                            .frame(height: 220)
                         
-                        // Dots
-                        Circle().fill(Color.App.darkGreen).frame(width: 8, height: 8).position(x: geo.size.width * 0.2, y: geo.size.height * 0.7)
-                        Circle().fill(Color.App.darkGreen).frame(width: 8, height: 8).position(x: geo.size.width * 0.5, y: geo.size.height * 0.4)
-                        Circle().fill(Color.App.darkGreen).frame(width: 8, height: 8).position(x: geo.size.width * 0.8, y: geo.size.height * 0.2)
+                        // 图例
+                        VStack(spacing: 12) {
+                            ForEach(projectExpenseSummary.prefix(4), id: \.name) { seg in
+                                HStack(spacing: 10) {
+                                    Circle()
+                                        .fill(Color(hex: seg.colorHex))
+                                        .frame(width: 12, height: 12)
+                                    Text(seg.name)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(Color.App.textBlack.opacity(0.8))
+                                    Spacer()
+                                    Text("¥\(seg.amount.formatted(.number.precision(.fractionLength(0))))")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Color.App.textBlack)
+                                    Text("(\(Int(seg.amount / totalExpense * 100))%)")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                        }
                     }
-                    .frame(height: 160)
-                    
-                    HStack {
-                        Text("5月")
-                        Spacer()
-                        Text("6月")
-                        Spacer()
-                        Text("7月")
-                        Spacer()
-                        Text("8月")
-                        Spacer()
-                        Text("9月")
-                        Spacer()
-                        Text("10月")
-                    }
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.gray)
                 }
-                .padding(32)
+                .padding(28)
                 .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 48))
+                .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
                 
-                // Budget Health
+                // MARK: 近6月趋势折线图（真实数据）
                 VStack(alignment: .leading, spacing: 24) {
+                    HStack {
+                        Text("收支趋势")
+                            .font(.system(size: 20, weight: .heavy))
+                            .foregroundColor(Color.App.textBlack)
+                        Spacer()
+                        Text("近6个月")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    // 图例
+                    HStack(spacing: 20) {
+                        HStack(spacing: 6) {
+                            Capsule().fill(Color.App.primaryGreen).frame(width: 20, height: 4)
+                            Text("支出").font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
+                        }
+                        HStack(spacing: 6) {
+                            Capsule().fill(Color.App.lightOrange).frame(width: 20, height: 4)
+                            Text("收入").font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
+                        }
+                    }
+                    
+                    // 折线图
+                    LineChartView(data: monthlyTrend)
+                        .frame(height: 160)
+                    
+                    // X轴标签
+                    HStack {
+                        ForEach(monthlyTrend, id: \.label) { item in
+                            Text(item.label)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.gray)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                .padding(28)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 40))
+                .padding(.horizontal, 24)
+                
+                // MARK: 预算健康度（真实数据）
+                VStack(alignment: .leading, spacing: 20) {
                     HStack {
                         Text("预算健康度")
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)
                         Spacer()
-                        Text("总预算: ¥25,000")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(Color.App.darkGreen)
+                        let totalBudget = budgetProjects.reduce(0) { $0 + $1.budget }
+                        if totalBudget > 0 {
+                            Text("总预算: ¥\(totalBudget.formatted(.number.precision(.fractionLength(0))))")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color.App.darkGreen)
+                        }
                     }
                     
-                    BudgetBar(title: "办公租赁", amount: "¥4,500 / ¥5,000 (90%)", progress: 0.9, color: Color.App.primaryGreen)
-                    BudgetBar(title: "市场营销", amount: "¥6,200 / ¥5,500 (112%)", progress: 1.0, color: Color.App.redExpense, amountColor: Color.App.redExpense)
-                    BudgetBar(title: "员工薪酬", amount: "¥8,000 / ¥10,000 (80%)", progress: 0.8, color: Color.App.lightYellow)
+                    if budgetProjects.isEmpty {
+                        EmptyStateView(message: "还没有设置预算的项目")
+                    } else {
+                        VStack(spacing: 16) {
+                            ForEach(budgetProjects) { project in
+                                BudgetHealthBar(project: project)
+                            }
+                        }
+                    }
                 }
-                .padding(32)
+                .padding(28)
                 .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 48))
+                .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
+                
+                // MARK: 豚言豚语（智能洞察）
+                InsightCardView(transactions: monthTransactions, expense: totalExpense,
+                                income: store.monthlyIncome)
+                    .padding(.horizontal, 24)
                 
                 Spacer().frame(height: 120)
             }
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        .sheet(isPresented: $showMonthPicker) {
+            MonthPickerSheet(selectedMonth: $selectedMonth)
+        }
     }
 }
 
-struct LegendItem: View {
-    let color: Color
-    let title: String
-    let percentage: String
+// MARK: - 环形图（Canvas 绘制，无外部依赖）
+struct DonutChartView: View {
+    let segments: [(name: String, amount: Double, colorHex: String)]
+    let total: Double
+    
+    private let lineWidth: CGFloat = 36
+    private let chartColors: [String] = [
+        "#A8E6CF", "#FDD1B4", "#DCDE8D", "#DBEAFE", "#F3E8FF",
+        "#FFD6C4", "#C8E6C9", "#FFF9C4", "#FCE4EC", "#E8EAF6"
+    ]
     
     var body: some View {
-        HStack(spacing: 8) {
-            Circle().fill(color).frame(width: 14, height: 14)
-            Text(title)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color.App.textBlack.opacity(0.8))
-            Text(percentage)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(Color.App.textBlack)
+        ZStack {
+            GeometryReader { geo in
+                let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
+                let radius = min(geo.size.width, geo.size.height) / 2 - lineWidth / 2
+                
+                Canvas { context, size in
+                    var startAngle = Angle.degrees(-90)
+                    for (i, seg) in segments.prefix(6).enumerated() {
+                        let pct = seg.amount / total
+                        let sweep = Angle.degrees(360 * pct)
+                        
+                        let color = i < segments.count
+                            ? Color(hex: seg.colorHex)
+                            : Color(hex: chartColors[i % chartColors.count])
+                        
+                        var arc = Path()
+                        arc.addArc(center: center, radius: radius,
+                                   startAngle: startAngle, endAngle: startAngle + sweep,
+                                   clockwise: false)
+                        context.stroke(arc, with: .color(color),
+                                       style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+                        startAngle += sweep
+                    }
+                    // 中间白圆（镂空效果）
+                    let innerR = radius - lineWidth / 2 - 4
+                    context.fill(Circle().path(in: CGRect(
+                        x: center.x - innerR, y: center.y - innerR,
+                        width: innerR * 2, height: innerR * 2
+                    )), with: .color(.white))
+                }
+                
+                // 中心文字
+                VStack(spacing: 4) {
+                    Text("¥\(Int(total).formatted())")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundColor(Color.App.textBlack)
+                    Text("总支出")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.gray)
+                }
+                .position(center)
+            }
         }
-        .frame(minWidth: 120, alignment: .leading)
     }
 }
 
+// MARK: - 折线图（Canvas 绘制）
+struct LineChartView: View {
+    let data: [(label: String, expense: Double, income: Double)]
+    
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            let maxVal = max(
+                data.map { $0.expense }.max() ?? 1,
+                data.map { $0.income }.max() ?? 1,
+                1
+            )
+            let count = max(data.count, 2) // 至少2个点，防止除零
+            
+            Canvas { context, size in
+                func pt(_ i: Int, _ val: Double, _ padding: CGFloat = 20) -> CGPoint {
+                    let x = w * CGFloat(i) / CGFloat(count - 1)
+                    let y = h - h * CGFloat(val / maxVal) - padding
+                    return CGPoint(x: x, y: max(padding, y))
+                }
+                
+                // 支出线
+                var expPath = Path()
+                for (i, item) in data.enumerated() {
+                    let p = pt(i, item.expense)
+                    if i == 0 { expPath.move(to: p) } else { expPath.addLine(to: p) }
+                }
+                context.stroke(expPath, with: .color(Color.App.primaryGreen),
+                               style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                
+                // 收入线
+                var incPath = Path()
+                for (i, item) in data.enumerated() {
+                    let p = pt(i, item.income)
+                    if i == 0 { incPath.move(to: p) } else { incPath.addLine(to: p) }
+                }
+                context.stroke(incPath, with: .color(Color.App.lightOrange),
+                               style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                
+                // 数据点
+                for (i, item) in data.enumerated() {
+                    let ep = pt(i, item.expense)
+                    context.fill(Circle().path(in: CGRect(x: ep.x-5, y: ep.y-5, width: 10, height: 10)),
+                                 with: .color(Color.App.darkGreen))
+                    context.fill(Circle().path(in: CGRect(x: ep.x-3, y: ep.y-3, width: 6, height: 6)),
+                                 with: .color(.white))
+                    
+                    let ip = pt(i, item.income)
+                    context.fill(Circle().path(in: CGRect(x: ip.x-5, y: ip.y-5, width: 10, height: 10)),
+                                 with: .color(Color.App.darkOrange))
+                    context.fill(Circle().path(in: CGRect(x: ip.x-3, y: ip.y-3, width: 6, height: 6)),
+                                 with: .color(.white))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 预算健康度条（真实 Project）
+struct BudgetHealthBar: View {
+    let project: Project
+    
+    private var progress: Double { min(project.budgetProgress, 1.0) }
+    private var progressColor: Color {
+        if project.budgetProgress >= 1.0 { return Color.App.redExpense }
+        if project.budgetProgress >= 0.8 { return Color(hex: "#FFA500") }
+        return Color.App.darkGreen
+    }
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(Color(hex: project.colorHex).opacity(0.3))
+                        .frame(width: 28, height: 28)
+                        .overlay(Image(systemName: project.icon)
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: project.colorHex)))
+                    Text(project.name)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Color.App.textBlack)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0)))) / ¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(progressColor)
+                    Text("\(Int(project.budgetProgress * 100))%")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.gray)
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.gray.opacity(0.08)).frame(height: 12)
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: [Color(hex: project.colorHex).opacity(0.6), progressColor],
+                            startPoint: .leading, endPoint: .trailing
+                        ))
+                        .frame(width: geo.size.width * progress, height: 12)
+                }
+            }
+            .frame(height: 12)
+        }
+    }
+}
+
+// MARK: - 智能洞察卡片（豚言豚语）
+struct InsightCardView: View {
+    let transactions: [Transaction]
+    let expense: Double
+    let income: Double
+    
+    private var insightText: String {
+        if transactions.isEmpty { return "这个月还没有任何记录，是平静的一个月呢～" }
+        let saving = income - expense
+        if saving > 0 {
+            return "本月结余 ¥\(Int(saving))，你很棒！把节约的部分存起来，以后会感谢现在的你🌱"
+        } else if expense > 0 && income == 0 {
+            return "本月支出 ¥\(Int(expense))，还没有录入收入记录，记得补上哦～"
+        } else {
+            return "本月支出超出收入 ¥\(Int(abs(saving)))，下个月可以稍微收敛一下，不过偶尔犒劳自己也没关系🦫"
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Text("🦫")
+                .font(.system(size: 36))
+            VStack(alignment: .leading, spacing: 6) {
+                Text("豚言豚语")
+                    .font(.system(size: 12, weight: .black))
+                    .foregroundColor(Color.App.darkGreen)
+                    .kerning(2)
+                Text(insightText)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color.App.textBlack.opacity(0.8))
+                    .lineSpacing(4)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.App.primaryGreen.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 28))
+    }
+}
+
+// MARK: - 空状态
+struct EmptyStateView: View {
+    let message: String
+    var body: some View {
+        Text(message)
+            .font(.system(size: 14))
+            .foregroundColor(.gray)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
+    }
+}
+
+// MARK: - 月份选择弹窗
+struct MonthPickerSheet: View {
+    @Environment(\.presentationMode) var presentationMode
+    @Binding var selectedMonth: Date
+    
+    var body: some View {
+        NavigationView {
+            DatePicker("选择月份", selection: $selectedMonth, displayedComponents: [.date])
+                .datePickerStyle(.graphical)
+                .padding()
+                .navigationTitle("选择统计月份")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("确定") { presentationMode.wrappedValue.dismiss() }
+                    }
+                }
+        }
+    }
+}
+
+// MARK: - Date 扩展
+extension Date {
+    var monthYearDisplay: String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy年M月"
+        return f.string(from: self)
+    }
+    var monthDisplay: String {
+        let f = DateFormatter()
+        f.dateFormat = "M月"
+        return f.string(from: self)
+    }
+}
+
+// MARK: - TabButton（供 AnalyticsView 使用）
 struct TabButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
-    
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -230,40 +505,7 @@ struct TabButton: View {
     }
 }
 
-struct BudgetBar: View {
-    let title: String
-    let amount: String
-    let progress: Double
-    let color: Color
-    var amountColor: Color = .gray
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(Color.App.textBlack)
-                Spacer()
-                Text(amount)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(amountColor)
-            }
-            
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.App.tabBackground)
-                        .frame(height: 16)
-                    Capsule()
-                        .fill(color)
-                        .frame(width: geo.size.width * progress, height: 16)
-                }
-            }
-            .frame(height: 16)
-        }
-    }
-}
-
 #Preview {
     AnalyticsView()
+        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
 }
