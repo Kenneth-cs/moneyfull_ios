@@ -25,10 +25,10 @@ struct DashboardView: View {
                         .blur(radius: 20)
                         .offset(x: 40, y: -40)
                     
-                    // 卡皮 + 气泡
+                    // 卡皮 + 气泡（气泡贴顶，卡皮在下）
                     GreetingMascotView()
-                        .padding(.trailing, 24)
-                        .padding(.top, 20)
+                        .padding(.trailing, 12)
+                        .padding(.top, 8)
                     
                     // 财务数据
                     VStack(alignment: .leading, spacing: 24) {

@@ -159,30 +159,32 @@ struct GreetingMascotView: View {
     @State private var isBreathing = false
     
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            // 气泡
-            Text("早安，今天也是\n平静的一天呢～")
+        VStack(alignment: .trailing, spacing: 0) {
+            // 气泡：横向拉宽，贴近卡片顶部（黄色框位置）
+            Text("早安，今天也是平静的一天呢～")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(Color.App.darkGreen)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                .multilineTextAlignment(.leading)
+                .lineSpacing(3)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(width: 172, alignment: .leading)
                 .background(
-                    ZStack(alignment: .bottom) {
-                        RoundedRectangle(cornerRadius: 14)
+                    ZStack(alignment: .bottomTrailing) {
+                        RoundedRectangle(cornerRadius: 16)
                             .fill(Color.white)
+                        // 尾巴在底部偏右，指向下方卡皮
                         Triangle()
                             .fill(Color.white)
-                            .frame(width: 14, height: 8)
-                            .offset(x: 10, y: 7)
+                            .frame(width: 14, height: 10)
+                            .offset(x: -28, y: 8)
                     }
                 )
             
-            // 卡皮
-            CapybaraView(size: 72)
-                .padding(.trailing, 8)
+            // 卡皮：右对齐，位于气泡正下方（红色框位置）
+            CapybaraView(size: 80)
         }
-        .offset(y: isBreathing ? -6 : 4)
+        .offset(y: isBreathing ? -5 : 3)
         .onAppear {
             withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
                 isBreathing = true
