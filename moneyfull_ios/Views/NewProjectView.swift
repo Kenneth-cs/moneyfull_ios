@@ -103,7 +103,7 @@ struct NewProjectView: View {
                         }
                         .padding(20)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white)
+                        .background(Color.App.cardBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 5)
                     }

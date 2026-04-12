@@ -63,7 +63,7 @@ struct ProjectsView: View {
                         Button(action: { showNewProject = true }) {
                             VStack(spacing: 14) {
                                 Circle()
-                                    .fill(Color.white)
+                                    .fill(Color.App.cardBackground)
                                     .frame(width: 56, height: 56)
                                     .overlay(
                                         Image(systemName: "plus")
@@ -127,7 +127,7 @@ struct ProjectDetailCard: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 32)
-                .fill(Color.white)
+                .fill(Color.App.cardBackground)
                 .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
             
             // 装饰模糊圆

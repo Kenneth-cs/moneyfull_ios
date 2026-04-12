@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var theme: ThemeManager
     @State private var selectedTab = 0
     @State private var isAddRecordPresented = false
     
@@ -86,10 +87,10 @@ struct CustomBottomTabBar: View {
         .padding(.top, 16)
         .padding(.bottom, 34) // Safe area padding approximation
         .background(
-            Color.white.opacity(0.9)
+            Color.App.cardBackground.opacity(0.95)
                 .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -5)
+                .shadow(color: Color.black.opacity(0.08), radius: 20, x: 0, y: -5)
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)

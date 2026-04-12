@@ -3,8 +3,10 @@ import SwiftData
 
 struct ProfileView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var theme: ThemeManager
     @State private var showBudgetSetting = false
     @State private var showExportAlert = false
+    @State private var showThemePicker = false
     @State private var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "钱小满用户"
     @State private var showEditName = false
     @State private var tempName: String = ""
@@ -125,7 +127,9 @@ struct ProfileView: View {
                         MenuItem(icon: "paintpalette",
                                  iconBg: Color.App.lightYellow.opacity(0.6),
                                  iconColor: Color.App.darkYellow,
-                                 title: "主题设置") {}
+                                 title: "主题设置  (\(theme.mode.displayName))") {
+                            showThemePicker = true
+                        }
                         MenuItem(icon: "questionmark.circle",
                                  iconBg: Color.gray.opacity(0.1),
                                  iconColor: .gray,
@@ -133,7 +137,7 @@ struct ProfileView: View {
                                  hasBorder: false) {}
                     }
                     .padding(8)
-                    .background(Color.white)
+                    .background(Color.App.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 32))
                     .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
                 }
@@ -169,6 +173,10 @@ struct ProfileView: View {
         // 预算设置页面
         .sheet(isPresented: $showBudgetSetting) {
             BudgetSettingView()
+        }
+        // 主题选择弹窗
+        .sheet(isPresented: $showThemePicker) {
+            ThemePickerView()
         }
     }
 }
@@ -221,7 +229,7 @@ struct MonthSummaryCard: View {
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 28))
         .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
     }
@@ -361,7 +369,111 @@ struct BudgetSettingView: View {
     }
 }
 
+// MARK: - 主题选择面板
+struct ThemePickerView: View {
+    @Environment(\.presentationMode) var presentationMode
+    @EnvironmentObject var theme: ThemeManager
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                // 卡皮形象预告
+                VStack(spacing: 8) {
+                    Text("🦫")
+                        .font(.system(size: 60))
+                    Text("选一个让眼睛舒适的模式")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 16)
+                
+                // 三个选项
+                VStack(spacing: 12) {
+                    ForEach(ThemeMode.allCases, id: \.rawValue) { mode in
+                        Button(action: {
+                            theme.mode = mode
+                        }) {
+                            HStack(spacing: 16) {
+                                Circle()
+                                    .fill(themeIconBg(mode))
+                                    .frame(width: 52, height: 52)
+                                    .overlay(
+                                        Image(systemName: mode.icon)
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundColor(themeIconColor(mode))
+                                    )
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(mode.displayName)
+                                        .font(.system(size: 17, weight: .bold))
+                                        .foregroundColor(Color.App.textBlack)
+                                    Text(themeDesc(mode))
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                }
+                                Spacer()
+                                if theme.mode == mode {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(Color.App.darkGreen)
+                                }
+                            }
+                            .padding(18)
+                            .background(
+                                RoundedRectangle(cornerRadius: 24)
+                                    .fill(Color.App.cardBackground)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 24)
+                                            .stroke(theme.mode == mode ? Color.App.primaryGreen : Color.clear, lineWidth: 2.5)
+                                    )
+                            )
+                            .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 4)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal, 24)
+                
+                Spacer()
+            }
+            .background(Color.App.backgroundGray.ignoresSafeArea())
+            .navigationTitle("主题设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { presentationMode.wrappedValue.dismiss() }
+                        .font(.system(size: 16, weight: .bold))
+                }
+            }
+        }
+    }
+    
+    private func themeIconBg(_ mode: ThemeMode) -> Color {
+        switch mode {
+        case .system: return Color.App.primaryGreen.opacity(0.2)
+        case .light:  return Color.App.lightYellow.opacity(0.4)
+        case .dark:   return Color.App.darkGreen.opacity(0.15)
+        }
+    }
+    
+    private func themeIconColor(_ mode: ThemeMode) -> Color {
+        switch mode {
+        case .system: return Color.App.darkGreen
+        case .light:  return Color.App.darkYellow
+        case .dark:   return Color.App.darkGreen
+        }
+    }
+    
+    private func themeDesc(_ mode: ThemeMode) -> String {
+        switch mode {
+        case .system: return "随系统自动切换，省心省事"
+        case .light:  return "清爽明亮，白天使用更舒适"
+        case .dark:   return "护眼深色，夜间使用很友好"
+        }
+    }
+}
+
 #Preview {
     ProfileView()
         .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
+        .environmentObject(ThemeManager())
 }

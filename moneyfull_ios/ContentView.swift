@@ -4,15 +4,15 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var store: AppStore?
-    
+
     var body: some View {
         Group {
             if let store = store {
                 MainTabView()
                     .environmentObject(store)
-                    .preferredColorScheme(.light)
             } else {
-                Color.clear // 等待初始化
+                // 加载中占位，避免闪屏
+                Color.App.backgroundGray.ignoresSafeArea()
             }
         }
         .onAppear {
