@@ -395,37 +395,130 @@ struct InsightCardView: View {
     let expense: Double
     let income: Double
     
-    private var insightText: String {
-        if transactions.isEmpty { return "这个月还没有任何记录，是平静的一个月呢～" }
-        let saving = income - expense
-        if saving > 0 {
-            return "本月结余 ¥\(Int(saving))，你很棒！把节约的部分存起来，以后会感谢现在的你🌱"
-        } else if expense > 0 && income == 0 {
-            return "本月支出 ¥\(Int(expense))，还没有录入收入记录，记得补上哦～"
+    private var surplus: Double { income - expense }
+    
+    // MARK: 节省方案文案（绿卡）
+    private var savingTitle: String { "节省方案" }
+    private var savingText: String {
+        if transactions.isEmpty {
+            return "这个月还没有记录，先记一笔开始吧～"
+        }
+        // 找出支出最多的类别
+        let expenseTx = transactions.filter { $0.type == .expense }
+        let byCategory = Dictionary(grouping: expenseTx, by: { $0.categoryName })
+        if let topCat = byCategory.max(by: { a, b in
+            a.value.reduce(0) { $0 + $1.amount } < b.value.reduce(0) { $0 + $1.amount }
+        }) {
+            let topAmt = topCat.value.reduce(0) { $0 + $1.amount }
+            return "「\(topCat.key)」是本月最大支出项（¥\(Int(topAmt))）。适当规划一下，下个月会更从容～"
+        }
+        return "记录越多，水豚越了解你的财务习惯，快去记一笔吧！"
+    }
+    
+    // MARK: 健康提醒文案（橙卡）
+    private var healthTitle: String { "健康提醒" }
+    private var healthText: String {
+        if transactions.isEmpty {
+            return "财务数据还是空白，保持平静的心情，慢慢记录起来吧 🌿"
+        }
+        if surplus > 0 {
+            return "干得漂亮！本月结余 ¥\(Int(surplus))，财务状态就像泡在温泉里一样舒适 ♨️"
+        } else if income == 0 {
+            return "本月支出 ¥\(Int(expense))，还没有录入收入，记得补上哦，水豚在等你～"
         } else {
-            return "本月支出超出收入 ¥\(Int(abs(saving)))，下个月可以稍微收敛一下，不过偶尔犒劳自己也没关系🦫"
+            return "本月支出超出收入 ¥\(Int(abs(surplus)))，不过偶尔犒劳自己也没关系，下个月慢慢调整回来就好 🦫"
         }
     }
     
     var body: some View {
-        HStack(spacing: 16) {
-            Text("🦫")
-                .font(.system(size: 36))
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 20) {
+            // 标题行
+            HStack(spacing: 8) {
                 Text("豚言豚语")
-                    .font(.system(size: 12, weight: .black))
-                    .foregroundColor(Color.App.darkGreen)
-                    .kerning(2)
-                Text(insightText)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color.App.textBlack.opacity(0.8))
-                    .lineSpacing(4)
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundColor(Color.App.textBlack)
+                Text("🦫")
+                    .font(.system(size: 22))
             }
+            
+            // 节省方案卡（绿色）
+            InsightMiniCard(
+                icon: "lightbulb",
+                title: savingTitle,
+                text: savingText,
+                bgColor: Color.App.primaryGreen.opacity(0.35),
+                titleColor: Color.App.darkGreen
+            )
+            
+            // 健康提醒卡（橙色）
+            InsightMiniCard(
+                icon: "chart.line.uptrend.xyaxis",
+                title: healthTitle,
+                text: healthText,
+                bgColor: Color.App.lightOrange.opacity(0.45),
+                titleColor: Color.App.darkOrangeBrown
+            )
+            
+            // CTA 深绿卡
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color.App.darkGreen)
+                
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("优化财务结构，\n让增长更自然。")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundColor(.white)
+                        .lineSpacing(4)
+                    
+                    // 生成报告占位按钮（后续可接 AI 报告功能）
+                    HStack {
+                        Text("立即生成深度报告")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(Color.App.darkGreen)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Color.App.darkGreen)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.2))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
+                }
+                .padding(24)
+            }
+            .frame(maxWidth: .infinity)
         }
-        .padding(20)
+    }
+}
+
+// MARK: - 豚言豚语子卡片
+struct InsightMiniCard: View {
+    let icon: String
+    let title: String
+    let text: String
+    let bgColor: Color
+    let titleColor: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(titleColor)
+                Text(title)
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundColor(titleColor)
+            }
+            Text(text)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color.App.textBlack.opacity(0.75))
+                .lineSpacing(5)
+        }
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.App.primaryGreen.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 28))
+        .background(bgColor)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 }
 
