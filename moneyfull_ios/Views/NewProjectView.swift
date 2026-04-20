@@ -128,6 +128,16 @@ struct NewProjectView: View {
                         let budget = Double(budgetText) ?? 0
                         store.addProject(name: name, icon: selectedIcon, colorHex: selectedColor,
                                         desc: desc, budget: budget)
+                        
+                        AnalyticsManager.shared.trackEvent(
+                            eventId: "project_create_success",
+                            eventName: "成功创建项目",
+                            params: [
+                                "has_budget": budget > 0,
+                                "icon_selected": selectedIcon
+                            ]
+                        )
+                        
                         presentationMode.wrappedValue.dismiss()
                     }
                     .font(.system(size: 16, weight: .bold))

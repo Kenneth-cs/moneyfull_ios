@@ -55,7 +55,9 @@ struct ProjectsView: View {
                         .padding(.horizontal, 32)
                     } else {
                         ForEach(projects) { project in
-                            NavigationLink(destination: ProjectDetailView(project: project)) {
+                            NavigationLink(destination: ProjectDetailView(project: project).onAppear {
+                                AnalyticsManager.shared.trackEvent(eventId: "project_view_detail", eventName: "查看项目详情", params: ["project_status": selectedTab == 0 ? "active" : "archived", "source": "project_center"])
+                            }) {
                                 ProjectDetailCard(project: project)
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -64,7 +66,10 @@ struct ProjectsView: View {
                     
                     // 新建项目按钮（仅进行中 tab 显示）
                     if selectedTab == 0 {
-                        Button(action: { showNewProject = true }) {
+                        Button(action: {
+                            AnalyticsManager.shared.trackEvent(eventId: "project_click_new", eventName: "点击新建项目")
+                            showNewProject = true
+                        }) {
                             VStack(spacing: 14) {
                                 Circle()
                                     .fill(Color.white)

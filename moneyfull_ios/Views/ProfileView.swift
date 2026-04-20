@@ -382,6 +382,7 @@ struct ThemePickerView: View {
                     ForEach(ThemeMode.allCases, id: \.rawValue) { mode in
                         Button(action: {
                             theme.mode = mode
+                            AnalyticsManager.shared.trackEvent(eventId: "profile_change_theme", eventName: "切换外观主题", params: ["theme_selected": mode.rawValue])
                         }) {
                             HStack(spacing: 16) {
                                 Circle()

@@ -42,7 +42,10 @@ struct OnboardingView: View {
                 // 跳过按钮
                 HStack {
                     Spacer()
-                    Button(action: finish) {
+                    Button(action: {
+                        AnalyticsManager.shared.trackEvent(eventId: "onboarding_click_skip", eventName: "点击跳过引导", params: ["current_page_index": currentPage])
+                        finish()
+                    }) {
                         Text("跳过")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(Color(hex: pages[currentPage].darkColor).opacity(0.6))
@@ -140,6 +143,9 @@ struct OnboardingView: View {
                 .padding(.bottom, 50)
             }
         }
+        .onAppear {
+            AnalyticsManager.shared.trackEvent(eventId: "onboarding_view_page", eventName: "浏览引导页", params: ["page_index": 0])
+        }
     }
     
     private func nextOrFinish() {
@@ -147,7 +153,9 @@ struct OnboardingView: View {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                 currentPage += 1
             }
+            AnalyticsManager.shared.trackEvent(eventId: "onboarding_view_page", eventName: "浏览引导页", params: ["page_index": currentPage])
         } else {
+            AnalyticsManager.shared.trackEvent(eventId: "onboarding_complete", eventName: "完成引导")
             finish()
         }
     }

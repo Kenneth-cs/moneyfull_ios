@@ -36,6 +36,11 @@ struct MainTabView: View {
             // ③ 自定义底部 Tab 栏（含底部安全区填充）
             CustomBottomTabBar(selectedTab: $selectedTab, isAddRecordPresented: $isAddRecordPresented)
         }
+        .onChange(of: selectedTab) { newValue in
+            if newValue == 3 {
+                AnalyticsManager.shared.trackEvent(eventId: "analytics_view_page", eventName: "浏览统计页")
+            }
+        }
         .fullScreenCover(isPresented: $isAddRecordPresented) {
             AddRecordView()
                 .environmentObject(store)
@@ -58,7 +63,10 @@ struct CustomBottomTabBar: View {
             Spacer()
             
                 // 中央加号按钮（与其他图标平齐）
-                Button(action: { isAddRecordPresented = true }) {
+                Button(action: {
+                    AnalyticsManager.shared.trackEvent(eventId: "record_click_add", eventName: "点击记一笔入口", params: ["source": "tab_bar"])
+                    isAddRecordPresented = true
+                }) {
                     ZStack {
                         Circle()
                             .fill(Color.App.primaryGreen)

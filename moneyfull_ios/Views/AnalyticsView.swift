@@ -217,6 +217,9 @@ struct AnalyticsView: View {
         .background(Color.App.backgroundGray.ignoresSafeArea())
         .sheet(isPresented: $showMonthPicker) {
             MonthPickerSheet(selectedMonth: $selectedMonth)
+                .onDisappear {
+                    AnalyticsManager.shared.trackEvent(eventId: "analytics_change_month", eventName: "切换统计月份")
+                }
         }
     }
 }
@@ -471,19 +474,23 @@ struct InsightCardView: View {
                         .lineSpacing(4)
                     
                     // 生成报告占位按钮（后续可接 AI 报告功能）
-                    HStack {
-                        Text("立即生成深度报告")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(Color.App.darkGreen)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(Color.App.darkGreen)
+                    Button(action: {
+                        AnalyticsManager.shared.trackEvent(eventId: "analytics_click_report", eventName: "点击深度报告")
+                    }) {
+                        HStack {
+                            Text("立即生成深度报告")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(Color.App.darkGreen)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color.App.darkGreen)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(Color.white.opacity(0.2))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
                 }
                 .padding(24)
             }

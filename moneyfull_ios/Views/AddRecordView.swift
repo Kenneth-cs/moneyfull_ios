@@ -26,7 +26,10 @@ struct AddRecordView: View {
         VStack(spacing: 0) {
             // MARK: Header
             HStack {
-                Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                Button(action: {
+                    AnalyticsManager.shared.trackEvent(eventId: "record_cancel", eventName: "取消记账", params: ["has_input_amount": !amount.isEmpty])
+                    presentationMode.wrappedValue.dismiss()
+                }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundColor(Color.App.textBlack)
@@ -299,6 +302,23 @@ struct AddRecordView: View {
             categoryColorHex: selectedCategory.colorHex,
             note: note,
             date: date
+        )
+        
+        let amountLevel: String
+        if amountValue < 100 { amountLevel = "level_1_under100" }
+        else if amountValue < 500 { amountLevel = "level_2_100_500" }
+        else if amountValue < 2000 { amountLevel = "level_3_500_2000" }
+        else { amountLevel = "level_4_over2000" }
+        
+        AnalyticsManager.shared.trackEvent(
+            eventId: "record_submit_success",
+            eventName: "记账成功",
+            params: [
+                "type": type == .expense ? "expense" : "income",
+                "category": selectedCategory.name,
+                "is_custom_project": project.name != "日常收支",
+                "amount_level": amountLevel
+            ]
         )
         
         successFeedback.notificationOccurred(.success)

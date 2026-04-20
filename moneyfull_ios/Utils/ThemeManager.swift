@@ -49,3 +49,48 @@ class ThemeManager: ObservableObject {
     
     var colorScheme: ColorScheme? { mode.colorScheme }
 }
+
+// MARK: - 数据埋点管理器
+class AnalyticsManager {
+    static let shared = AnalyticsManager()
+    
+    private let projectId = "cmo7gfgnz000212b7sguan1l4"
+    private let apiKey = "sk_live_***"
+    private let endpoint = "http://124.222.88.25/api/events"
+    
+    private init() {}
+    
+    func trackEvent(eventId: String, eventName: String, params: [String: Any]? = nil) {
+        let body: [String: Any] = [
+            "projectId": projectId,
+            "deviceId": UIDevice.current.identifierForVendor?.uuidString ?? "unknown",
+            "eventId": eventId,
+            "eventName": eventName,
+            "params": params ?? [:],
+            "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
+            "osVersion": UIDevice.current.systemVersion,
+            "occurredAt": ISO8601DateFormatter().string(from: Date())
+        ]
+        
+        guard let url = URL(string: endpoint) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            #if DEBUG
+            if let error = error {
+                print("Analytics trackEvent failed: \(error.localizedDescription)")
+            } else if let httpResponse = response as? HTTPURLResponse {
+                if !(200...299).contains(httpResponse.statusCode) {
+                    print("Analytics trackEvent failed with status code: \(httpResponse.statusCode)")
+                } else {
+                    print("Analytics trackEvent success: \(eventId)")
+                }
+            }
+            #endif
+        }.resume()
+    }
+}

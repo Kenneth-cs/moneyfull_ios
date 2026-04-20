@@ -104,7 +104,10 @@ struct DashboardView: View {
                                     ProjectCard(project: project)
                                         .frame(width: 160)
                                         .contentShape(Rectangle())
-                                        .onTapGesture { detailProject = project }
+                                        .onTapGesture {
+                                            AnalyticsManager.shared.trackEvent(eventId: "project_view_detail", eventName: "查看项目详情", params: ["project_status": "active", "source": "dashboard"])
+                                            detailProject = project
+                                        }
                                 }
                             }
                             .padding(.horizontal, 24)
