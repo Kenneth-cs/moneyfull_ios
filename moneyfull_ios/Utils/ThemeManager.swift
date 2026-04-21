@@ -55,8 +55,13 @@ class AnalyticsManager {
     static let shared = AnalyticsManager()
     
     private let projectId = "cmo7gfgnz000212b7sguan1l4"
-    private let apiKey = "sk_live_***"
+    private let apiKey = "cplt_73353be9830cf0d15ebbbfbb0b9f1275ea73c5ba7a287181adf18b3cfb24d4bc"
+    // Debug 模式用本地服务（模拟器的 localhost = Mac），Release 自动切云服务器
+    #if DEBUG
+    private let endpoint = "http://localhost:3000/api/events"
+    #else
     private let endpoint = "http://124.222.88.25/api/events"
+    #endif
     
     private init() {}
     

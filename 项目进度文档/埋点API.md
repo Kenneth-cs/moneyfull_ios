@@ -1,5 +1,5 @@
 APIkey:
-sk_live_***
+cplt_73353be9830cf0d15ebbbfbb0b9f1275ea73c5ba7a287181adf18b3cfb24d4bc
 
 
 iOS Swift 接入示例:
@@ -27,7 +27,7 @@ func trackEvent(
     req.httpMethod = "POST"
     req.setValue("application/json",
         forHTTPHeaderField: "Content-Type")
-    req.setValue("Bearer sk_live_***",
+    req.setValue("Bearer cplt_73353be9830cf0d15ebbbfbb0b9f1275ea73c5ba7a287181adf18b3cfb24d4bc",
         forHTTPHeaderField: "Authorization")
     req.httpBody = try? JSONSerialization
         .data(withJSONObject: body)
