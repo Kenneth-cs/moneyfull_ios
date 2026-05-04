@@ -1,42 +1,47 @@
 APIkey:
-cplt_73353be9830cf0d15ebbbfbb0b9f1275ea73c5ba7a287181adf18b3cfb24d4bc
+cplt_02a1149fa805ba4a1a43b928a2d974816e106bc094b3fa1c98bc460e27e16917
 
 
 iOS Swift 接入示例:
-func trackEvent(
-    eventId: String,
-    eventName: String,
-    params: [String: Any]? = nil
-) {
+#if DEBUG
+private let kApiBase = "http://localhost:3000"
+#else
+private let kApiBase = "https://www.superindividual.youqukeji.cn"
+#endif
+private let kApiKey  = "cplt_02a1149fa805ba4a1a43b928a2d974816e106bc094b3fa1c98bc460e27e16917"
+
+func trackEvent(eventId: String, eventName: String, params: [String: Any]? = nil) {
     let body: [String: Any] = [
-        "projectId": "cmo7gfgnz000212b7sguan1l4",
-        "deviceId": UIDevice.current
-            .identifierForVendor?.uuidString ?? "unknown",
-        "eventId": eventId,
-        "eventName": eventName,
+        "projectId": "cmo9qaxjq0002wpz0k7spw409",
+        "deviceId": UIDevice.current.identifierForVendor?.uuidString ?? "unknown",
+        "eventId": eventId, "eventName": eventName,
         "params": params ?? [:],
-        "appVersion": Bundle.main.infoDictionary?[
-            "CFBundleShortVersionString"] as? String ?? "1.0",
+        "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
         "osVersion": UIDevice.current.systemVersion,
-        "occurredAt": ISO8601DateFormatter()
-            .string(from: Date())
+        "occurredAt": ISO8601DateFormatter().string(from: Date())
     ]
-    var req = URLRequest(
-        url: URL(string: "http://124.222.88.25/api/events")!
-    )
+    var req = URLRequest(url: URL(string: "\(kApiBase)/api/events")!)
     req.httpMethod = "POST"
-    req.setValue("application/json",
-        forHTTPHeaderField: "Content-Type")
-    req.setValue("Bearer cplt_73353be9830cf0d15ebbbfbb0b9f1275ea73c5ba7a287181adf18b3cfb24d4bc",
-        forHTTPHeaderField: "Authorization")
-    req.httpBody = try? JSONSerialization
-        .data(withJSONObject: body)
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.setValue("Bearer \(kApiKey)", forHTTPHeaderField: "Authorization")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     URLSession.shared.dataTask(with: req).resume()
 }
 
-// 使用示例：
+// ── 使用示例 ──────────────────────────────────────────────
+// 记账成功
 trackEvent(
     eventId: "record_submit_success",
     eventName: "记账成功",
     params: ["category": "餐饮", "amount_level": "level_1_under100"]
+)
+
+// 点击记一笔入口
+trackEvent(eventId: "record_click_add", eventName: "点击记一笔入口")
+
+// 完成引导
+trackEvent(
+    eventId: "onboarding_complete",
+    eventName: "完成引导",
+    params: ["steps_skipped": 0]
 )

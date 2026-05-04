@@ -54,18 +54,20 @@ class ThemeManager: ObservableObject {
 class AnalyticsManager {
     static let shared = AnalyticsManager()
     
-    private let projectId = "cmo7gfgnz000212b7sguan1l4"
-    private let apiKey = "cplt_73353be9830cf0d15ebbbfbb0b9f1275ea73c5ba7a287181adf18b3cfb24d4bc"
-    // Debug 模式用本地服务（模拟器的 localhost = Mac），Release 自动切云服务器
+    private let projectId = "cmo9qaxjq0002wpz0k7spw409"
+    private let apiKey = "cplt_02a1149fa805ba4a1a43b928a2d974816e106bc094b3fa1c98bc460e27e16917"
+    // Debug：本地 Next.js；Release：正式域名（HTTPS）
     #if DEBUG
     private let endpoint = "http://localhost:3000/api/events"
     #else
-    private let endpoint = "http://124.222.88.25/api/events"
+    private let endpoint = "https://www.superindividual.youqukeji.cn/api/events"
     #endif
     
     private init() {}
     
     func trackEvent(eventId: String, eventName: String, params: [String: Any]? = nil) {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
         let body: [String: Any] = [
             "projectId": projectId,
             "deviceId": UIDevice.current.identifierForVendor?.uuidString ?? "unknown",
@@ -74,7 +76,7 @@ class AnalyticsManager {
             "params": params ?? [:],
             "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
             "osVersion": UIDevice.current.systemVersion,
-            "occurredAt": ISO8601DateFormatter().string(from: Date())
+            "occurredAt": formatter.string(from: Date())
         ]
         
         guard let url = URL(string: endpoint) else { return }
