@@ -72,14 +72,14 @@ struct ProjectsView: View {
                         }) {
                             VStack(spacing: 14) {
                                 Circle()
-                                    .fill(Color.white)
-                                    .frame(width: 56, height: 56)
-                                    .overlay(
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 22, weight: .bold))
-                                            .foregroundColor(Color.App.textBlack.opacity(0.6))
-                                    )
-                                    .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                            .fill(Color.App.cardBackground)
+                            .frame(width: 56, height: 56)
+                            .overlay(
+                                Image(systemName: "plus")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundColor(Color.App.textBlack.opacity(0.6))
+                            )
+                            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
                                 Text("新建项目")
                                     .font(.system(size: 16, weight: .heavy))
                                     .foregroundColor(Color.App.textBlack.opacity(0.6))
@@ -162,7 +162,7 @@ struct ProjectDetailCard: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 32)
-                .fill(Color.white)
+                .fill(Color.App.cardBackground)
                 .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 4)
             
             // 装饰模糊圆
@@ -180,9 +180,8 @@ struct ProjectDetailCard: View {
                             .fill(Color(hex: project.colorHex).opacity(0.4))
                             .frame(width: 48, height: 48)
                             .overlay(
-                                Image(systemName: project.icon)
-                                    .foregroundColor(progressEndColor)
-                                    .font(.system(size: 20, weight: .semibold))
+                                AppIconView(name: project.icon, size: 22,
+                                            color: Color.App.projectIconColor(for: project.colorHex))
                             )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(project.name)
@@ -226,7 +225,7 @@ struct ProjectDetailCard: View {
                             ZStack(alignment: .leading) {
                                 // 轨道：干净浅灰
                                 Capsule()
-                                    .fill(Color(hex: "#F0F0F0"))
+                                    .fill(Color.App.progressTrack)
                                     .frame(height: 10)
                                 // 填充：同色系渐变
                                 Capsule()
@@ -277,29 +276,33 @@ struct ProgressColorPair {
 
 func progressColorPair(for colorHex: String) -> ProgressColorPair {
     switch colorHex.uppercased().trimmingCharacters(in: CharacterSet(charactersIn: "#")) {
-    // 绿色系
-    case "A8E6CF", "DCEDC1":
+    case "A8E6CF", "DCEDC1", "A8E0C2":
         return ProgressColorPair(start: "#A8E6CF", end: "#2C6956")
-    // 橙/暖色系
-    case "FDD1B4":
-        return ProgressColorPair(start: "#E8BEA2", end: "#785741")
-    // 黄色系
+    case "B3D1E6":
+        return ProgressColorPair(start: "#B3D1E6", end: "#2E6A8A")
+    case "FDD1B4", "F6D7A8":
+        return ProgressColorPair(start: "#F6D7A8", end: "#8A5A1E")
+    case "F2B7C6":
+        return ProgressColorPair(start: "#F2B7C6", end: "#8A3A52")
+    case "D8C6E8":
+        return ProgressColorPair(start: "#D8C6E8", end: "#5A3A7A")
+    case "BFE6EA":
+        return ProgressColorPair(start: "#BFE6EA", end: "#2A7A82")
+    case "C8E6C9":
+        return ProgressColorPair(start: "#C8E6C9", end: "#2E6E30")
+    case "DCCFC4":
+        return ProgressColorPair(start: "#DCCFC4", end: "#7A5A3E")
     case "DCDE8D":
         return ProgressColorPair(start: "#DCDE8D", end: "#5F621F")
-    // 蓝色系
     case "DBEAFE":
         return ProgressColorPair(start: "#BFDBFE", end: "#1D4ED8")
-    // 紫色系
     case "F3E8FF":
         return ProgressColorPair(start: "#E9D5FF", end: "#7C3AED")
-    // 浅橙/粉橙系
     case "FFEDD5":
         return ProgressColorPair(start: "#FED7AA", end: "#C2410C")
-    // 粉色系
     case "FCE7F3":
         return ProgressColorPair(start: "#FBCFE8", end: "#BE185D")
     default:
-        // 兜底：绿色系
         return ProgressColorPair(start: "#A8E6CF", end: "#2C6956")
     }
 }

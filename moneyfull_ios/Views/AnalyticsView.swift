@@ -126,7 +126,7 @@ struct AnalyticsView: View {
                     }
                 }
                 .padding(28)
-                .background(Color.white)
+                .background(Color.App.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
                 
@@ -169,7 +169,7 @@ struct AnalyticsView: View {
                     }
                 }
                 .padding(28)
-                .background(Color.white)
+                .background(Color.App.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
                 
@@ -199,7 +199,7 @@ struct AnalyticsView: View {
                     }
                 }
                 .padding(28)
-                .background(Color.white)
+                .background(Color.App.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 40))
                 .padding(.horizontal, 24)
                 
@@ -259,12 +259,12 @@ struct DonutChartView: View {
                                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
                         startAngle += sweep
                     }
-                    // 中间白圆（镂空效果）
+                    // 中间圆（镂空效果）
                     let innerR = radius - lineWidth / 2 - 4
                     context.fill(Circle().path(in: CGRect(
                         x: center.x - innerR, y: center.y - innerR,
                         width: innerR * 2, height: innerR * 2
-                    )), with: .color(.white))
+                    )), with: .color(Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(Color(hex: "#1C1C1E")) : UIColor.white })))
                 }
                 
                 // 中心文字
@@ -323,18 +323,19 @@ struct LineChartView: View {
                                style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
                 
                 // 数据点
+                let innerDotColor = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(Color(hex: "#1C1C1E")) : UIColor.white })
                 for (i, item) in data.enumerated() {
                     let ep = pt(i, item.expense)
                     context.fill(Circle().path(in: CGRect(x: ep.x-5, y: ep.y-5, width: 10, height: 10)),
                                  with: .color(Color.App.darkGreen))
                     context.fill(Circle().path(in: CGRect(x: ep.x-3, y: ep.y-3, width: 6, height: 6)),
-                                 with: .color(.white))
-                    
+                                 with: .color(innerDotColor))
+
                     let ip = pt(i, item.income)
                     context.fill(Circle().path(in: CGRect(x: ip.x-5, y: ip.y-5, width: 10, height: 10)),
                                  with: .color(Color.App.darkOrange))
                     context.fill(Circle().path(in: CGRect(x: ip.x-3, y: ip.y-3, width: 6, height: 6)),
-                                 with: .color(.white))
+                                 with: .color(innerDotColor))
                 }
             }
         }
@@ -359,9 +360,10 @@ struct BudgetHealthBar: View {
                     Circle()
                         .fill(Color(hex: project.colorHex).opacity(0.3))
                         .frame(width: 28, height: 28)
-                        .overlay(Image(systemName: project.icon)
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: project.colorHex)))
+                        .overlay(
+                            AppIconView(name: project.icon, size: 12,
+                                        color: Color(hex: project.colorHex))
+                        )
                     Text(project.name)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(Color.App.textBlack)
@@ -592,7 +594,7 @@ struct TabButton: View {
                 .foregroundColor(isSelected ? Color.App.darkGreen : Color.App.textBlack.opacity(0.6))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.white : Color.clear)
+                .background(isSelected ? Color.App.cardBackground : Color.clear)
                 .clipShape(Capsule())
                 .shadow(color: isSelected ? Color.black.opacity(0.05) : Color.clear, radius: 2, x: 0, y: 1)
         }

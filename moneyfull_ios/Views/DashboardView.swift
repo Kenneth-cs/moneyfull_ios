@@ -50,10 +50,10 @@ struct DashboardView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("当前支出")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color.App.darkGreen.opacity(0.8))
+                                .foregroundColor(Color.App.textOnPrimary.opacity(0.8))
                             Text("¥ \(smartFormat(store.monthlyExpense))")
                                 .font(.system(size: 34, weight: .heavy))
-                                .foregroundColor(Color.App.darkGreen)
+                                .foregroundColor(Color.App.textOnPrimary)
                                 .minimumScaleFactor(0.7)
                                 .lineLimit(1)
                         }
@@ -143,7 +143,7 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 32)
                         .padding(.horizontal, 24)
-                        .background(Color.white.opacity(0.6))
+                        .background(Color.App.cardBackground.opacity(0.6))
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .padding(.horizontal, 24)
                     } else {
@@ -176,16 +176,16 @@ struct FinanceInfoCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundColor(Color.App.darkGreen.opacity(0.8))
+                .foregroundColor(Color.App.textOnPrimary.opacity(0.8))
             Text("¥ \(value.formatted(.number.precision(.fractionLength(0))))")
                 .font(.system(size: 20, weight: .bold))
-                .foregroundColor(Color.App.darkGreen)
+                .foregroundColor(Color.App.textOnPrimary)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.white.opacity(0.5))
+        .background(Color.white.opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
@@ -211,9 +211,8 @@ struct ProjectCard: View {
                     .fill(Color(hex: project.colorHex).opacity(0.4))
                     .frame(width: 40, height: 40)
                     .overlay(
-                        Image(systemName: project.icon)
-                            .foregroundColor(Color(hex: progressPair.end))
-                            .font(.system(size: 16, weight: .semibold))
+                        AppIconView(name: project.icon, size: 18,
+                                    color: Color.App.projectIconColor(for: project.colorHex))
                     )
                 Spacer(minLength: 4)
                 Text("进行中")
@@ -240,7 +239,7 @@ struct ProjectCard: View {
                 
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color(hex: "#F0F0F0")).frame(height: 6)
+                        Capsule().fill(Color.App.progressTrack).frame(height: 6)
                         Capsule()
                             .fill(LinearGradient(
                                 colors: [Color(hex: progressPair.start), Color(hex: progressPair.end)],
@@ -258,7 +257,7 @@ struct ProjectCard: View {
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 5)
     }
@@ -295,7 +294,7 @@ struct TransactionItem: View {
                 .foregroundColor(transaction.type == .expense ? Color.App.redExpense : Color.App.darkGreen)
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
     }

@@ -36,8 +36,8 @@ struct MainTabView: View {
             // ③ 自定义底部 Tab 栏（含底部安全区填充）
             CustomBottomTabBar(selectedTab: $selectedTab, isAddRecordPresented: $isAddRecordPresented)
         }
-        .onChange(of: selectedTab) { newValue in
-            if newValue == 3 {
+        .onChange(of: selectedTab) {
+            if selectedTab == 3 {
                 AnalyticsManager.shared.trackEvent(eventId: "analytics_view_page", eventName: "浏览统计页")
             }
         }
@@ -53,13 +53,14 @@ struct MainTabView: View {
 struct CustomBottomTabBar: View {
     @Binding var selectedTab: Int
     @Binding var isAddRecordPresented: Bool
+    private let selectionFeedback = UISelectionFeedbackGenerator()
     
     var body: some View {
         // 悬浮胶囊，直接浮在背景色上，不加任何底部填充块
         HStack {
-            TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) { selectedTab = 0 }
+            TabBarItem(icon: "house.fill", title: "首页", isSelected: selectedTab == 0) { selectionFeedback.selectionChanged(); selectedTab = 0 }
             Spacer()
-            TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) { selectedTab = 1 }
+            TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) { selectionFeedback.selectionChanged(); selectedTab = 1 }
             Spacer()
             
                 // 中央加号按钮（与其他图标平齐）
@@ -74,20 +75,20 @@ struct CustomBottomTabBar: View {
                             .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
                         Image(systemName: "plus")
                             .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(Color.App.darkGreen)
+                            .foregroundColor(Color.App.textOnPrimary)
                     }
                 }
             
             Spacer()
-            TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) { selectedTab = 3 }
+            TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) { selectionFeedback.selectionChanged(); selectedTab = 3 }
             Spacer()
-            TabBarItem(icon: "person.fill", title: "我的", isSelected: selectedTab == 4) { selectedTab = 4 }
+            TabBarItem(icon: "person.fill", title: "我的", isSelected: selectedTab == 4) { selectionFeedback.selectionChanged(); selectedTab = 4 }
         }
         .padding(.horizontal, 24)
         .padding(.top, 14)
         .padding(.bottom, 14)
         .background(
-            Color.white
+            Color.App.cardBackground
                 .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
                 .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
         )
@@ -112,9 +113,12 @@ struct TabBarItem: View {
                             .fill(Color.App.primaryGreen.opacity(0.3))
                             .frame(width: 44, height: 44)
                     }
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: isSelected ? .bold : .regular))
-                        .foregroundColor(isSelected ? Color.App.darkGreen : Color.gray.opacity(0.5))
+                    AppIconView(
+                        name: icon,
+                        size: 22,
+                        color: isSelected ? Color.App.darkGreen : Color.gray.opacity(0.5),
+                        weight: isSelected ? .bold : .regular
+                    )
                 }
                 .frame(width: 44, height: 44)
                 

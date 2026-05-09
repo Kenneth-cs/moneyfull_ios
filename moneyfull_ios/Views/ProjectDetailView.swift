@@ -4,10 +4,12 @@ struct ProjectDetailView: View {
     let project: Project
     @EnvironmentObject var store: AppStore
     @Environment(\.presentationMode) var presentationMode
+    @State private var editingTransaction: Transaction?
+    @State private var showColorPicker = false
     
     // 按日期分组的交易记录
     private var groupedTransactions: [(key: String, value: [Transaction])] {
-        let sorted = project.transactions.sorted { $0.date > $1.date }
+        let sorted = (project.transactions ?? []).sorted { $0.date > $1.date }
         var groups: [String: [Transaction]] = [:]
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy年M月d日"
@@ -61,14 +63,25 @@ struct ProjectDetailView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         // 项目图标 + 描述（不再重复项目名，导航栏已显示）
                         HStack(spacing: 14) {
-                            Circle()
-                                .fill(Color(hex: project.colorHex).opacity(0.3))
-                                .frame(width: 56, height: 56)
-                                .overlay(
-                                    Image(systemName: project.icon)
-                                        .foregroundColor(accentColor)
-                                        .font(.system(size: 24))
-                                )
+                            ZStack(alignment: .bottomTrailing) {
+                                Circle()
+                                    .fill(Color(hex: project.colorHex).opacity(0.3))
+                                    .frame(width: 56, height: 56)
+                                    .overlay(
+                                        AppIconView(name: project.icon, size: 24,
+                                                    color: Color.App.projectIconColor(for: project.colorHex))
+                                    )
+                                Circle()
+                                    .fill(Color.App.cardBackground)
+                                    .frame(width: 22, height: 22)
+                                    .overlay(
+                                        Image(systemName: "paintpalette.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(accentColor)
+                                    )
+                                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                                    .onTapGesture { showColorPicker = true }
+                            }
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(project.name)
                                     .font(.system(size: 20, weight: .heavy))
@@ -105,7 +118,7 @@ struct ProjectDetailView: View {
                                 }
                                 GeometryReader { geo in
                                     ZStack(alignment: .leading) {
-                                        Capsule().fill(Color(hex: "#F0F0F0")).frame(height: 10)
+                                        Capsule().fill(Color.App.progressTrack).frame(height: 10)
                                         Capsule()
                                             .fill(LinearGradient(
                                                 colors: [Color(hex: colorPair.start), Color(hex: colorPair.end)],
@@ -125,7 +138,7 @@ struct ProjectDetailView: View {
                         }
                     }
                     .padding(24)
-                    .background(Color.white)
+                    .background(Color.App.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 32))
                     .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
                     .padding(.horizontal, 24)
@@ -160,6 +173,19 @@ struct ProjectDetailView: View {
                                     VStack(spacing: 10) {
                                         ForEach(group.value) { tx in
                                             TimelineTxRow(transaction: tx, accentColor: Color(hex: project.colorHex))
+                                                .contextMenu {
+                                                    Button {
+                                                        editingTransaction = tx
+                                                    } label: {
+                                                        Label("编辑", systemImage: "pencil")
+                                                    }
+                                                    Button(role: .destructive) {
+                                                        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                                                        store.deleteTransaction(tx)
+                                                    } label: {
+                                                        Label("删除", systemImage: "trash")
+                                                    }
+                                                }
                                                 .padding(.horizontal, 24)
                                         }
                                     }
@@ -175,6 +201,13 @@ struct ProjectDetailView: View {
             }
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        .sheet(item: $editingTransaction) { tx in
+            EditTransactionView(transaction: tx)
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $showColorPicker) {
+            EditProjectColorSheet(project: project, store: store)
+        }
         .navigationBarHidden(true) // 隐藏系统导航栏，使用自定义样式
     }
 }
@@ -235,9 +268,86 @@ struct TimelineTxRow: View {
                 .foregroundColor(transaction.type == .expense ? Color.App.redExpense : Color.App.darkGreen)
         }
         .padding(14)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: Color.black.opacity(0.02), radius: 8, x: 0, y: 3)
+    }
+}
+
+// MARK: - 编辑项目颜色 Sheet
+struct EditProjectColorSheet: View {
+    let project: Project
+    let store: AppStore
+    @Environment(\.presentationMode) var presentationMode
+    @State private var selectedColor: String
+
+    init(project: Project, store: AppStore) {
+        self.project = project
+        self.store = store
+        _selectedColor = State(initialValue: project.colorHex)
+    }
+
+    private var accentColor: Color {
+        Color(hex: progressColorPair(for: selectedColor).end)
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 28) {
+                Circle()
+                    .fill(Color(hex: selectedColor).opacity(0.3))
+                    .frame(width: 80, height: 80)
+                    .overlay(
+                        AppIconView(name: project.icon, size: 32,
+                                    color: Color.App.projectIconColor(for: selectedColor))
+                    )
+
+                Text("选择项目颜色")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(Color.App.textBlack)
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4), spacing: 16) {
+                    ForEach(Color.App.Morandi.allHexes, id: \.self) { hex in
+                        Button(action: { selectedColor = hex }) {
+                            Circle()
+                                .fill(Color(hex: hex))
+                                .frame(width: 60, height: 60)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.App.darkGreen, lineWidth: selectedColor == hex ? 3 : 0)
+                                        .padding(2)
+                                )
+                                .overlay(
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundColor(Color(hex: progressColorPair(for: hex).end))
+                                        .opacity(selectedColor == hex ? 1 : 0)
+                                )
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+            }
+            .padding(.top, 32)
+            .background(Color.App.backgroundGray.ignoresSafeArea())
+            .navigationTitle("更换颜色")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { presentationMode.wrappedValue.dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("确定") {
+                        store.updateProjectColor(project, colorHex: selectedColor)
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .font(.system(size: 16, weight: .bold))
+                    .disabled(selectedColor == project.colorHex)
+                }
+            }
+        }
     }
 }
 

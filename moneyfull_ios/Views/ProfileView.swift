@@ -7,6 +7,7 @@ struct ProfileView: View {
     @State private var showBudgetSetting = false
     @State private var showExportAlert = false
     @State private var showThemePicker = false
+    @State private var showCategoryManagement = false
     @State private var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "钱小满用户"
     @State private var showEditName = false
     @State private var tempName: String = ""
@@ -25,7 +26,7 @@ struct ProfileView: View {
                 VStack(spacing: 12) {
                     ZStack(alignment: .bottomTrailing) {
                         Circle()
-                            .fill(LinearGradient(colors: [Color.App.primaryGreen, .white],
+                            .fill(LinearGradient(colors: [Color.App.primaryGreen, Color.App.backgroundGray],
                                                  startPoint: .topLeading, endPoint: .bottomTrailing))
                             .frame(width: 128, height: 128)
                             .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 5)
@@ -105,6 +106,12 @@ struct ProfileView: View {
                                  title: "月度预算设置") {
                             showBudgetSetting = true
                         }
+                        MenuItem(icon: "tag.fill",
+                                 iconBg: Color.App.lightGreen.opacity(0.5),
+                                 iconColor: Color.App.darkGreen,
+                                 title: "分类管理") {
+                            showCategoryManagement = true
+                        }
                         MenuItem(icon: "arrow.down.doc",
                                  iconBg: Color.App.lightOrange.opacity(0.4),
                                  iconColor: Color.App.darkOrange,
@@ -120,11 +127,12 @@ struct ProfileView: View {
                         MenuItem(icon: "questionmark.circle",
                                  iconBg: Color.gray.opacity(0.1),
                                  iconColor: .gray,
-                                 title: "帮助与反馈",
-                                 hasBorder: false) {}
+                                 title: "帮助与反馈") {}
+                        ICloudStatusRow(store: store)
+                            .environmentObject(store)
                     }
                     .padding(8)
-                    .background(Color.white)
+                    .background(Color.App.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 32))
                     .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
                 }
@@ -164,6 +172,10 @@ struct ProfileView: View {
         .sheet(isPresented: $showBudgetSetting) {
             BudgetSettingView()
         }
+        // 分类管理页面
+        .sheet(isPresented: $showCategoryManagement) {
+            CategoryManagementView()
+        }
         // 主题选择弹窗
         .sheet(isPresented: $showThemePicker) {
             ThemePickerView()
@@ -198,6 +210,47 @@ struct ProfileStatCard: View {
     }
 }
 
+// MARK: - iCloud 同步状态行
+struct ICloudStatusRow: View {
+    @ObservedObject var store: AppStore
+    
+    private var stats: (projectCount: Int, transactionCount: Int, categoryCount: Int) {
+        store.dataStats()
+    }
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Circle()
+                .fill(Color.blue.opacity(0.12))
+                .frame(width: 48, height: 48)
+                .overlay(
+                    Image(systemName: "icloud.fill")
+                        .foregroundColor(.blue)
+                        .font(.system(size: 20, weight: .semibold))
+                )
+            VStack(alignment: .leading, spacing: 3) {
+                Text("iCloud 已同步")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(Color.App.textBlack)
+                Text("\(stats.projectCount) 个项目 · \(stats.transactionCount) 笔账单")
+                    .font(.system(size: 12))
+                    .foregroundColor(.gray)
+            }
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(Color.App.darkGreen)
+                .font(.system(size: 18))
+        }
+        .padding(16)
+        .overlay(
+            Divider()
+                .background(Color.gray.opacity(0.08))
+                .padding(.leading, 80),
+            alignment: .bottom
+        )
+    }
+}
+
 // MARK: - 本月财务小结
 struct MonthSummaryCard: View {
     let store: AppStore
@@ -219,7 +272,7 @@ struct MonthSummaryCard: View {
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 28))
         .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
     }
@@ -298,9 +351,8 @@ struct BudgetSettingView: View {
                                 .fill(Color(hex: project.colorHex).opacity(0.3))
                                 .frame(width: 40, height: 40)
                                 .overlay(
-                                    Image(systemName: project.icon)
-                                        .foregroundColor(Color(hex: project.colorHex))
-                                        .font(.system(size: 16))
+                                    AppIconView(name: project.icon, size: 18,
+                                                color: Color(hex: project.colorHex))
                                 )
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(project.name)
@@ -331,9 +383,8 @@ struct BudgetSettingView: View {
                                 .fill(Color(hex: project.colorHex).opacity(0.3))
                                 .frame(width: 40, height: 40)
                                 .overlay(
-                                    Image(systemName: project.icon)
-                                        .foregroundColor(Color(hex: project.colorHex))
-                                        .font(.system(size: 16))
+                                    AppIconView(name: project.icon, size: 18,
+                                                color: Color(hex: project.colorHex))
                                 )
                             Text(project.name)
                                 .font(.system(size: 15, weight: .bold))
@@ -411,7 +462,7 @@ struct ThemePickerView: View {
                             .padding(18)
                             .background(
                                 RoundedRectangle(cornerRadius: 24)
-                                    .fill(Color.white)
+                                    .fill(Color.App.cardBackground)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 24)
                                             .stroke(theme.mode == mode ? Color.App.primaryGreen : Color.clear, lineWidth: 2.5)

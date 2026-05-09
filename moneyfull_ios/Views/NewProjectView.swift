@@ -8,14 +8,9 @@ struct NewProjectView: View {
     @State private var desc = ""
     @State private var budgetText = ""
     @State private var selectedIcon = "folder.fill"
-    @State private var selectedColor = "#A8E6CF"
+    @State private var selectedColor = "#A8E0C2"
     
-    private let iconOptions = [
-        ("folder.fill", "#A8E6CF"), ("house.fill", "#DCEDC1"), ("airplane", "#A8E6CF"),
-        ("car.fill", "#DCDE8D"), ("cart.fill", "#FDD1B4"), ("briefcase.fill", "#FDD1B4"),
-        ("heart.fill", "#FCE7F3"), ("book.fill", "#DBEAFE"), ("gamecontroller.fill", "#F3E8FF"),
-        ("paintpalette.fill", "#FDD1B4"), ("hammer.fill", "#DCEDC1"), ("graduationcap.fill", "#FFEDD5"),
-    ]
+    private let iconOptions = CategoryIconLibrary.project
     
     var body: some View {
         NavigationView {
@@ -51,29 +46,46 @@ struct NewProjectView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                     }
                     
-                    // MARK: 图标 + 颜色选择
+                    // MARK: 图标选择
                     VStack(alignment: .leading, spacing: 12) {
                         Text("选择图标").sectionTitle()
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-                            ForEach(iconOptions, id: \.0) { (icon, color) in
+                            ForEach(iconOptions, id: \.self) { icon in
                                 Button(action: {
                                     selectedIcon = icon
-                                    selectedColor = color
                                 }) {
-                                    let pair = progressColorPair(for: color)
                                     Circle()
-                                        // 背景透明度提高，颜色更饱和
-                                        .fill(Color(hex: color).opacity(0.55))
+                                        .fill(Color(hex: selectedColor).opacity(0.55))
                                         .frame(width: 56, height: 56)
                                         .overlay(
                                             Image(systemName: icon)
                                                 .font(.system(size: 22))
-                                                // 图标使用深色版本，对比更清晰
-                                                .foregroundColor(Color(hex: pair.end))
+                                                .foregroundColor(Color(hex: progressColorPair(for: selectedColor).end))
                                         )
                                         .overlay(
                                             Circle()
                                                 .stroke(Color.App.darkGreen, lineWidth: selectedIcon == icon ? 3 : 0)
+                                        )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // MARK: 颜色选择
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("选择颜色").sectionTitle()
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                            ForEach(Color.App.Morandi.allHexes, id: \.self) { hex in
+                                Button(action: {
+                                    selectedColor = hex
+                                }) {
+                                    Circle()
+                                        .fill(Color(hex: hex))
+                                        .frame(width: 56, height: 56)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.App.darkGreen, lineWidth: selectedColor == hex ? 3 : 0)
+                                                .padding(2)
                                         )
                                 }
                             }
@@ -106,7 +118,7 @@ struct NewProjectView: View {
                         }
                         .padding(20)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white)
+                        .background(Color.App.cardBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 5)
                     }

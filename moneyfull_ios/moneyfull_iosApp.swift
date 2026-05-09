@@ -5,13 +5,64 @@ import SwiftData
 struct moneyfull_iosApp: App {
     @StateObject private var theme = ThemeManager()
     
+    private let modelContainer: ModelContainer
+    
+    init() {
+        modelContainer = Self.createModelContainer()
+    }
+    
+    private static func createModelContainer() -> ModelContainer {
+        do {
+            let config = ModelConfiguration(cloudKitDatabase: .automatic)
+            let container = try ModelContainer(
+                for: Project.self, Transaction.self, Category.self,
+                configurations: config
+            )
+            #if DEBUG
+            print("✅ CloudKit 存储已启用")
+            #endif
+            return container
+        } catch {
+            #if DEBUG
+            print("⚠️ CloudKit 不可用: \(error.localizedDescription)，尝试本地存储...")
+            #endif
+        }
+        
+        do {
+            let container = try ModelContainer(
+                for: Project.self, Transaction.self, Category.self
+            )
+            #if DEBUG
+            print("✅ 本地存储已启用")
+            #endif
+            return container
+        } catch {
+            #if DEBUG
+            print("⚠️ 本地存储迁移失败: \(error.localizedDescription)，使用内存模式...")
+            #endif
+        }
+        
+        do {
+            let config = ModelConfiguration(isStoredInMemoryOnly: true)
+            let container = try ModelContainer(
+                for: Project.self, Transaction.self, Category.self,
+                configurations: config
+            )
+            #if DEBUG
+            print("⚠️ 内存模式已启用（数据不会持久化）")
+            #endif
+            return container
+        } catch {
+            fatalError("无法创建 ModelContainer: \(error.localizedDescription)")
+        }
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(theme)
-                // 根据主题偏好应用颜色方案（nil = 跟随系统）
                 .preferredColorScheme(theme.colorScheme)
         }
-        .modelContainer(for: [Project.self, Transaction.self, Category.self])
+        .modelContainer(modelContainer)
     }
 }

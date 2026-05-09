@@ -7,15 +7,15 @@ struct OnboardingView: View {
     
     private let pages: [OnboardingPage] = [
         OnboardingPage(
-            emoji: "🦫",
+            imageName: "onboarding_1",
             title: "你好，我是钱小满",
-            subtitle: "一只懒洋洋的卡皮巴拉，\n专门帮你管好每一分钱。",
+            subtitle: "一只淡定靠谱的卡皮巴拉，\n专门帮你管好每一分钱。",
             tip: "不用焦虑，慢慢来，钱的事交给我～",
             bgColor: "#A8E6CF",
             darkColor: "#2C6957"
         ),
         OnboardingPage(
-            emoji: "📁",
+            imageName: "onboarding_2",
             title: "用「项目」管理你的钱",
             subtitle: "装修、旅行、日常开销...\n每件事都有自己的账本。",
             tip: "先建一个项目，再记录里面的每笔支出收入",
@@ -23,7 +23,7 @@ struct OnboardingView: View {
             darkColor: "#2C6957"
         ),
         OnboardingPage(
-            emoji: "✏️",
+            imageName: "onboarding_3",
             title: "记一笔，很简单",
             subtitle: "点底部的「+」号，\n输入金额选好分类就完成了。",
             tip: "每天花2秒记录，月底心里有底",
@@ -57,19 +57,14 @@ struct OnboardingView: View {
                 
                 Spacer()
                 
-                // 卡皮巴拉/图标大展示区
-                ZStack {
-                    Circle()
-                        .fill(Color(hex: pages[currentPage].bgColor).opacity(0.5))
-                        .frame(width: 180, height: 180)
-                        .animation(.easeInOut(duration: 0.4), value: currentPage)
-                    
-                    Text(pages[currentPage].emoji)
-                        .font(.system(size: 90))
-                        .scaleEffect(currentPage == 0 ? 1.0 : 0.85)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.6), value: currentPage)
-                }
-                .padding(.bottom, 40)
+                // 插图展示区
+                Image(pages[currentPage].imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 280, height: 280)
+                    .scaleEffect(currentPage == 0 ? 1.0 : 0.95)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.6), value: currentPage)
+                    .padding(.bottom, 24)
                 
                 // 文案区
                 VStack(spacing: 16) {
@@ -170,7 +165,7 @@ struct OnboardingView: View {
 
 // MARK: - 引导页数据模型
 struct OnboardingPage {
-    let emoji: String
+    let imageName: String
     let title: String
     let subtitle: String
     let tip: String

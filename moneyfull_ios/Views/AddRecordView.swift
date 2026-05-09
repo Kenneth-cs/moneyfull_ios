@@ -7,12 +7,13 @@ struct AddRecordView: View {
     
     @State private var type: TransactionType = .expense
     @State private var amount: String = ""
-    @State private var selectedCategory = categories[0]
+    @State private var selectedCategory: Category? = nil
     @State private var selectedProject: Project? = nil
     @State private var note: String = ""
     @State private var date: Date = Date()
     @State private var showDatePicker = false
     @State private var showProjectPicker = false
+    @State private var showQuickAddCategory = false
     @State private var showKeypad = true  // 控制数字键盘显示/收起
     
     // 触觉反馈生成器
@@ -111,10 +112,28 @@ struct AddRecordView: View {
                         }
                         
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 20) {
-                            ForEach(categories, id: \.name) { cat in
-                                CategoryItem(cat: cat, isSelected: selectedCategory.name == cat.name) {
+                            ForEach(store.categories.filter {
+                                type == .expense ? ($0.transactionType == "expense" || $0.transactionType == "both")
+                                                 : ($0.transactionType == "income" || $0.transactionType == "both")
+                            }, id: \.id) { cat in
+                                CategoryItem(name: cat.name, icon: cat.icon, colorHex: cat.colorHex, isSelected: selectedCategory?.id == cat.id) {
                                     impactFeedback.impactOccurred()
                                     selectedCategory = cat
+                                }
+                            }
+                            Button(action: { showQuickAddCategory = true }) {
+                                VStack(spacing: 8) {
+                                    Circle()
+                                        .fill(Color.App.primaryGreen.opacity(0.4))
+                                        .frame(width: 56, height: 56)
+                                        .overlay(
+                                            Image(systemName: "plus")
+                                                .font(.system(size: 22, weight: .bold))
+                                                .foregroundColor(Color.App.darkGreen)
+                                        )
+                                    Text("新增")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(Color.App.darkGreen.opacity(0.7))
                                 }
                             }
                         }
@@ -225,7 +244,7 @@ struct AddRecordView: View {
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showKeypad)
             .background(
-                Color.white
+                Color.App.cardBackground
                     .clipShape(RoundedRectangle(cornerRadius: 40))
                     .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -10)
             )
@@ -239,10 +258,21 @@ struct AddRecordView: View {
         .sheet(isPresented: $showDatePicker) {
             DatePickerSheet(date: $date)
         }
+        // 快速新增分类
+        .sheet(isPresented: $showQuickAddCategory) {
+            QuickAddCategorySheet { name, icon, colorHex in
+                store.addCategory(name: name, icon: icon, colorHex: colorHex)
+                if let newCat = store.categories.last {
+                    selectedCategory = newCat
+                }
+            }
+        }
         .onAppear {
-            // 默认选中第一个项目（通常是日常收支）
             if selectedProject == nil {
                 selectedProject = store.activeProjects.first
+            }
+            if selectedCategory == nil {
+                selectedCategory = store.categories.first
             }
         }
     }
@@ -259,7 +289,7 @@ struct AddRecordView: View {
                 .foregroundColor(type == t ? Color.App.textBlack : Color.gray)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(type == t ? Color.white : Color.clear)
+                .background(type == t ? Color.App.cardBackground : Color.clear)
                 .clipShape(Capsule())
                 .shadow(color: type == t ? Color.black.opacity(0.05) : Color.clear, radius: 2, x: 0, y: 1)
         }
@@ -272,23 +302,24 @@ struct AddRecordView: View {
         case "del":
             if !amount.isEmpty { amount.removeLast() }
         case ".":
-            // 不允许输入两个小数点
             if !amount.contains(".") { amount += key }
         default:
-            // 限制总长度、小数点后最多2位
             if let dotIndex = amount.firstIndex(of: ".") {
                 let decimals = amount.distance(from: amount.index(after: dotIndex), to: amount.endIndex)
                 if decimals >= 2 { return }
             }
             if amount.count < 10 { amount += key }
         }
+        if let val = Double(amount), val > 1000 {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
     }
     
     // MARK: - 保存账单
     private func handleSave() {
         guard let project = selectedProject,
+              let category = selectedCategory,
               let amountValue = Double(amount), amountValue > 0 else {
-            // 如果项目未选或金额为0，震动提示错误
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return
         }
@@ -297,9 +328,9 @@ struct AddRecordView: View {
             to: project,
             amount: amountValue,
             type: type,
-            categoryName: selectedCategory.name,
-            categoryIcon: selectedCategory.icon,
-            categoryColorHex: selectedCategory.colorHex,
+            categoryName: category.name,
+            categoryIcon: category.icon,
+            categoryColorHex: category.colorHex,
             note: note,
             date: date
         )
@@ -315,7 +346,7 @@ struct AddRecordView: View {
             eventName: "记账成功",
             params: [
                 "type": type == .expense ? "expense" : "income",
-                "category": selectedCategory.name,
+                "category": category.name,
                 "is_custom_project": project.name != "日常收支",
                 "amount_level": amountLevel
             ]
@@ -326,27 +357,11 @@ struct AddRecordView: View {
     }
 }
 
-// MARK: - 全局通用分类数据
-struct CategoryInfo {
+// MARK: - 分类 Item 组件
+struct CategoryItem: View {
     let name: String
     let icon: String
     let colorHex: String
-}
-
-let categories: [CategoryInfo] = [
-    CategoryInfo(name: "餐饮", icon: "fork.knife",       colorHex: "#A8E6CF"),
-    CategoryInfo(name: "购物", icon: "bag.fill",         colorHex: "#FDD1B4"),
-    CategoryInfo(name: "交通", icon: "car.fill",         colorHex: "#DCDE8D"),
-    CategoryInfo(name: "居家", icon: "house.fill",       colorHex: "#DBEAFE"),
-    CategoryInfo(name: "娱乐", icon: "gamecontroller.fill", colorHex: "#F3E8FF"),
-    CategoryInfo(name: "医疗", icon: "heart.text.square.fill", colorHex: "#FCE7F3"),
-    CategoryInfo(name: "教育", icon: "graduationcap.fill", colorHex: "#FFEDD5"),
-    CategoryInfo(name: "其他", icon: "ellipsis.circle.fill", colorHex: "#EEEEEE"),
-]
-
-// MARK: - 分类 Item 组件
-struct CategoryItem: View {
-    let cat: CategoryInfo
     let isSelected: Bool
     let action: () -> Void
     
@@ -354,12 +369,12 @@ struct CategoryItem: View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Circle()
-                    .fill(Color(hex: cat.colorHex))
+                    .fill(Color(hex: colorHex))
                     .frame(width: 56, height: 56)
                     .overlay(
-                        Image(systemName: cat.icon)
+                        Image(systemName: icon)
                             .font(.system(size: 22))
-                            .foregroundColor(.black.opacity(0.7))
+                            .foregroundColor(Color.App.textBlack.opacity(0.7))
                     )
                     .overlay(
                         Circle()
@@ -368,7 +383,7 @@ struct CategoryItem: View {
                     .scaleEffect(isSelected ? 1.1 : 1.0)
                     .animation(.spring(response: 0.3), value: isSelected)
                 
-                Text(cat.name)
+                Text(name)
                     .font(.system(size: 11, weight: isSelected ? .bold : .medium))
                     .foregroundColor(isSelected ? Color.App.darkGreen : Color.App.textBlack.opacity(0.7))
             }
@@ -437,8 +452,8 @@ struct ProjectPickerView: View {
                             .fill(Color(hex: project.colorHex).opacity(0.3))
                             .frame(width: 44, height: 44)
                             .overlay(
-                                Image(systemName: project.icon)
-                                    .foregroundColor(Color(hex: project.colorHex))
+                                AppIconView(name: project.icon, size: 20,
+                                            color: Color(hex: project.colorHex))
                             )
                         Text(project.name)
                             .font(.system(size: 16, weight: .bold))
@@ -475,6 +490,114 @@ struct DatePickerSheet: View {
                         Button("确定") { presentationMode.wrappedValue.dismiss() }
                     }
                 }
+        }
+    }
+}
+
+// MARK: - 快速新增分类 Sheet
+struct QuickAddCategorySheet: View {
+    @Environment(\.presentationMode) var presentationMode
+    let onSave: (String, String, String) -> Void
+    
+    @State private var name = ""
+    @State private var selectedIcon = "tag.fill"
+    @State private var selectedColor = "#A8E0C2"
+    
+    private let iconOptions = CategoryIconLibrary.all
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("分类名称")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.gray)
+                        TextField("输入分类名称", text: $name)
+                            .padding(14)
+                            .background(Color.App.tabBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .font(.system(size: 15))
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("图标")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.gray)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6), spacing: 10) {
+                            ForEach(iconOptions, id: \.self) { icon in
+                                Button(action: { selectedIcon = icon }) {
+                                    Image(systemName: icon)
+                                        .font(.system(size: 18))
+                                        .foregroundColor(selectedIcon == icon ? Color.App.darkGreen : .gray)
+                                        .frame(width: 40, height: 40)
+                                        .background(selectedIcon == icon ? Color.App.primaryGreen.opacity(0.3) : Color.App.tabBackground)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("颜色")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.gray)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
+                            ForEach(Color.App.morandiColorOptions, id: \.self) { color in
+                                Button(action: { selectedColor = color }) {
+                                    Circle()
+                                        .fill(Color(hex: color))
+                                        .frame(width: 40, height: 40)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.App.darkGreen, lineWidth: selectedColor == color ? 2.5 : 0)
+                                                .padding(2)
+                                        )
+                                }
+                            }
+                        }
+                    }
+                    
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color(hex: selectedColor))
+                            .frame(width: 44, height: 44)
+                            .overlay(
+                                Image(systemName: selectedIcon)
+                                    .foregroundColor(Color.App.textBlack.opacity(0.7))
+                                    .font(.system(size: 18))
+                            )
+                        Text(name.isEmpty ? "分类名称" : name)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(name.isEmpty ? .gray : Color.App.textBlack)
+                        Spacer()
+                    }
+                    .padding(16)
+                    .background(Color.App.tabBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    
+                    Spacer().frame(height: 20)
+                }
+                .padding(20)
+            }
+            .background(Color.App.backgroundGray.ignoresSafeArea())
+            .navigationTitle("快速新增分类")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { presentationMode.wrappedValue.dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("添加") {
+                        let trimmed = name.trimmingCharacters(in: .whitespaces)
+                        guard !trimmed.isEmpty else { return }
+                        onSave(trimmed, selectedIcon, selectedColor)
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .font(.system(size: 16, weight: .bold))
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
         }
     }
 }
