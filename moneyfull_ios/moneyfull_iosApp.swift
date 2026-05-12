@@ -62,6 +62,7 @@ struct moneyfull_iosApp: App {
             ContentView()
                 .environmentObject(theme)
                 .preferredColorScheme(theme.colorScheme)
+                .tint(Color.App.darkGreen)
         }
         .modelContainer(modelContainer)
     }

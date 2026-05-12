@@ -30,7 +30,6 @@ struct MainTabView: View {
                 ProfileView()
                     .tag(4)
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             .background(Color.clear) // TabView 本身透明，背景由底层提供
             
             // ③ 自定义底部 Tab 栏（含底部安全区填充）

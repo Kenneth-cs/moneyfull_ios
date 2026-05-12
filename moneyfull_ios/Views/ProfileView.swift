@@ -8,6 +8,7 @@ struct ProfileView: View {
     @State private var showExportAlert = false
     @State private var showThemePicker = false
     @State private var showCategoryManagement = false
+    @State private var showProjectSorting = false
     @State private var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "钱小满用户"
     @State private var showEditName = false
     @State private var tempName: String = ""
@@ -112,6 +113,12 @@ struct ProfileView: View {
                                  title: "分类管理") {
                             showCategoryManagement = true
                         }
+                        MenuItem(icon: "arrow.up.arrow.down",
+                                 iconBg: Color.App.lightYellow.opacity(0.4),
+                                 iconColor: Color.App.darkYellow,
+                                 title: "项目排序") {
+                            showProjectSorting = true
+                        }
                         MenuItem(icon: "arrow.down.doc",
                                  iconBg: Color.App.lightOrange.opacity(0.4),
                                  iconColor: Color.App.darkOrange,
@@ -179,6 +186,11 @@ struct ProfileView: View {
         // 主题选择弹窗
         .sheet(isPresented: $showThemePicker) {
             ThemePickerView()
+        }
+        // 项目排序页面
+        .sheet(isPresented: $showProjectSorting) {
+            ProjectSortingView()
+                .environmentObject(store)
         }
     }
 }
@@ -510,6 +522,63 @@ struct ThemePickerView: View {
         case .system: return "随系统自动切换，省心省事"
         case .light:  return "清爽明亮，白天使用更舒适"
         case .dark:   return "护眼深色，夜间使用很友好"
+        }
+    }
+}
+
+struct ProjectSortingView: View {
+    @Environment(\.presentationMode) var presentationMode
+    @EnvironmentObject var store: AppStore
+    @State private var projects: [Project] = []
+
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(projects) { project in
+                    HStack(spacing: 14) {
+                        Circle()
+                            .fill(Color(hex: project.colorHex).opacity(0.3))
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                AppIconView(name: project.icon, size: 18,
+                                            color: Color(hex: project.colorHex))
+                            )
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(project.name)
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                            if project.isPinned {
+                                Text("已置顶")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundColor(.gray.opacity(0.5))
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onMove { source, destination in
+                    projects.move(fromOffsets: source, toOffset: destination)
+                    store.updateProjectSortOrder(projects)
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("项目排序")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") {
+                        store.updateProjectSortOrder(projects)
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .font(.system(size: 16, weight: .bold))
+                }
+            }
+        }
+        .onAppear {
+            projects = store.activeProjects
         }
     }
 }

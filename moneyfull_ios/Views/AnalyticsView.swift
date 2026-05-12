@@ -417,7 +417,7 @@ struct InsightCardView: View {
             let topAmt = topCat.value.reduce(0) { $0 + $1.amount }
             return "「\(topCat.key)」是本月最大支出项（¥\(Int(topAmt))）。适当规划一下，下个月会更从容～"
         }
-        return "记录越多，水豚越了解你的财务习惯，快去记一笔吧！"
+        return "记录越多，小满越了解你的财务习惯，快去记一笔吧！"
     }
     
     // MARK: 健康提醒文案（橙卡）
@@ -429,7 +429,7 @@ struct InsightCardView: View {
         if surplus > 0 {
             return "干得漂亮！本月结余 ¥\(Int(surplus))，财务状态就像泡在温泉里一样舒适 ♨️"
         } else if income == 0 {
-            return "本月支出 ¥\(Int(expense))，还没有录入收入，记得补上哦，水豚在等你～"
+            return "本月支出 ¥\(Int(expense))，还没有录入收入，记得补上哦，小满在等你～"
         } else {
             return "本月支出超出收入 ¥\(Int(abs(surplus)))，不过偶尔犒劳自己也没关系，下个月慢慢调整回来就好 🦫"
         }

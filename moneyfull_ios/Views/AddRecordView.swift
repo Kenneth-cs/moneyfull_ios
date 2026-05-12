@@ -47,7 +47,7 @@ struct AddRecordView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(amount.isEmpty ? Color.gray : Color(hex: "#546073"))
+                        .background(amount.isEmpty ? Color.gray : Color.App.darkGreen)
                         .clipShape(Capsule())
                 }
                 .disabled(amount.isEmpty)
@@ -72,35 +72,106 @@ struct AddRecordView: View {
                     .background(Color.App.tabBackground)
                     .clipShape(Capsule())
                     
-                    // MARK: 金额展示区（点击可展开键盘）
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 40)
-                            .fill(Color.App.amountBg)
-                        
-                        VStack(spacing: 8) {
-                            Text("输入金额")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(Color(hex: "#484A07").opacity(0.6))
-                                .kerning(2)
+                    // MARK: 金额展示区（包含日期选择）
+                    ZStack(alignment: .topLeading) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 40)
+                                .fill(Color.App.amountBg)
                             
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text("¥")
-                                    .font(.system(size: 28, weight: .bold))
-                                    .foregroundColor(Color(hex: "#1C1D00"))
+                            VStack(spacing: 8) {
+                                Text("输入金额")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(Color(hex: "#484A07").opacity(0.6))
+                                    .kerning(2)
+                                
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text("¥")
+                                        .font(.system(size: 28, weight: .bold))
+                                        .foregroundColor(Color(hex: "#1C1D00"))
                                 Text(displayAmount)
-                                    .font(.system(size: 56, weight: .black))
-                                    .foregroundColor(Color(hex: "#1C1D00"))
-                                    .minimumScaleFactor(0.5)
-                                    .lineLimit(1)
-                                // 键盘收起时不显示光标
-                                if showKeypad { BlinkingCursor() }
+                                        .font(.system(size: 56, weight: .black))
+                                        .foregroundColor(Color(hex: "#1C1D00"))
+                                        .minimumScaleFactor(0.5)
+                                        .lineLimit(1)
+                                    // 键盘收起时不显示光标
+                                    if showKeypad { BlinkingCursor() }
+                                }
                             }
+                            .padding(.vertical, 28)
                         }
-                        .padding(.vertical, 28)
+                        
+                        // MARK: 日期选择（浓缩悬浮版）
+                        Button(action: { showDatePicker = true }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 12))
+                                Text({
+                                    let f = DateFormatter()
+                                    f.dateFormat = "M月d日"
+                                    return f.string(from: date)
+                                }())
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .foregroundColor(Color(hex: "#1C1D00").opacity(0.7))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.6))
+                            .clipShape(Capsule())
+                        }
+                        .padding(16)
                     }
                     .padding(.horizontal, 24)
                     // 点击金额区展开键盘
                     .onTapGesture { showKeypad = true }
+                    
+                    // MARK: 归属项目选择（横向卡片）
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("归属项目")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                            Spacer()
+                            Button(action: { showProjectPicker = true }) {
+                                Image(systemName: "list.bullet")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(store.activeProjects) { project in
+                                    let isSelected = selectedProject?.id == project.id
+                                    Button(action: {
+                                        impactFeedback.impactOccurred()
+                                        selectedProject = project
+                                    }) {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: project.icon)
+                                                .font(.system(size: 14))
+                                                .foregroundColor(Color(hex: project.colorHex))
+                                            Text(project.name)
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundColor(isSelected ? Color.App.textBlack : Color.gray)
+                                                .lineLimit(1)
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(
+                                            Capsule()
+                                                .fill(isSelected ? Color(hex: project.colorHex).opacity(0.3) : Color.App.tabBackground)
+                                        )
+                                        .overlay(
+                                            Capsule()
+                                                .strokeBorder(isSelected ? Color.App.darkGreen : Color.clear, lineWidth: 2)
+                                        )
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 24)
+                        }
+                    }
                     
                     // MARK: 分类选择
                     VStack(alignment: .leading, spacing: 14) {
@@ -140,37 +211,6 @@ struct AddRecordView: View {
                     }
                     .padding(.horizontal, 24)
                     
-                    // MARK: 归属项目选择
-                    Button(action: { showProjectPicker = true }) {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(Color(hex: "#E2E2E2"))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: selectedProject?.icon ?? "folder.fill")
-                                        .foregroundColor(.gray)
-                                )
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("归属项目")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.gray)
-                                    .kerning(1)
-                                Text(selectedProject?.name ?? "请选择项目")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(selectedProject == nil ? .gray : Color.App.textBlack)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.down")
-                                .foregroundColor(.gray)
-                                .font(.system(size: 14))
-                        }
-                        .padding(16)
-                        .background(Color.App.tabBackground)
-                        .clipShape(Capsule())
-                        .padding(.horizontal, 24)
-                    }
-                    
                     // MARK: 备注输入
                     HStack(spacing: 12) {
                         Circle()
@@ -208,25 +248,23 @@ struct AddRecordView: View {
                             KeyButton(label: "1") { handleKey("1") }
                             KeyButton(label: "2") { handleKey("2") }
                             KeyButton(label: "3") { handleKey("3") }
-                            KeyButton(icon: "calendar") { showDatePicker = true }
+                            KeyButton(label: "+") { handleKey("+") }
                         }
                         HStack(spacing: 12) {
                             KeyButton(label: "4") { handleKey("4") }
                             KeyButton(label: "5") { handleKey("5") }
                             KeyButton(label: "6") { handleKey("6") }
-                            KeyButton(label: "+") { handleKey("+") }
+                            KeyButton(label: "-") { handleKey("-") }
                         }
                         HStack(spacing: 12) {
                             KeyButton(label: "7") { handleKey("7") }
                             KeyButton(label: "8") { handleKey("8") }
                             KeyButton(label: "9") { handleKey("9") }
-                            KeyButton(label: "-") { handleKey("-") }
+                            KeyButton(label: ".") { handleKey(".") }
                         }
                         HStack(spacing: 12) {
-                            KeyButton(label: ".") { handleKey(".") }
-                            KeyButton(label: "0") { handleKey("0") }
                             KeyButton(icon: "delete.left.fill") { handleKey("del") }
-                            // 「确认」仅收起键盘，不提交表单（顶部"完成"按钮才是提交）
+                            KeyButton(label: "0") { handleKey("0") }
                             Button(action: { showKeypad = false }) {
                                 Text("确认")
                                     .font(.system(size: 18, weight: .heavy))
@@ -482,6 +520,7 @@ struct DatePickerSheet: View {
         NavigationView {
             DatePicker("选择日期", selection: $date, displayedComponents: .date)
                 .datePickerStyle(.graphical)
+                .environment(\.locale, Locale(identifier: "zh_CN"))
                 .padding()
                 .navigationTitle("选择日期")
                 .navigationBarTitleDisplayMode(.inline)

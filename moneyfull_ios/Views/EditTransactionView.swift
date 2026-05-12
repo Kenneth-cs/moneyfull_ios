@@ -50,7 +50,7 @@ struct EditTransactionView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(amount.isEmpty ? Color.gray : Color(hex: "#546073"))
+                        .background(amount.isEmpty ? Color.gray : Color.App.darkGreen)
                         .clipShape(Capsule())
                 }
                 .disabled(amount.isEmpty)

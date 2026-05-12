@@ -11,8 +11,9 @@ private func smartFormat(_ value: Double) -> String {
 
 struct DashboardView: View {
     @EnvironmentObject var store: AppStore
-    // 选中的项目，用于弹出详情页（sheet）
     @State private var detailProject: Project? = nil
+    @State private var editingTransaction: Transaction?
+    @State private var viewingTransaction: Transaction?
     
     // 进行中项目按创建时间倒序（最新在前）
     private var sortedActiveProjects: [Project] {
@@ -83,7 +84,7 @@ struct DashboardView: View {
                     .padding(.horizontal, 24)
                     
                     if sortedActiveProjects.isEmpty {
-                        // 空状态：卡皮巴拉引导新建项目
+                        // 空状态：小满引导新建项目
                         VStack(spacing: 12) {
                             Text("🦫")
                                 .font(.system(size: 40))
@@ -149,11 +150,28 @@ struct DashboardView: View {
                     } else {
                         VStack(spacing: 12) {
                             ForEach(store.recentTransactions.prefix(10)) { tx in
-                                TransactionItem(transaction: tx)
+                                SwipeActionView(
+                                    onEdit: { editingTransaction = tx },
+                                    onDelete: { store.deleteTransaction(tx) }
+                                ) {
+                                    TransactionItem(transaction: tx)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            viewingTransaction = tx
+                                        }
+                                }
                             }
                         }
                         .padding(.horizontal, 24)
                     }
+                }
+                .sheet(item: $editingTransaction) { tx in
+                    EditTransactionView(transaction: tx)
+                        .environmentObject(store)
+                }
+                .sheet(item: $viewingTransaction) { tx in
+                    TransactionDetailView(transaction: tx)
+                        .environmentObject(store)
                 }
                 
                 Spacer().frame(height: 16)

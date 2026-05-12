@@ -9,7 +9,7 @@ struct OnboardingView: View {
         OnboardingPage(
             imageName: "onboarding_1",
             title: "你好，我是钱小满",
-            subtitle: "一只淡定靠谱的卡皮巴拉，\n专门帮你管好每一分钱。",
+            subtitle: "一只淡定靠谱的小满，\n专门帮你管好每一分钱。",
             tip: "不用焦虑，慢慢来，钱的事交给我～",
             bgColor: "#A8E6CF",
             darkColor: "#2C6957"

@@ -5,7 +5,10 @@ struct ProjectDetailView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.presentationMode) var presentationMode
     @State private var editingTransaction: Transaction?
+    @State private var viewingTransaction: Transaction?
     @State private var showColorPicker = false
+    @State private var showEditProject = false
+    @State private var showDeleteConfirm = false
     
     // 按日期分组的交易记录
     private var groupedTransactions: [(key: String, value: [Transaction])] {
@@ -37,7 +40,7 @@ struct ProjectDetailView: View {
                     .lineLimit(1)
                     .padding(.horizontal, 80) // 两侧各留80pt给返回按钮
                 
-                // 左侧返回按钮
+                // 左侧返回按钮 + 右侧菜单
                 HStack {
                     Button(action: { presentationMode.wrappedValue.dismiss() }) {
                         HStack(spacing: 4) {
@@ -49,6 +52,23 @@ struct ProjectDetailView: View {
                         .foregroundColor(accentColor)
                     }
                     Spacer()
+                    Menu {
+                        Button { showEditProject = true } label: {
+                            Label("编辑项目", systemImage: "pencil")
+                        }
+                        Button { store.toggleArchive(project: project) } label: {
+                            Label(project.isArchived ? "取消归档" : "归档项目",
+                                  systemImage: "archivebox")
+                        }
+                        Divider()
+                        Button(role: .destructive) { showDeleteConfirm = true } label: {
+                            Label("删除项目", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(accentColor)
+                    }
                 }
                 .padding(.horizontal, 20)
             }
@@ -172,21 +192,17 @@ struct ProjectDetailView: View {
                                     
                                     VStack(spacing: 10) {
                                         ForEach(group.value) { tx in
-                                            TimelineTxRow(transaction: tx, accentColor: Color(hex: project.colorHex))
-                                                .contextMenu {
-                                                    Button {
-                                                        editingTransaction = tx
-                                                    } label: {
-                                                        Label("编辑", systemImage: "pencil")
+                                            SwipeActionView(
+                                                onEdit: { editingTransaction = tx },
+                                                onDelete: { store.deleteTransaction(tx) }
+                                            ) {
+                                                TimelineTxRow(transaction: tx, accentColor: Color(hex: project.colorHex))
+                                                    .contentShape(Rectangle())
+                                                    .onTapGesture {
+                                                        viewingTransaction = tx
                                                     }
-                                                    Button(role: .destructive) {
-                                                        UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                                                        store.deleteTransaction(tx)
-                                                    } label: {
-                                                        Label("删除", systemImage: "trash")
-                                                    }
-                                                }
-                                                .padding(.horizontal, 24)
+                                            }
+                                            .padding(.horizontal, 24)
                                         }
                                     }
                                     .padding(.bottom, 20)
@@ -205,10 +221,27 @@ struct ProjectDetailView: View {
             EditTransactionView(transaction: tx)
                 .environmentObject(store)
         }
+        .sheet(item: $viewingTransaction) { tx in
+            TransactionDetailView(transaction: tx)
+                .environmentObject(store)
+        }
         .sheet(isPresented: $showColorPicker) {
             EditProjectColorSheet(project: project, store: store)
         }
-        .navigationBarHidden(true) // 隐藏系统导航栏，使用自定义样式
+        .sheet(isPresented: $showEditProject) {
+            EditProjectView(project: project)
+                .environmentObject(store)
+        }
+        .confirmationDialog("确认删除该项目？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                store.deleteProject(project)
+                presentationMode.wrappedValue.dismiss()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后项目内所有账单将被一并清除，且无法恢复。")
+        }
+        .navigationBarHidden(true)
     }
 }
 

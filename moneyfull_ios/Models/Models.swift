@@ -39,6 +39,7 @@ final class Project {
     var budget: Double = 0
     var isArchived: Bool = false
     var isPinned: Bool = false
+    var sortOrder: Int = 0
     var createdAt: Date = Date()
     
     @Relationship(deleteRule: .nullify, inverse: \Transaction.project)
@@ -85,7 +86,7 @@ enum TransactionType: String, Codable {
 final class Transaction {
     var id: UUID = UUID()
     var amount: Double = 0
-    var type: TransactionType = TransactionType.expense
+    var rawType: String = TransactionType.expense.rawValue // CloudKit 不支持枚举，必须用基础类型存储
     var categoryName: String = ""
     var categoryIcon: String = ""
     var categoryColorHex: String = "#A8E6CF"
@@ -95,12 +96,19 @@ final class Transaction {
     
     var project: Project? = nil
     
+    // 提供一个计算属性方便业务层使用枚举
+    @Transient
+    var type: TransactionType {
+        get { TransactionType(rawValue: rawType) ?? .expense }
+        set { rawType = newValue.rawValue }
+    }
+    
     init(amount: Double, type: TransactionType, categoryName: String,
          categoryIcon: String, categoryColorHex: String,
          note: String = "", date: Date = Date()) {
         self.id = UUID()
         self.amount = amount
-        self.type = type
+        self.rawType = type.rawValue
         self.categoryName = categoryName
         self.categoryIcon = categoryIcon
         self.categoryColorHex = categoryColorHex

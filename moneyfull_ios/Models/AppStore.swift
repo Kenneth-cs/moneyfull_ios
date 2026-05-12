@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import CoreData
 
 /// 全局状态管理：负责所有数据的增删查改，注入到 View 层使用
 @MainActor
@@ -29,6 +30,10 @@ class AppStore: ObservableObject {
         }
     }
     
+    private var refreshDebounceTask: Task<Void, Never>?
+    private var notificationObserver: NSObjectProtocol?
+    private var cloudKitEventObserver: NSObjectProtocol?
+    
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
         let ts = UserDefaults.standard.double(forKey: "lastBackupTimestamp")
@@ -39,6 +44,59 @@ class AppStore: ObservableObject {
         migrateMorandiColors()
         migrateV3Categories()
         refresh()
+        startObservingDataChanges()
+    }
+    
+    deinit {
+        if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = cloudKitEventObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+    
+    private func startObservingDataChanges() {
+        // 监听 Core Data 的对象变化（主要捕获本地变化或部分同步变化）
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: .NSManagedObjectContextObjectsDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.triggerDebouncedRefresh()
+            }
+        }
+        
+        // 监听 CloudKit 的同步事件（捕获远程数据下载）
+        cloudKitEventObserver = NotificationCenter.default.addObserver(
+            forName: NSPersistentCloudKitContainer.eventChangedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            // 确保是 import 结束事件
+            if let event = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event {
+                if event.type == .import && event.endDate != nil {
+                    Task { @MainActor [weak self] in
+                        self?.triggerDebouncedRefresh()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func triggerDebouncedRefresh() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.refreshDebounceTask?.cancel()
+            self.refreshDebounceTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled, let self else { return }
+                self.deduplicateDefaultProjects()
+                self.deduplicateCategories()
+                self.refresh()
+            }
+        }
     }
     
     // MARK: - 读取数据
@@ -51,11 +109,15 @@ class AppStore: ObservableObject {
     }
     
     private func fetchProjects() {
-        var descriptor = FetchDescriptor<Project>()
+        let descriptor = FetchDescriptor<Project>()
         let all = (try? modelContext.fetch(descriptor)) ?? []
         activeProjects = all
             .filter { !$0.isArchived }
-            .sorted { ($0.isPinned ? 1 : 0) > ($1.isPinned ? 1 : 0) }
+            .sorted {
+                if $0.isPinned != $1.isPinned { return $0.isPinned }
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.createdAt > $1.createdAt
+            }
         archivedProjects = all
             .filter { $0.isArchived }
             .sorted { $0.createdAt > $1.createdAt }
@@ -126,7 +188,7 @@ class AppStore: ObservableObject {
                            categoryName: String, categoryIcon: String, categoryColorHex: String,
                            note: String, date: Date) {
         tx.amount = amount
-        tx.type = type
+        tx.rawType = type.rawValue // 直接修改底层存储属性
         tx.categoryName = categoryName
         tx.categoryIcon = categoryIcon
         tx.categoryColorHex = categoryColorHex
@@ -162,6 +224,25 @@ class AppStore: ObservableObject {
     
     func updateProjectColor(_ project: Project, colorHex: String) {
         project.colorHex = colorHex
+        save()
+        refresh()
+    }
+    
+    func updateProject(_ project: Project, name: String, icon: String,
+                       colorHex: String, desc: String, budget: Double) {
+        project.name = name
+        project.icon = icon
+        project.colorHex = colorHex
+        project.desc = desc
+        project.budget = budget
+        save()
+        refresh()
+    }
+
+    func updateProjectSortOrder(_ orderedProjects: [Project]) {
+        for (index, project) in orderedProjects.enumerated() {
+            project.sortOrder = index
+        }
         save()
         refresh()
     }
@@ -212,29 +293,27 @@ class AppStore: ObservableObject {
     /// 首次启动时创建默认「日常收支」项目和系统预设分类
     private func setupDefaultDataIfNeeded() {
         let descriptor = FetchDescriptor<Project>()
-        let count = (try? modelContext.fetch(descriptor).count) ?? 0
-        guard count == 0 else {
-            seedDefaultCategoriesIfNeeded()
-            return
-        }
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        let hasDailyProject = all.contains { $0.name == "日常收支" && !$0.isArchived }
         
-        // 只创建「日常收支」常驻项目，让用户从这里开始记录
-        let daily = Project(
-            name: "日常收支",
-            icon: "house.fill",
-            colorHex: "#A8E6CF",
-            desc: "日常吃喝玩乐的流水账，真实反映基础生活成本。",
-            isPinned: true
-        )
-        modelContext.insert(daily)
-        try? modelContext.save()
+        if !hasDailyProject {
+            let daily = Project(
+                name: "日常收支",
+                icon: "house.fill",
+                colorHex: "#A8E6CF",
+                desc: "日常吃喝玩乐的流水账，真实反映基础生活成本。",
+                isPinned: true
+            )
+            modelContext.insert(daily)
+            try? modelContext.save()
+        }
         
         seedDefaultCategoriesIfNeeded()
     }
     
     private func seedDefaultCategoriesIfNeeded() {
-        let catCount = (try? modelContext.fetch(FetchDescriptor<Category>()).count) ?? 0
-        guard catCount == 0 else { return }
+        let existingNames = Set(((try? modelContext.fetch(FetchDescriptor<Category>())) ?? []).map { $0.name })
+        guard existingNames.isEmpty else { return }
         
         let defaults: [(String, String, String, String)] = [
             ("餐饮", "fork.knife",                           "#F6D7A8", "expense"),
@@ -424,5 +503,66 @@ class AppStore: ObservableObject {
         save()
         fetchCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV3Done")
+    }
+    
+    // MARK: - 去重逻辑
+    
+    private func deduplicateDefaultProjects() {
+        let descriptor = FetchDescriptor<Project>()
+        guard let all = try? modelContext.fetch(descriptor) else { return }
+        
+        let dailyProjects = all.filter { $0.name == "日常收支" && !$0.isArchived }
+        guard dailyProjects.count > 1 else { return }
+        
+        let sorted = dailyProjects.sorted { lhs, rhs in
+            let lhsCount = lhs.transactions?.count ?? 0
+            let rhsCount = rhs.transactions?.count ?? 0
+            if lhsCount != rhsCount { return lhsCount > rhsCount }
+            return lhs.createdAt < rhs.createdAt
+        }
+        
+        let mainProject = sorted[0]
+        
+        for duplicate in sorted.dropFirst() {
+            if let txs = duplicate.transactions {
+                for tx in txs {
+                    tx.project = mainProject
+                }
+            }
+            modelContext.delete(duplicate)
+        }
+        
+        try? modelContext.save()
+    }
+    
+    private func deduplicateCategories() {
+        let descriptor = FetchDescriptor<Category>()
+        guard let all = try? modelContext.fetch(descriptor) else { return }
+        
+        var seen = [String: Category]()
+        var toDelete = [Category]()
+        
+        for cat in all {
+            let key = "\(cat.name)_\(cat.transactionType)"
+            if let existing = seen[key] {
+                if cat.createdAt < existing.createdAt {
+                    toDelete.append(existing)
+                    seen[key] = cat
+                } else {
+                    toDelete.append(cat)
+                }
+            } else {
+                seen[key] = cat
+            }
+        }
+        
+        guard !toDelete.isEmpty else { return }
+        
+        for cat in toDelete {
+            modelContext.delete(cat)
+        }
+        
+        try? modelContext.save()
+        fetchCategories()
     }
 }

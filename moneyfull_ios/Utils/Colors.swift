@@ -230,4 +230,56 @@ struct CategoryIconLibrary {
         "film.fill", "figure.run", "bolt.fill", "leaf.fill",
         "envelope.fill", "cross.fill", "fork.knife", "creditcard.fill",
     ]
+
+    struct IconGroup {
+        let name: String
+        let icons: [String]
+    }
+
+    static let grouped: [IconGroup] = [
+        IconGroup(name: "餐饮美食", icons: [
+            "fork.knife", "cup.and.saucer.fill", "wineglass.fill",
+            "takeoutbag.and.cup.and.straw.fill", "popcorn.fill",
+        ]),
+        IconGroup(name: "出行交通", icons: [
+            "tram.fill", "car.fill", "scooter", "fuelpump.fill", "airplane",
+        ]),
+        IconGroup(name: "购物消费", icons: [
+            "bag.fill", "cart.fill", "creditcard.fill", "banknote.fill",
+            "shippingbox.fill", "tag.fill",
+        ]),
+        IconGroup(name: "居家生活", icons: [
+            "house.fill", "basket.fill", "building.2.fill", "key.fill",
+            "paintbrush.fill", "washer.fill", "wrench.and.screwdriver.fill",
+        ]),
+        IconGroup(name: "健康运动", icons: [
+            "figure.run", "cross.fill", "drop.fill", "bolt.fill", "flame.fill",
+            "pawprint.fill", "heart.fill",
+        ]),
+        IconGroup(name: "学习工作", icons: [
+            "book.closed.fill", "book.fill", "graduationcap.fill",
+            "briefcase.fill", "desktopcomputer", "phone.fill",
+        ]),
+        IconGroup(name: "娱乐社交", icons: [
+            "gamecontroller.fill", "film.fill", "dice.fill",
+            "person.2.fill", "gift.fill", "envelope.fill", "ticket.fill",
+            "star.fill", "square.grid.3x3.fill",
+        ]),
+        IconGroup(name: "时尚美容", icons: [
+            "tshirt.fill", "sparkles",
+        ]),
+        IconGroup(name: "财务收入", icons: [
+            "dollarsign.circle.fill", "wallet.pass.fill", "chart.pie.fill",
+            "chart.line.uptrend.xyaxis", "star.circle.fill", "clock.fill",
+            "arrow.down.circle.fill", "arrow.uturn.backward",
+        ]),
+        IconGroup(name: "家人育儿", icons: [
+            "figure.and.child.holdinghands", "person.fill",
+        ]),
+        IconGroup(name: "其他通用", icons: [
+            "ellipsis.circle.fill", "leaf.fill", "leaf.circle.fill",
+            "arrow.up.forward.circle.fill", "arrow.left.arrow.right",
+            "rosette", "banknote",
+        ]),
+    ]
 }
