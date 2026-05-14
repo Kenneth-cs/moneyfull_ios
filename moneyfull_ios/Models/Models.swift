@@ -13,8 +13,15 @@ final class Category {
     var projectID: UUID? = nil
     var createdAt: Date = Date()
     
+    // V4 新增字段
+    var groupName: String = "" // 主要所属一级分类名称（如：吃喝、居家）
+    var incomeGroupName: String = "" // 收入时的分类名称（如：额外、工资），如果不填则退回使用 groupName
+    var sortOrder: Int = 0 // 同组内排序
+    var useCount: Int = 0 // 使用次数（用于常用列表）
+    var lastUsedAt: Date? = nil // 最后使用时间
+    
     init(name: String, icon: String, colorHex: String, isGlobal: Bool = true,
-         transactionType: String = "both", projectID: UUID? = nil) {
+         transactionType: String = "both", projectID: UUID? = nil, groupName: String = "", incomeGroupName: String = "") {
         self.id = UUID()
         self.name = name
         self.icon = icon
@@ -22,6 +29,8 @@ final class Category {
         self.isGlobal = isGlobal
         self.transactionType = transactionType
         self.projectID = projectID
+        self.groupName = groupName
+        self.incomeGroupName = incomeGroupName
         self.createdAt = Date()
     }
 }

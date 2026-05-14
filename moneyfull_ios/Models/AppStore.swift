@@ -41,8 +41,14 @@ class AppStore: ObservableObject {
             self.lastBackupDate = Date(timeIntervalSince1970: ts)
         }
         setupDefaultDataIfNeeded()
+        
+        // 依次执行所有迁移脚本
         migrateMorandiColors()
+        migrateV2Categories()
         migrateV3Categories()
+        migrateV4Categories()
+        migrateV5Categories()
+        
         refresh()
         startObservingDataChanges()
     }
@@ -136,6 +142,50 @@ class AppStore: ObservableObject {
             sortBy: [SortDescriptor(\.createdAt, order: .forward)]
         )
         categories = (try? modelContext.fetch(descriptor)) ?? []
+        
+        repairCloudKitCategoriesIfNeeded()
+    }
+    
+    /// 动态修复从 iCloud 延迟同步过来的缺乏 groupName 的旧分类数据
+    private func repairCloudKitCategoriesIfNeeded() {
+        var needsSave = false
+        
+        let categoryGroups: [String: (group: String, incomeGroup: String?)] = [
+            "餐饮": ("吃喝", nil), "外卖": ("吃喝", nil), "零食": ("吃喝", nil), "饮品": ("吃喝", nil), "水果": ("吃喝", nil), "蔬菜": ("吃喝", nil), "买菜": ("吃喝", nil),
+            "日用": ("居家", nil), "水费": ("居家", nil), "电费": ("居家", nil), "燃气费": ("居家", nil), "房租": ("居家", nil), "房贷": ("居家", nil), "住房": ("居家", nil), "保洁": ("居家", nil), "洗衣服": ("居家", nil), "维修": ("居家", nil), "宠物": ("居家", nil), "话费": ("居家", nil), "医疗": ("居家", nil), "育儿": ("居家", nil), "长辈": ("居家", nil),
+            "交通": ("出行", nil), "汽车": ("出行", nil), "摩托": ("出行", nil), "加油费": ("出行", nil), "租赁": ("出行", nil),
+            "电影票": ("娱乐", nil), "游戏": ("娱乐", nil), "追星": ("娱乐", nil), "数码": ("娱乐", nil), "运动": ("娱乐", nil), "旅行": ("娱乐", nil), "烟酒": ("娱乐", nil), "麻将": ("娱乐", "额外"),
+            "学习": ("成长", nil), "书籍": ("成长", nil), "美容": ("成长", nil), "服饰": ("成长", nil), "办公": ("成长", nil),
+            "红包": ("人情", "额外"), "礼金": ("人情", "额外"), "捐赠": ("人情", nil), "社交": ("人情", nil), "礼物": ("人情", nil),
+            "彩票": ("其他", nil), "转账": ("其他", nil), "还款": ("其他", "临时"), "借出": ("其他", nil), "快递": ("其他", nil), "购物": ("其他", nil), "其它": ("其他", "其他"),
+            
+            "工资": ("工资", "工资"), "兼职": ("工资", "工资"), "年终奖": ("工资", "工资"), "奖金": ("工资", "工资"), "奖学金": ("工资", "工资"),
+            "分红": ("额外", "额外"), "理财": ("额外", "额外"), "生活费": ("额外", "额外"),
+            "退款": ("临时", "临时"), "卖闲置": ("临时", "临时"), "借入": ("临时", "临时")
+        ]
+        
+        for cat in categories {
+            // 只处理 groupName 为空的数据，即从 iCloud 直接同步下来的旧数据
+            if cat.groupName.isEmpty {
+                if let mapping = categoryGroups[cat.name] {
+                    cat.groupName = mapping.group
+                    if let incomeGroup = mapping.incomeGroup {
+                        cat.incomeGroupName = incomeGroup
+                    }
+                } else {
+                    cat.groupName = "其他" // 未知类别默认丢到其他
+                }
+                needsSave = true
+            }
+            if cat.transactionType.isEmpty {
+                cat.transactionType = "both"
+                needsSave = true
+            }
+        }
+        
+        if needsSave {
+            save()
+        }
     }
     
     private func calcMonthlyStats() {
@@ -249,8 +299,8 @@ class AppStore: ObservableObject {
     
     // MARK: - 分类管理
     
-    func addCategory(name: String, icon: String, colorHex: String) {
-        let category = Category(name: name, icon: icon, colorHex: colorHex, isGlobal: false)
+    func addCategory(name: String, icon: String, colorHex: String, groupName: String = "", transactionType: String = "both") {
+        let category = Category(name: name, icon: icon, colorHex: colorHex, isGlobal: false, transactionType: transactionType, groupName: groupName)
         modelContext.insert(category)
         save()
         refresh()
@@ -262,10 +312,13 @@ class AppStore: ObservableObject {
         refresh()
     }
 
-    func updateCategory(_ category: Category, name: String, icon: String, colorHex: String) {
+    func updateCategory(_ category: Category, name: String, icon: String, colorHex: String, groupName: String? = nil) {
         category.name = name
         category.icon = icon
         category.colorHex = colorHex
+        if let groupName = groupName {
+            category.groupName = groupName
+        }
         save()
         refresh()
     }
@@ -409,7 +462,6 @@ class AppStore: ObservableObject {
         }
         save()
         UserDefaults.standard.set(true, forKey: "morandiMigrationV1Done")
-        migrateV2Categories()
     }
 
     private func migrateV2Categories() {
@@ -490,7 +542,6 @@ class AppStore: ObservableObject {
         save()
         fetchCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV2Done")
-        migrateV3Categories()
     }
 
     private func migrateV3Categories() {
@@ -503,6 +554,114 @@ class AppStore: ObservableObject {
         save()
         fetchCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV3Done")
+    }
+    
+    private func migrateV4Categories() {
+        guard !UserDefaults.standard.bool(forKey: "categoryMigrationV4Done_fix1") else { return }
+        
+        let allCats = (try? modelContext.fetch(FetchDescriptor<Category>())) ?? []
+        let existingNames = Set(allCats.map { $0.name })
+        
+        // 1. 定义每个分类的分组信息
+        let categoryGroups: [String: (group: String, incomeGroup: String?)] = [
+            "餐饮": ("吃喝", nil), "外卖": ("吃喝", nil), "零食": ("吃喝", nil), "饮品": ("吃喝", nil), "水果": ("吃喝", nil), "蔬菜": ("吃喝", nil), "买菜": ("吃喝", nil),
+            "日用": ("居家", nil), "水费": ("居家", nil), "电费": ("居家", nil), "燃气费": ("居家", nil), "房租": ("居家", nil), "房贷": ("居家", nil), "住房": ("居家", nil), "保洁": ("居家", nil), "洗衣服": ("居家", nil), "维修": ("居家", nil), "宠物": ("居家", nil), "话费": ("居家", nil), "医疗": ("居家", nil), "育儿": ("居家", nil), "长辈": ("居家", nil),
+            "交通": ("出行", nil), "汽车": ("出行", nil), "摩托": ("出行", nil), "加油费": ("出行", nil), "租赁": ("出行", nil),
+            "电影票": ("娱乐", nil), "游戏": ("娱乐", nil), "追星": ("娱乐", nil), "数码": ("娱乐", nil), "运动": ("娱乐", nil), "旅行": ("娱乐", nil), "烟酒": ("娱乐", nil), "麻将": ("娱乐", "额外"),
+            "学习": ("成长", nil), "书籍": ("成长", nil), "美容": ("成长", nil), "服饰": ("成长", nil), "办公": ("成长", nil),
+            "红包": ("人情", "额外"), "礼金": ("人情", "额外"), "捐赠": ("人情", nil), "社交": ("人情", nil), "礼物": ("人情", nil),
+            "彩票": ("其他", nil), "转账": ("其他", nil), "还款": ("其他", "临时"), "借出": ("其他", nil), "快递": ("其他", nil), "购物": ("其他", nil), "其它": ("其他", "其他"),
+            
+            "工资": ("工资", "工资"), "兼职": ("工资", "工资"), "年终奖": ("工资", "工资"), "奖金": ("工资", "工资"), "奖学金": ("工资", "工资"),
+            "分红": ("额外", "额外"), "理财": ("额外", "额外"), "生活费": ("额外", "额外"),
+            "退款": ("临时", "临时"), "卖闲置": ("临时", "临时"), "借入": ("临时", "临时")
+        ]
+        
+        // 2. 为现有分类设置分组
+        for cat in allCats {
+            if let mapping = categoryGroups[cat.name] {
+                cat.groupName = mapping.group
+                if let incomeGroup = mapping.incomeGroup {
+                    cat.incomeGroupName = incomeGroup
+                }
+            } else if cat.groupName.isEmpty {
+                // 如果没有匹配到且为空，默认放入其他
+                cat.groupName = "其他"
+            }
+            // 确保旧数据的 isGlobal 和类型能够正确显示
+            if cat.transactionType.isEmpty {
+                cat.transactionType = "both"
+            }
+        }
+        
+        // 3. 补充 V4 新增的通用分类和可能遗漏的系统默认子分类
+        let v4Defaults: [(String, String, String, String, String, String)] = [
+            // 通用大类
+            ("吃喝(通用)", "fork.knife", "#F6D7A8", "expense", "吃喝", ""),
+            ("居家(通用)", "house.fill", "#A8E0C2", "expense", "居家", ""),
+            ("出行(通用)", "car.fill", "#B3D1E6", "expense", "出行", ""),
+            ("娱乐(通用)", "gamecontroller.fill", "#D8C6E8", "expense", "娱乐", ""),
+            ("成长(通用)", "book.closed.fill", "#C8E6C9", "expense", "成长", ""),
+            ("人情(通用)", "envelope.fill", "#F2B7C6", "expense", "人情", ""),
+            ("其他(通用)", "ellipsis.circle.fill", "#DCCFC4", "both", "其他", "其他"),
+            
+            ("工资(通用)", "dollarsign.circle.fill", "#A8E0C2", "income", "工资", "工资"),
+            ("额外(通用)", "gift.fill", "#F2B7C6", "income", "额外", "额外"),
+            ("临时(通用)", "clock.fill", "#BFE6EA", "income", "临时", "临时"),
+            
+            // 补充基础默认子类防止它们在部分老用户库中丢失
+            ("餐饮", "fork.knife", "#F6D7A8", "expense", "吃喝", ""),
+            ("交通", "tram.fill", "#B3D1E6", "expense", "出行", ""),
+            ("购物", "bag.fill", "#F2B7C6", "expense", "其他", ""),
+            ("娱乐", "gamecontroller.fill", "#D8C6E8", "expense", "娱乐", ""),
+            ("住房", "house.fill", "#A8E0C2", "expense", "居家", ""),
+            ("日用", "basket.fill", "#DCCFC4", "expense", "居家", "")
+        ]
+        
+        for (name, icon, colorHex, type, group, incomeGroup) in v4Defaults {
+            if !existingNames.contains(name) {
+                let cat = Category(name: name, icon: icon, colorHex: colorHex, isGlobal: true, transactionType: type, groupName: group, incomeGroupName: incomeGroup)
+                modelContext.insert(cat)
+            }
+        }
+        
+        save()
+        fetchCategories()
+        UserDefaults.standard.set(true, forKey: "categoryMigrationV4Done_fix1")
+    }
+    
+    private func migrateV5Categories() {
+        guard !UserDefaults.standard.bool(forKey: "categoryMigrationV5Done") else { return }
+        
+        let allCats = (try? modelContext.fetch(FetchDescriptor<Category>())) ?? []
+        
+        // 1. 删除所有带 "(通用)" 的冗余分类，解决文案和图标重复问题
+        for cat in allCats {
+            if cat.name.contains("(通用)") {
+                modelContext.delete(cat)
+            }
+        }
+        
+        // 2. 对于原本没有单独基础分类的类目，补充纯净的名称（去掉通用两字）
+        let existingNames = Set(allCats.map { $0.name })
+        let v5Defaults: [(String, String, String, String, String, String)] = [
+            ("居家", "house.fill", "#A8E0C2", "expense", "居家", ""),
+            ("成长", "book.closed.fill", "#C8E6C9", "expense", "成长", ""),
+            ("人情", "envelope.fill", "#F2B7C6", "expense", "人情", ""),
+            ("额外", "gift.fill", "#F2B7C6", "income", "额外", "额外"),
+            ("临时", "clock.fill", "#BFE6EA", "income", "临时", "临时")
+        ]
+        
+        for (name, icon, colorHex, type, group, incomeGroup) in v5Defaults {
+            if !existingNames.contains(name) {
+                let cat = Category(name: name, icon: icon, colorHex: colorHex, isGlobal: true, transactionType: type, groupName: group, incomeGroupName: incomeGroup)
+                modelContext.insert(cat)
+            }
+        }
+        
+        save()
+        fetchCategories()
+        UserDefaults.standard.set(true, forKey: "categoryMigrationV5Done")
     }
     
     // MARK: - 去重逻辑

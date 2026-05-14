@@ -5,6 +5,7 @@ struct MainTabView: View {
     @EnvironmentObject var theme: ThemeManager
     @State private var selectedTab = 0
     @State private var isAddRecordPresented = false
+    @State private var projectNavResetID = UUID()
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -13,22 +14,31 @@ struct MainTabView: View {
             
             // ② 内容区域：TabView 透明背景，内容向上缩进避免被 Tab 栏遮住
             TabView(selection: $selectedTab) {
-                DashboardView()
-                    .tag(0)
+                DashboardView(selectedTab: $selectedTab, onResetProjectNav: {
+                    projectNavResetID = UUID()
+                })
+                .tag(0)
+                .toolbar(.hidden, for: .tabBar)
                 
                 NavigationView {
                     ProjectsView()
                 }
+                .id(projectNavResetID)
                 .navigationViewStyle(.stack)
                 .tag(1)
+                .toolbar(.hidden, for: .tabBar)
                 
-                Color.clear.tag(2)
+                Color.clear
+                    .tag(2)
+                    .toolbar(.hidden, for: .tabBar)
                 
                 AnalyticsView()
                     .tag(3)
+                    .toolbar(.hidden, for: .tabBar)
                 
                 ProfileView()
                     .tag(4)
+                    .toolbar(.hidden, for: .tabBar)
             }
             .background(Color.clear) // TabView 本身透明，背景由底层提供
             

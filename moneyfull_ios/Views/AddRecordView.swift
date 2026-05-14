@@ -15,6 +15,7 @@ struct AddRecordView: View {
     @State private var showProjectPicker = false
     @State private var showQuickAddCategory = false
     @State private var showKeypad = true  // 控制数字键盘显示/收起
+    @State private var selectedCategoryTab = "常用"  // 当前选中的分类 Tab
     
     // 触觉反馈生成器
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -174,42 +175,15 @@ struct AddRecordView: View {
                     }
                     
                     // MARK: 分类选择
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack {
-                            Text("分类")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(Color.App.textBlack)
-                            Spacer()
-                        }
-                        
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 20) {
-                            ForEach(store.categories.filter {
-                                type == .expense ? ($0.transactionType == "expense" || $0.transactionType == "both")
-                                                 : ($0.transactionType == "income" || $0.transactionType == "both")
-                            }, id: \.id) { cat in
-                                CategoryItem(name: cat.name, icon: cat.icon, colorHex: cat.colorHex, isSelected: selectedCategory?.id == cat.id) {
-                                    impactFeedback.impactOccurred()
-                                    selectedCategory = cat
-                                }
-                            }
-                            Button(action: { showQuickAddCategory = true }) {
-                                VStack(spacing: 8) {
-                                    Circle()
-                                        .fill(Color.App.primaryGreen.opacity(0.4))
-                                        .frame(width: 56, height: 56)
-                                        .overlay(
-                                            Image(systemName: "plus")
-                                                .font(.system(size: 22, weight: .bold))
-                                                .foregroundColor(Color.App.darkGreen)
-                                        )
-                                    Text("新增")
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundColor(Color.App.darkGreen.opacity(0.7))
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 24)
+                    CategorySelectionView(
+                        selectedCategory: $selectedCategory,
+                        type: type,
+                        categories: store.categories,
+                        onAddTapped: {
+                            showQuickAddCategory = true
+                        },
+                        selectedTab: $selectedCategoryTab
+                    )
                     
                     // MARK: 备注输入
                     HStack(spacing: 12) {
@@ -298,8 +272,12 @@ struct AddRecordView: View {
         }
         // 快速新增分类
         .sheet(isPresented: $showQuickAddCategory) {
-            QuickAddCategorySheet { name, icon, colorHex in
-                store.addCategory(name: name, icon: icon, colorHex: colorHex)
+            QuickAddCategorySheet(
+                selectedTab: selectedCategoryTab,
+                transactionType: type == .expense ? "expense" : "income",
+                categories: store.categories
+            ) { name, icon, colorHex, groupName in
+                store.addCategory(name: name, icon: icon, colorHex: colorHex, groupName: groupName, transactionType: type == .expense ? "expense" : "income")
                 if let newCat = store.categories.last {
                     selectedCategory = newCat
                 }
@@ -372,6 +350,11 @@ struct AddRecordView: View {
             note: note,
             date: date
         )
+        
+        // 更新分类使用频率和最后使用时间
+        category.useCount += 1
+        category.lastUsedAt = Date()
+        try? category.modelContext?.save()
         
         let amountLevel: String
         if amountValue < 100 { amountLevel = "level_1_under100" }
@@ -536,13 +519,57 @@ struct DatePickerSheet: View {
 // MARK: - 快速新增分类 Sheet
 struct QuickAddCategorySheet: View {
     @Environment(\.presentationMode) var presentationMode
-    let onSave: (String, String, String) -> Void
+    let selectedTab: String
+    let transactionType: String
+    let categories: [Category]
+    let onSave: (String, String, String, String) -> Void
     
     @State private var name = ""
     @State private var selectedIcon = "tag.fill"
     @State private var selectedColor = "#A8E0C2"
+    @State private var selectedGroupName: String = ""
+    @State private var showCustomGroupInput = false
+    @State private var customGroupName = ""
     
     private let iconOptions = CategoryIconLibrary.all
+    
+    // 预设的核心分组（按优先级排序）
+    private let coreGroups = ["吃喝", "居家", "出行", "娱乐", "成长", "人情", "其他"]
+    private let incomeCoreGroups = ["工资", "额外", "临时", "其他"]
+    
+    // 动态获取所有已存在的分组名
+    private var existingGroupNames: [String] {
+        let allGroups = Set(categories.compactMap { cat -> String? in
+            if transactionType == "income" && !cat.incomeGroupName.isEmpty {
+                return cat.incomeGroupName
+            }
+            return cat.groupName.isEmpty ? nil : cat.groupName
+        })
+        return Array(allGroups).sorted()
+    }
+    
+    // 获取当前类型下的所有可用分组（核心 + 动态）
+    private var availableGroups: [String] {
+        let core = transactionType == "income" ? incomeCoreGroups : coreGroups
+        let dynamic = existingGroupNames.filter { !core.contains($0) }
+        return core + dynamic.sorted()
+    }
+    
+    init(selectedTab: String, transactionType: String, categories: [Category], onSave: @escaping (String, String, String, String) -> Void) {
+        self.selectedTab = selectedTab
+        self.transactionType = transactionType
+        self.categories = categories
+        self.onSave = onSave
+        
+        // 计算默认选中的分组
+        let defaultGroup: String
+        if selectedTab == "常用" || selectedTab == "全部" {
+            defaultGroup = transactionType == "income" ? "工资" : "吃喝"
+        } else {
+            defaultGroup = selectedTab
+        }
+        _selectedGroupName = State(initialValue: defaultGroup)
+    }
     
     var body: some View {
         NavigationView {
@@ -557,6 +584,67 @@ struct QuickAddCategorySheet: View {
                             .background(Color.App.tabBackground)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                             .font(.system(size: 15))
+                    }
+                    
+                    // 所属分组选择
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("所属分组")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.gray)
+                        
+                        if showCustomGroupInput {
+                            HStack {
+                                TextField("输入新分组名称", text: $customGroupName)
+                                    .padding(14)
+                                    .background(Color.App.tabBackground)
+                                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                                    .font(.system(size: 15))
+                                
+                                Button(action: {
+                                    showCustomGroupInput = false
+                                    customGroupName = ""
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
+                                        .font(.system(size: 20))
+                                }
+                            }
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(availableGroups, id: \.self) { group in
+                                        Button(action: {
+                                            selectedGroupName = group
+                                        }) {
+                                            Text(group)
+                                                .font(.system(size: 14, weight: selectedGroupName == group ? .bold : .medium))
+                                                .foregroundColor(selectedGroupName == group ? Color.App.darkGreen : .gray)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 8)
+                                                .background(selectedGroupName == group ? Color.App.primaryGreen.opacity(0.3) : Color.App.tabBackground)
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                    
+                                    // 自定义新分组按钮
+                                    Button(action: {
+                                        showCustomGroupInput = true
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "plus")
+                                                .font(.system(size: 12))
+                                            Text("自定义")
+                                                .font(.system(size: 14, weight: .medium))
+                                        }
+                                        .foregroundColor(Color.App.darkGreen)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(Color.App.primaryGreen.opacity(0.2))
+                                        .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                        }
                     }
                     
                     VStack(alignment: .leading, spacing: 10) {
@@ -606,9 +694,14 @@ struct QuickAddCategorySheet: View {
                                     .foregroundColor(Color.App.textBlack.opacity(0.7))
                                     .font(.system(size: 18))
                             )
-                        Text(name.isEmpty ? "分类名称" : name)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(name.isEmpty ? .gray : Color.App.textBlack)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(name.isEmpty ? "分类名称" : name)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(name.isEmpty ? .gray : Color.App.textBlack)
+                            Text("分组: \(showCustomGroupInput ? (customGroupName.isEmpty ? "新分组" : customGroupName) : selectedGroupName)")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                        }
                         Spacer()
                     }
                     .padding(16)
@@ -630,7 +723,8 @@ struct QuickAddCategorySheet: View {
                     Button("添加") {
                         let trimmed = name.trimmingCharacters(in: .whitespaces)
                         guard !trimmed.isEmpty else { return }
-                        onSave(trimmed, selectedIcon, selectedColor)
+                        let finalGroupName = showCustomGroupInput ? customGroupName.trimmingCharacters(in: .whitespaces) : selectedGroupName
+                        onSave(trimmed, selectedIcon, selectedColor, finalGroupName)
                         presentationMode.wrappedValue.dismiss()
                     }
                     .font(.system(size: 16, weight: .bold))

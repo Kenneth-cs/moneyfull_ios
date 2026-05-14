@@ -5,12 +5,36 @@ struct ProjectsView: View {
     @EnvironmentObject var store: AppStore
     @State private var selectedTab = 0
     @State private var showNewProject = false
+    @State private var showManage = false
     
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
                 // MARK: Header
-                PageHeader(title: "项目中心")
+                ZStack {
+                    Text("项目中心")
+                        .font(.system(size: 20, weight: .heavy))
+                        .foregroundColor(Color.App.textBlack)
+                    
+                    HStack {
+                        AppLogo()
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            AnalyticsManager.shared.trackEvent(eventId: "project_click_manage", eventName: "点击项目管理")
+                            showManage = true
+                        }) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 20))
+                                .foregroundColor(Color.App.darkGreen)
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
                 
                 // MARK: 进行中 / 已归档 Tab
                 HStack {
@@ -108,6 +132,10 @@ struct ProjectsView: View {
         .background(Color.App.backgroundGray.ignoresSafeArea())
         .sheet(isPresented: $showNewProject) {
             NewProjectView()
+        }
+        .sheet(isPresented: $showManage) {
+            ProjectManageView()
+                .environmentObject(store)
         }
     }
     

@@ -383,6 +383,7 @@ struct GreetingMascotView: View {
                 } else if finalTapCount == 3 {
                     delaySeconds = 10
                 } else {
+                    
                     delaySeconds = 15
                 }
 

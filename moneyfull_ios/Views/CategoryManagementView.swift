@@ -9,90 +9,83 @@ struct CategoryManagementView: View {
     @State private var confirmDeleteCategory: Category?
 
     private let iconOptions = CategoryIconLibrary.all
+    
+    // 按 groupName 分组的分类数据
+    private var groupedCategories: [(groupName: String, categories: [Category])] {
+        let allCats = store.categories
+        
+        // 核心预设分组顺序
+        let coreGroups = ["吃喝", "居家", "出行", "娱乐", "成长", "人情", "其他", "工资", "额外", "临时"]
+        
+        // 按 groupName 分组
+        var groups = [String: [Category]]()
+        for cat in allCats {
+            let group = cat.groupName.isEmpty ? "其他" : cat.groupName
+            groups[group, default: []].append(cat)
+        }
+        
+        // 排序：核心分组按顺序，自定义分组按字母排序
+        let coreResult = coreGroups.compactMap { group -> (groupName: String, categories: [Category])? in
+            guard let cats = groups[group], !cats.isEmpty else { return nil }
+            return (groupName: group, categories: cats.sorted { $0.createdAt < $1.createdAt })
+        }
+        
+        let customGroups = groups.keys.filter { !coreGroups.contains($0) }.sorted()
+        let customResult = customGroups.compactMap { group -> (groupName: String, categories: [Category])? in
+            guard let cats = groups[group], !cats.isEmpty else { return nil }
+            return (groupName: group, categories: cats.sorted { $0.createdAt < $1.createdAt })
+        }
+        
+        return coreResult + customResult
+    }
 
     var body: some View {
         NavigationView {
             List {
-                Section {
-                    ForEach(store.categories.filter { $0.isGlobal }, id: \.id) { cat in
-                        HStack(spacing: 14) {
-                            Circle()
-                                .fill(Color(hex: cat.colorHex))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: cat.icon)
-                                        .foregroundColor(Color.App.textBlack.opacity(0.7))
-                                        .font(.system(size: 16))
-                                )
-                            Text(cat.name)
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(Color.App.textBlack)
-                            Spacer()
-                            Text("系统预设")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.gray)
-                        }
-                        .padding(.vertical, 4)
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                editingCategory = cat
-                            } label: {
-                                Label("编辑", systemImage: "pencil")
+                ForEach(groupedCategories, id: \.groupName) { group in
+                    Section {
+                        ForEach(group.categories, id: \.id) { cat in
+                            HStack(spacing: 14) {
+                                Circle()
+                                    .fill(Color(hex: cat.colorHex))
+                                    .frame(width: 40, height: 40)
+                                    .overlay(
+                                        Image(systemName: cat.icon)
+                                            .foregroundColor(Color.App.textBlack.opacity(0.7))
+                                            .font(.system(size: 16))
+                                    )
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(cat.name)
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(Color.App.textBlack)
+                                    if !cat.isGlobal {
+                                        Text("自定义")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.gray)
+                                    }
+                                }
+                                Spacer()
                             }
-                            .tint(.blue)
-                        }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                confirmDeleteCategory = cat
-                            } label: {
-                                Label("删除", systemImage: "trash")
+                            .padding(.vertical, 4)
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    editingCategory = cat
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    confirmDeleteCategory = cat
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
                             }
                         }
+                    } header: {
+                        Text(group.groupName)
                     }
-                } header: {
-                    Text("系统预设分类")
-                } footer: {
-                    Text("左滑可编辑或删除，删除系统预设分类后可在此重新添加。")
-                }
-
-                let customCategories = store.categories.filter { !$0.isGlobal }
-                Section {
-                    ForEach(customCategories, id: \.id) { cat in
-                        HStack(spacing: 14) {
-                            Circle()
-                                .fill(Color(hex: cat.colorHex))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: cat.icon)
-                                        .foregroundColor(Color.App.textBlack.opacity(0.7))
-                                        .font(.system(size: 16))
-                                )
-                            Text(cat.name)
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(Color.App.textBlack)
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                editingCategory = cat
-                            } label: {
-                                Label("编辑", systemImage: "pencil")
-                            }
-                            .tint(.blue)
-                        }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                store.deleteCategory(cat)
-                            } label: {
-                                Label("删除", systemImage: "trash")
-                            }
-                        }
-                    }
-                } header: {
-                    Text("自定义分类")
-                } footer: {
-                    Text("左滑可编辑或删除自定义分类。")
                 }
 
                 Section {
@@ -143,8 +136,9 @@ struct CategoryManagementView: View {
             CategoryFormSheet(
                 iconOptions: iconOptions,
                 editingCategory: nil,
-                onSave: { name, icon, colorHex in
-                    store.addCategory(name: name, icon: icon, colorHex: colorHex)
+                allCategories: store.categories,
+                onSave: { name, icon, colorHex, groupName in
+                    store.addCategory(name: name, icon: icon, colorHex: colorHex, groupName: groupName)
                 }
             )
         }
@@ -152,8 +146,9 @@ struct CategoryManagementView: View {
             CategoryFormSheet(
                 iconOptions: iconOptions,
                 editingCategory: cat,
-                onSave: { name, icon, colorHex in
-                    store.updateCategory(cat, name: name, icon: icon, colorHex: colorHex)
+                allCategories: store.categories,
+                onSave: { name, icon, colorHex, groupName in
+                    store.updateCategory(cat, name: name, icon: icon, colorHex: colorHex, groupName: groupName)
                 }
             )
         }
@@ -164,19 +159,46 @@ struct CategoryFormSheet: View {
     @Environment(\.presentationMode) var presentationMode
     let iconOptions: [String]
     let editingCategory: Category?
-    let onSave: (String, String, String) -> Void
+    let allCategories: [Category]
+    let onSave: (String, String, String, String) -> Void
 
     @State private var name: String
     @State private var selectedIcon: String
     @State private var selectedColor: String
+    @State private var selectedGroupName: String
+    @State private var showCustomGroupInput: Bool
+    @State private var customGroupName: String
 
-    init(iconOptions: [String], editingCategory: Category?, onSave: @escaping (String, String, String) -> Void) {
+    // 核心预设分组
+    private let coreGroups = ["吃喝", "居家", "出行", "娱乐", "成长", "人情", "其他", "工资", "额外", "临时"]
+
+    init(iconOptions: [String], editingCategory: Category?, allCategories: [Category], onSave: @escaping (String, String, String, String) -> Void) {
         self.iconOptions = iconOptions
         self.editingCategory = editingCategory
+        self.allCategories = allCategories
         self.onSave = onSave
         _name = State(initialValue: editingCategory?.name ?? "")
         _selectedIcon = State(initialValue: editingCategory?.icon ?? "fork.knife")
         _selectedColor = State(initialValue: editingCategory?.colorHex ?? "#A8E0C2")
+        
+        let initialGroup = editingCategory?.groupName ?? ""
+        _selectedGroupName = State(initialValue: initialGroup.isEmpty ? "其他" : initialGroup)
+        _showCustomGroupInput = State(initialValue: false)
+        _customGroupName = State(initialValue: "")
+    }
+    
+    // 动态获取所有已存在的分组名
+    private var existingGroupNames: [String] {
+        let allGroups = Set(allCategories.compactMap { cat -> String? in
+            return cat.groupName.isEmpty ? nil : cat.groupName
+        })
+        return Array(allGroups).sorted()
+    }
+    
+    // 获取所有可用分组（核心 + 动态）
+    private var availableGroups: [String] {
+        let dynamic = existingGroupNames.filter { !coreGroups.contains($0) }
+        return coreGroups + dynamic.sorted()
     }
 
     private var isEditing: Bool { editingCategory != nil }
@@ -194,6 +216,67 @@ struct CategoryFormSheet: View {
                             .background(Color.App.tabBackground)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .font(.system(size: 16))
+                    }
+
+                    // 所属分组选择
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("所属分组")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Color.App.textBlack.opacity(0.7))
+                        
+                        if showCustomGroupInput {
+                            HStack {
+                                TextField("输入新分组名称", text: $customGroupName)
+                                    .padding(16)
+                                    .background(Color.App.tabBackground)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .font(.system(size: 16))
+                                
+                                Button(action: {
+                                    showCustomGroupInput = false
+                                    customGroupName = ""
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
+                                        .font(.system(size: 20))
+                                }
+                            }
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(availableGroups, id: \.self) { group in
+                                        Button(action: {
+                                            selectedGroupName = group
+                                        }) {
+                                            Text(group)
+                                                .font(.system(size: 14, weight: selectedGroupName == group ? .bold : .medium))
+                                                .foregroundColor(selectedGroupName == group ? Color.App.darkGreen : .gray)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 8)
+                                                .background(selectedGroupName == group ? Color.App.primaryGreen.opacity(0.3) : Color.App.tabBackground)
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                    
+                                    // 自定义新分组按钮
+                                    Button(action: {
+                                        showCustomGroupInput = true
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "plus")
+                                                .font(.system(size: 12))
+                                            Text("自定义")
+                                                .font(.system(size: 14, weight: .medium))
+                                        }
+                                        .foregroundColor(Color.App.darkGreen)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(Color.App.primaryGreen.opacity(0.2))
+                                        .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
@@ -253,9 +336,14 @@ struct CategoryFormSheet: View {
                                         .foregroundColor(Color.App.textBlack.opacity(0.7))
                                         .font(.system(size: 22))
                                 )
-                            Text(name.isEmpty ? "分类名称" : name)
-                                .font(.system(size: 18, weight: .heavy))
-                                .foregroundColor(name.isEmpty ? .gray : Color.App.textBlack)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(name.isEmpty ? "分类名称" : name)
+                                    .font(.system(size: 18, weight: .heavy))
+                                    .foregroundColor(name.isEmpty ? .gray : Color.App.textBlack)
+                                Text("分组: \(showCustomGroupInput ? (customGroupName.isEmpty ? "新分组" : customGroupName) : selectedGroupName)")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray)
+                            }
                         }
                         .padding(20)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -279,7 +367,8 @@ struct CategoryFormSheet: View {
                     Button(isEditing ? "保存" : "添加") {
                         let trimmed = name.trimmingCharacters(in: .whitespaces)
                         guard !trimmed.isEmpty else { return }
-                        onSave(trimmed, selectedIcon, selectedColor)
+                        let finalGroupName = showCustomGroupInput ? customGroupName.trimmingCharacters(in: .whitespaces) : selectedGroupName
+                        onSave(trimmed, selectedIcon, selectedColor, finalGroupName)
                         presentationMode.wrappedValue.dismiss()
                     }
                     .font(.system(size: 16, weight: .bold))

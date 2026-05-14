@@ -11,6 +11,8 @@ private func smartFormat(_ value: Double) -> String {
 
 struct DashboardView: View {
     @EnvironmentObject var store: AppStore
+    @Binding var selectedTab: Int
+    var onResetProjectNav: (() -> Void)? = nil
     @State private var detailProject: Project? = nil
     @State private var editingTransaction: Transaction?
     @State private var viewingTransaction: Transaction?
@@ -77,9 +79,19 @@ struct DashboardView: View {
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)
                         Spacer()
-                        Text("查看全部")
-                            .font(.system(size: 14, weight: .bold))
+                        Button(action: {
+                            AnalyticsManager.shared.trackEvent(eventId: "dashboard_view_all_projects", eventName: "首页查看全部项目")
+                            onResetProjectNav?()
+                            withAnimation { selectedTab = 1 }
+                        }) {
+                            HStack(spacing: 4) {
+                                Text("查看全部")
+                                    .font(.system(size: 14, weight: .bold))
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
                             .foregroundColor(Color.App.darkGreen)
+                        }
                     }
                     .padding(.horizontal, 24)
                     
@@ -329,6 +341,6 @@ extension Date {
 }
 
 #Preview {
-    DashboardView()
+    DashboardView(selectedTab: .constant(0))
         .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
 }
