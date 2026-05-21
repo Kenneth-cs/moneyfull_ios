@@ -16,6 +16,7 @@ struct DashboardView: View {
     @State private var detailProject: Project? = nil
     @State private var editingTransaction: Transaction?
     @State private var viewingTransaction: Transaction?
+    @State private var isAddRecordPresented = false
     
     // 进行中项目按创建时间倒序（最新在前）
     private var sortedActiveProjects: [Project] {
@@ -69,6 +70,26 @@ struct DashboardView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
+                }
+                .padding(.horizontal, 24)
+                
+                // MARK: 记一笔按钮
+                Button(action: {
+                    AnalyticsManager.shared.trackEvent(eventId: "record_click_add", eventName: "点击记一笔入口", params: ["source": "dashboard"])
+                    isAddRecordPresented = true
+                }) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 20))
+                        Text("记一笔")
+                            .font(.system(size: 16, weight: .bold))
+                    }
+                    .foregroundColor(Color.App.darkGreen)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.App.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
                 }
                 .padding(.horizontal, 24)
                 
@@ -194,6 +215,10 @@ struct DashboardView: View {
             Color.clear.frame(height: 110)
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        .fullScreenCover(isPresented: $isAddRecordPresented) {
+            AddRecordView()
+                .environmentObject(store)
+        }
     }
 }
 
@@ -342,5 +367,5 @@ extension Date {
 
 #Preview {
     DashboardView(selectedTab: .constant(0))
-        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
+        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
 }

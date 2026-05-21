@@ -381,5 +381,5 @@ struct CategoryFormSheet: View {
 
 #Preview {
     CategoryManagementView()
-        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
+        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
 }

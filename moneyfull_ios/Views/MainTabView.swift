@@ -5,6 +5,7 @@ struct MainTabView: View {
     @EnvironmentObject var theme: ThemeManager
     @State private var selectedTab = 0
     @State private var isAddRecordPresented = false
+    @State private var isAIChatPresented = false
     @State private var projectNavResetID = UUID()
     
     var body: some View {
@@ -43,7 +44,7 @@ struct MainTabView: View {
             .background(Color.clear) // TabView 本身透明，背景由底层提供
             
             // ③ 自定义底部 Tab 栏（含底部安全区填充）
-            CustomBottomTabBar(selectedTab: $selectedTab, isAddRecordPresented: $isAddRecordPresented)
+            CustomBottomTabBar(selectedTab: $selectedTab, isAddRecordPresented: $isAddRecordPresented, isAIChatPresented: $isAIChatPresented)
         }
         .onChange(of: selectedTab) {
             if selectedTab == 3 {
@@ -54,6 +55,10 @@ struct MainTabView: View {
             AddRecordView()
                 .environmentObject(store)
         }
+        .fullScreenCover(isPresented: $isAIChatPresented) {
+            AIChatView()
+                .environmentObject(store)
+        }
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
@@ -62,6 +67,7 @@ struct MainTabView: View {
 struct CustomBottomTabBar: View {
     @Binding var selectedTab: Int
     @Binding var isAddRecordPresented: Bool
+    @Binding var isAIChatPresented: Bool
     private let selectionFeedback = UISelectionFeedbackGenerator()
     
     var body: some View {
@@ -72,21 +78,28 @@ struct CustomBottomTabBar: View {
             TabBarItem(icon: "square.grid.2x2.fill", title: "项目", isSelected: selectedTab == 1) { selectionFeedback.selectionChanged(); selectedTab = 1 }
             Spacer()
             
-                // 中央加号按钮（与其他图标平齐）
+                // 中央AI助手按钮（与其他图标平齐）
                 Button(action: {
-                    AnalyticsManager.shared.trackEvent(eventId: "record_click_add", eventName: "点击记一笔入口", params: ["source": "tab_bar"])
-                    isAddRecordPresented = true
+                    AnalyticsManager.shared.trackEvent(eventId: "ai_chat_open", eventName: "打开AI助手", params: ["source": "tab_bar"])
+                    isAIChatPresented = true
                 }) {
                     ZStack {
                         Circle()
                             .fill(Color.App.primaryGreen)
                             .frame(width: 64, height: 64)
                             .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
-                        Image(systemName: "plus")
+                        Image(systemName: "mic.fill")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(Color.App.textOnPrimary)
                     }
                 }
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5)
+                        .onEnded { _ in
+                            AnalyticsManager.shared.trackEvent(eventId: "ai_voice_start", eventName: "长按语音记账", params: ["source": "tab_bar"])
+                            // TODO: 触发语音录音
+                        }
+                )
             
             Spacer()
             TabBarItem(icon: "chart.bar.fill", title: "统计", isSelected: selectedTab == 3) { selectionFeedback.selectionChanged(); selectedTab = 3 }

@@ -636,7 +636,7 @@ fileprivate struct DetailRow: View {
 }
 
 #Preview {
-    let container = try! ModelContainer(for: Project.self, Transaction.self, Category.self)
+    let container = try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self)
     let store = AppStore(modelContext: container.mainContext)
     return VStack(spacing: 40) {
         AppLogo()

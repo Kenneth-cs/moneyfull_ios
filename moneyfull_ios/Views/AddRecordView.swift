@@ -201,6 +201,17 @@ struct AddRecordView: View {
                     .padding(.bottom, 8)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { showKeypad = false }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20, coordinateSpace: .local)
+                    .onChanged { value in
+                        let verticalAmount = abs(value.translation.height)
+                        if verticalAmount > 10 {
+                            showKeypad = false
+                        }
+                    }
+            )
             
             // MARK: 数字键盘面板（可收起/展开）
             VStack(spacing: 0) {
@@ -737,5 +748,5 @@ struct QuickAddCategorySheet: View {
 
 #Preview {
     AddRecordView()
-        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
+        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
 }

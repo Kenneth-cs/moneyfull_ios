@@ -400,6 +400,10 @@ struct InsightCardView: View {
     let expense: Double
     let income: Double
     
+    @State private var aiAdvice: String?
+    @State private var isLoadingAdvice = false
+    @State private var showAdviceSheet = false
+    
     private var surplus: Double { income - expense }
     
     // MARK: 节省方案文案（绿卡）
@@ -433,6 +437,14 @@ struct InsightCardView: View {
         } else {
             return "本月支出超出收入 ¥\(Int(abs(surplus)))，不过偶尔犒劳自己也没关系，下个月慢慢调整回来就好 🦫"
         }
+    }
+    
+    // 获取支出最多的类别
+    private var topCategories: [(name: String, amount: Double)] {
+        let expenseTx = transactions.filter { $0.type == .expense }
+        let byCategory = Dictionary(grouping: expenseTx, by: { $0.categoryName })
+        return byCategory.map { (name: $0.key, amount: $0.value.reduce(0) { $0 + $1.amount }) }
+            .sorted { $0.amount > $1.amount }
     }
     
     var body: some View {
@@ -475,17 +487,26 @@ struct InsightCardView: View {
                         .foregroundColor(.white)
                         .lineSpacing(4)
                     
-                    // 生成报告占位按钮（后续可接 AI 报告功能）
+                    // 生成报告按钮（接入LLM）
                     Button(action: {
                         AnalyticsManager.shared.trackEvent(eventId: "analytics_click_report", eventName: "点击深度报告")
+                        generateAIAdvice()
                     }) {
                         HStack {
-                            Text("立即生成深度报告")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(Color.App.darkGreen)
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color.App.darkGreen)
+                            if isLoadingAdvice {
+                                ProgressView()
+                                    .tint(Color.App.darkGreen)
+                                Text("AI 分析中...")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen)
+                            } else {
+                                Text("立即生成深度报告")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen)
+                            }
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
@@ -493,10 +514,39 @@ struct InsightCardView: View {
                         .clipShape(Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1))
                     }
+                    .disabled(isLoadingAdvice)
                 }
                 .padding(24)
             }
             .frame(maxWidth: .infinity)
+        }
+        .sheet(isPresented: $showAdviceSheet) {
+            AIAdviceSheet(advice: aiAdvice ?? "")
+        }
+    }
+    
+    private func generateAIAdvice() {
+        isLoadingAdvice = true
+        
+        Task {
+            do {
+                let advice = try await LLMService.shared.generateFinancialAdvice(
+                    expense: expense,
+                    income: income,
+                    topCategories: topCategories
+                )
+                await MainActor.run {
+                    aiAdvice = advice
+                    isLoadingAdvice = false
+                    showAdviceSheet = true
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingAdvice = false
+                    aiAdvice = "抱歉，AI分析暂时不可用，请稍后再试。"
+                    showAdviceSheet = true
+                }
+            }
         }
     }
 }
@@ -528,6 +578,71 @@ struct InsightMiniCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(bgColor)
         .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+}
+
+// MARK: - AI 建议弹窗
+struct AIAdviceSheet: View {
+    @Environment(\.presentationMode) var presentationMode
+    let advice: String
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Header
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.App.primaryGreen.opacity(0.3))
+                                .frame(width: 56, height: 56)
+                            
+                            Text("🦫")
+                                .font(.system(size: 28))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("小满的财务建议")
+                                .font(.system(size: 20, weight: .heavy))
+                                .foregroundColor(Color.App.textBlack)
+                            Text("AI 深度分析")
+                                .font(.system(size: 13))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                    
+                    // 建议内容
+                    Text(advice)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.App.textBlack.opacity(0.85))
+                        .lineSpacing(8)
+                    
+                    // 提示
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.blue)
+                        Text("以上建议由AI生成，仅供参考")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.top, 12)
+                }
+                .padding(24)
+            }
+            .background(Color.App.backgroundGray.ignoresSafeArea())
+            .navigationTitle("AI 财务建议")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .foregroundColor(Color.App.darkGreen)
+                }
+            }
+        }
     }
 }
 
@@ -603,5 +718,5 @@ struct TabButton: View {
 
 #Preview {
     AnalyticsView()
-        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
+        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
 }

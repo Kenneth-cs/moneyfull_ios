@@ -201,6 +201,6 @@ struct EditProjectView: View {
 #Preview {
     NavigationView {
         EditProjectView(project: Project(name: "预览项目", icon: "folder.fill", colorHex: "#A8E0C2", desc: "这是一个示例", budget: 1000))
-            .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self).mainContext))
+            .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
     }
 }

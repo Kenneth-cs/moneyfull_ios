@@ -11,6 +11,56 @@ struct CategorySelectionView: View {
     // 触觉反馈
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
     
+    // MARK: - 智能推荐逻辑
+    private var smartRecommendations: [Category] {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        let isWeekend = weekday == 1 || weekday == 7
+        
+        // 根据时间和场景定义推荐关键词
+        var recommendKeywords: [String] = []
+        
+        if type == .expense {
+            if hour >= 6 && hour < 10 {
+                recommendKeywords = ["早餐", "交通", "咖啡"]
+            } else if hour >= 11 && hour < 14 {
+                recommendKeywords = ["午餐", "饮料", "零食"]
+            } else if hour >= 17 && hour < 21 {
+                recommendKeywords = ["晚餐", "娱乐", "购物"]
+            } else if isWeekend {
+                recommendKeywords = ["娱乐", "购物", "餐饮"]
+            } else {
+                recommendKeywords = ["餐饮", "交通", "日用"]
+            }
+        } else {
+            if isWeekend {
+                recommendKeywords = ["额外", "临时", "工资"]
+            } else {
+                recommendKeywords = ["工资", "额外", "临时"]
+            }
+        }
+        
+        // 从分类列表中匹配推荐
+        let matched = recommendKeywords.compactMap { keyword in
+            typeCategories.first { $0.name == keyword || $0.groupName == keyword }
+        }
+        
+        // 如果匹配不足3个，从高频分类中补充
+        let frequentCats = typeCategories
+            .filter { cat in cat.useCount > 0 && !matched.contains(where: { $0.id == cat.id }) }
+            .sorted { $0.useCount > $1.useCount }
+        
+        var result = Array(matched.prefix(3))
+        for cat in frequentCats {
+            if result.count >= 3 { break }
+            if !result.contains(where: { $0.id == cat.id }) {
+                result.append(cat)
+            }
+        }
+        
+        return result
+    }
+    
     // 动态计算横向 Tab
     private var tabs: [String] {
         // 核心预设分组（保持高频词靠前的原有顺序）
@@ -90,6 +140,42 @@ struct CategorySelectionView: View {
                 }
             }
             
+            // ✨ 智能推荐行
+            if !smartRecommendations.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange)
+                        Text("智能推荐")
+                            .font(.system(size: 13, weight: .semibold)
+                                .italic())
+                            .foregroundColor(.orange.opacity(0.8))
+                    }
+                    .padding(.horizontal, 24)
+                    
+                    HStack(spacing: 16) {
+                        ForEach(smartRecommendations, id: \.id) { cat in
+                            CategoryItem(
+                                name: cat.name,
+                                icon: cat.icon,
+                                colorHex: cat.colorHex,
+                                isSelected: selectedCategory?.id == cat.id
+                            ) {
+                                impactFeedback.impactOccurred()
+                                selectedCategory = cat
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 24)
+                }
+                
+                Divider()
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 4)
+            }
+            
             // 内容区域
             if selectedTab == "常用" {
                 // 常用面板
@@ -134,7 +220,7 @@ struct CategorySelectionView: View {
                 categoryGrid(cats: cats, showAdd: true)
             }
         }
-        .onChange(of: type) { _ in
+        .onChange(of: type) { oldValue, newValue in
             selectedTab = "常用" // 切换收支时重置 Tab
         }
     }

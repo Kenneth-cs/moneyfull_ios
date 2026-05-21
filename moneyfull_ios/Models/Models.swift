@@ -90,12 +90,21 @@ enum TransactionType: String, Codable {
     case income  = "income"    // 收入
 }
 
+/// 交易来源枚举
+enum TransactionSource: String, Codable {
+    case manual = "manual"     // 手动记账
+    case voice  = "voice"      // 语音记账
+    case image  = "image"      // 图片记账
+    case auto   = "auto"       // 自动记账
+}
+
 /// 账单（流水）模型：每一笔具体的收支记录
 @Model
 final class Transaction {
     var id: UUID = UUID()
     var amount: Double = 0
     var rawType: String = TransactionType.expense.rawValue // CloudKit 不支持枚举，必须用基础类型存储
+    var rawSource: String = TransactionSource.manual.rawValue // 记录来源
     var categoryName: String = ""
     var categoryIcon: String = ""
     var categoryColorHex: String = "#A8E6CF"
@@ -112,17 +121,134 @@ final class Transaction {
         set { rawType = newValue.rawValue }
     }
     
+    // 提供一个计算属性方便业务层使用枚举
+    @Transient
+    var source: TransactionSource {
+        get { TransactionSource(rawValue: rawSource) ?? .manual }
+        set { rawSource = newValue.rawValue }
+    }
+    
     init(amount: Double, type: TransactionType, categoryName: String,
          categoryIcon: String, categoryColorHex: String,
-         note: String = "", date: Date = Date()) {
+         note: String = "", date: Date = Date(), source: TransactionSource = .manual) {
         self.id = UUID()
         self.amount = amount
         self.rawType = type.rawValue
+        self.rawSource = source.rawValue
         self.categoryName = categoryName
         self.categoryIcon = categoryIcon
         self.categoryColorHex = categoryColorHex
         self.note = note
         self.date = date
         self.createdAt = Date()
+    }
+}
+
+/// 聊天历史模型
+@Model
+final class ChatHistory {
+    var id: UUID = UUID()
+    var role: String = "user" // "user" 或 "assistant"
+    var content: String = ""
+    var timestamp: Date = Date()
+    
+    init(role: String, content: String) {
+        self.id = UUID()
+        self.role = role
+        self.content = content
+        self.timestamp = Date()
+    }
+}
+
+/// 记忆规则模型
+@Model
+final class MemoryRule {
+    var id: UUID = UUID()
+    var keyword: String = ""
+    var targetCategoryName: String = ""
+    var targetProjectName: String = ""
+    var weight: Int = 1
+    var createdAt: Date = Date()
+    
+    init(keyword: String, targetCategoryName: String, targetProjectName: String, weight: Int = 1) {
+        self.id = UUID()
+        self.keyword = keyword
+        self.targetCategoryName = targetCategoryName
+        self.targetProjectName = targetProjectName
+        self.weight = weight
+        self.createdAt = Date()
+    }
+}
+
+/// 周期频率枚举
+enum RecurringFrequency: String, Codable {
+    case daily = "daily"
+    case weekly = "weekly"
+    case monthly = "monthly"
+    case yearly = "yearly"
+}
+
+/// 周期账单模型
+@Model
+final class RecurringBill {
+    var id: UUID = UUID()
+    var name: String = ""
+    var amount: Double = 0
+    var rawType: String = TransactionType.expense.rawValue
+    var categoryName: String = ""
+    var categoryIcon: String = ""
+    var categoryColorHex: String = "#A8E6CF"
+    var projectID: UUID? = nil
+    var rawFrequency: String = RecurringFrequency.monthly.rawValue
+    var nextDueDate: Date = Date()
+    var isAutoRecord: Bool = true
+    var isActive: Bool = true
+    var note: String = ""
+    var createdAt: Date = Date()
+    var lastRecordedAt: Date? = nil
+    
+    @Transient
+    var type: TransactionType {
+        get { TransactionType(rawValue: rawType) ?? .expense }
+        set { rawType = newValue.rawValue }
+    }
+    
+    @Transient
+    var frequency: RecurringFrequency {
+        get { RecurringFrequency(rawValue: rawFrequency) ?? .monthly }
+        set { rawFrequency = newValue.rawValue }
+    }
+    
+    init(name: String, amount: Double, type: TransactionType, categoryName: String,
+         categoryIcon: String, categoryColorHex: String, projectID: UUID? = nil,
+         frequency: RecurringFrequency = .monthly, nextDueDate: Date = Date(),
+         isAutoRecord: Bool = true, note: String = "") {
+        self.id = UUID()
+        self.name = name
+        self.amount = amount
+        self.rawType = type.rawValue
+        self.categoryName = categoryName
+        self.categoryIcon = categoryIcon
+        self.categoryColorHex = categoryColorHex
+        self.projectID = projectID
+        self.rawFrequency = frequency.rawValue
+        self.nextDueDate = nextDueDate
+        self.isAutoRecord = isAutoRecord
+        self.note = note
+        self.createdAt = Date()
+    }
+    
+    func calculateNextDueDate() -> Date {
+        let calendar = Calendar.current
+        switch frequency {
+        case .daily:
+            return calendar.date(byAdding: .day, value: 1, to: nextDueDate) ?? nextDueDate
+        case .weekly:
+            return calendar.date(byAdding: .weekOfYear, value: 1, to: nextDueDate) ?? nextDueDate
+        case .monthly:
+            return calendar.date(byAdding: .month, value: 1, to: nextDueDate) ?? nextDueDate
+        case .yearly:
+            return calendar.date(byAdding: .year, value: 1, to: nextDueDate) ?? nextDueDate
+        }
     }
 }

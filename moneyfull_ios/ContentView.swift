@@ -28,6 +28,6 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [Project.self, Transaction.self, Category.self], inMemory: true)
+        .modelContainer(for: [Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self], inMemory: true)
 }
 

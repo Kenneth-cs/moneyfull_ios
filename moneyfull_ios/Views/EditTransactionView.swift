@@ -268,7 +268,7 @@ struct EditTransactionView: View {
 }
 
 #Preview {
-    let container = try! ModelContainer(for: Project.self, Transaction.self, Category.self)
+    let container = try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self)
     let tx = Transaction(amount: 100, type: .expense, categoryName: "餐饮", categoryIcon: "fork.knife", categoryColorHex: "#A8E6CF")
     return EditTransactionView(transaction: tx)
         .environmentObject(AppStore(modelContext: container.mainContext))
