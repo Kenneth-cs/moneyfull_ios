@@ -67,29 +67,35 @@ struct DashboardView: View {
                             FinanceInfoCard(title: "储蓄", value: store.monthlySaving)
                         }
                         .frame(maxWidth: 240)
+                        
+                        // 嵌入卡片内部的记一笔按钮
+                        Button(action: {
+                            AnalyticsManager.shared.trackEvent(eventId: "record_click_add", eventName: "点击记一笔入口", params: ["source": "dashboard"])
+                            isAddRecordPresented = true
+                        }) {
+                            HStack(spacing: 8) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.white)
+                                        .frame(width: 24, height: 24)
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Color(hex: "#34A873")) // 调整为更明快、更接近图二的绿色
+                                }
+                                Text("记一笔")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color(hex: "#34A873")) // 调整为更明快、更接近图二的绿色
+                            .clipShape(Capsule())
+                            .shadow(color: Color(hex: "#34A873").opacity(0.4), radius: 8, x: 0, y: 4)
+                        }
+                        .padding(.top, -5) // 稍微拉近与上方卡片的距离
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
-                }
-                .padding(.horizontal, 24)
-                
-                // MARK: 记一笔按钮
-                Button(action: {
-                    AnalyticsManager.shared.trackEvent(eventId: "record_click_add", eventName: "点击记一笔入口", params: ["source": "dashboard"])
-                    isAddRecordPresented = true
-                }) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 20))
-                        Text("记一笔")
-                            .font(.system(size: 16, weight: .bold))
-                    }
-                    .foregroundColor(Color.App.darkGreen)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(Color.App.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
                 }
                 .padding(.horizontal, 24)
                 
@@ -359,9 +365,33 @@ struct TransactionItem: View {
 extension Date {
     var relativeDisplay: String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(self) { return "今天 " + formatted(date: .omitted, time: .shortened) }
-        if calendar.isDateInYesterday(self) { return "昨天 " + formatted(date: .omitted, time: .shortened) }
-        return formatted(date: .abbreviated, time: .omitted)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        
+        if calendar.isDateInToday(self) {
+            formatter.dateFormat = "HH:mm"
+            return "今天 \(formatter.string(from: self))"
+        }
+        if calendar.isDateInYesterday(self) {
+            formatter.dateFormat = "HH:mm"
+            return "昨天 \(formatter.string(from: self))"
+        }
+        
+        // 今年的日期显示 月/日
+        if calendar.component(.year, from: self) == calendar.component(.year, from: Date()) {
+            formatter.dateFormat = "M/d"
+        } else {
+            // 非今年显示 年/月/日
+            formatter.dateFormat = "yyyy/M/d"
+        }
+        return formatter.string(from: self)
+    }
+    
+    var formattedChineseDate: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy年M月d日"
+        return formatter.string(from: self)
     }
 }
 

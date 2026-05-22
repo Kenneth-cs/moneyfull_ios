@@ -7,6 +7,8 @@ struct MainTabView: View {
     @State private var isAddRecordPresented = false
     @State private var isAIChatPresented = false
     @State private var projectNavResetID = UUID()
+    @State private var aiInitialText: String?
+    @State private var isFromShortcut: Bool = false
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -44,7 +46,12 @@ struct MainTabView: View {
             .background(Color.clear) // TabView 本身透明，背景由底层提供
             
             // ③ 自定义底部 Tab 栏（含底部安全区填充）
-            CustomBottomTabBar(selectedTab: $selectedTab, isAddRecordPresented: $isAddRecordPresented, isAIChatPresented: $isAIChatPresented)
+            CustomBottomTabBar(
+                selectedTab: $selectedTab,
+                isAddRecordPresented: $isAddRecordPresented,
+                isAIChatPresented: $isAIChatPresented,
+                aiInitialText: $aiInitialText
+            )
         }
         .onChange(of: selectedTab) {
             if selectedTab == 3 {
@@ -56,10 +63,43 @@ struct MainTabView: View {
                 .environmentObject(store)
         }
         .fullScreenCover(isPresented: $isAIChatPresented) {
-            AIChatView()
+            AIChatView(initialText: aiInitialText, isFromShortcut: isFromShortcut)
                 .environmentObject(store)
+                .onDisappear {
+                    aiInitialText = nil
+                    isFromShortcut = false
+                }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onReceive(NotificationCenter.default.publisher(for: .deepLinkReceived)) { notification in
+            if let text = notification.object as? String {
+                aiInitialText = text
+                isFromShortcut = true
+                // 先重置，再延迟弹出，确保第二次及以后每次都能重新弹出
+                isAIChatPresented = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    isAIChatPresented = true
+                }
+            }
+        }
+        .onAppear {
+            // 检查是否有待处理的 OCR 文本（从 Intent 传来）
+            checkPendingOCRText()
+        }
+    }
+    
+    private func checkPendingOCRText() {
+        if let text = UserDefaults(suiteName: "group.moneyfull.shared")?.string(forKey: "pendingOCRText"),
+           !text.isEmpty {
+            // 清除 UserDefaults 中的数据
+            UserDefaults(suiteName: "group.moneyfull.shared")?.removeObject(forKey: "pendingOCRText")
+            
+            aiInitialText = text
+            isFromShortcut = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isAIChatPresented = true
+            }
+        }
     }
 }
 
@@ -68,7 +108,9 @@ struct CustomBottomTabBar: View {
     @Binding var selectedTab: Int
     @Binding var isAddRecordPresented: Bool
     @Binding var isAIChatPresented: Bool
+    @Binding var aiInitialText: String?
     private let selectionFeedback = UISelectionFeedbackGenerator()
+    private let speechService = SpeechService.shared
     
     var body: some View {
         // 悬浮胶囊，直接浮在背景色上，不加任何底部填充块
@@ -79,26 +121,31 @@ struct CustomBottomTabBar: View {
             Spacer()
             
                 // 中央AI助手按钮（与其他图标平齐）
-                Button(action: {
-                    AnalyticsManager.shared.trackEvent(eventId: "ai_chat_open", eventName: "打开AI助手", params: ["source": "tab_bar"])
-                    isAIChatPresented = true
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.App.primaryGreen)
-                            .frame(width: 64, height: 64)
-                            .shadow(color: Color.App.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 8)
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(Color.App.textOnPrimary)
-                    }
-                }
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.5)
-                        .onEnded { _ in
-                            AnalyticsManager.shared.trackEvent(eventId: "ai_voice_start", eventName: "长按语音记账", params: ["source": "tab_bar"])
-                            // TODO: 触发语音录音
+                AIAssistantButton(
+                    onShortTap: {
+                        AnalyticsManager.shared.trackEvent(eventId: "ai_chat_open", eventName: "打开AI助手", params: ["source": "tab_bar"])
+                        aiInitialText = nil
+                        isAIChatPresented = true
+                    },
+                    onLongPressStart: {
+                        AnalyticsManager.shared.trackEvent(eventId: "ai_voice_start", eventName: "长按语音记账", params: ["source": "tab_bar"])
+                        Task {
+                            let granted = await speechService.requestPermission()
+                            if granted {
+                                try? speechService.startRecording()
+                            }
                         }
+                    },
+                    onLongPressEnd: {
+                        speechService.stopRecording()
+                        let transcribed = speechService.transcribedText
+                        if !transcribed.isEmpty {
+                            aiInitialText = transcribed
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                isAIChatPresented = true
+                            }
+                        }
+                    }
                 )
             
             Spacer()
@@ -116,6 +163,104 @@ struct CustomBottomTabBar: View {
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+    }
+}
+
+// MARK: - AI 助手麦克风按钮
+struct AIAssistantButton: View {
+    var onShortTap: () -> Void
+    var onLongPressStart: () -> Void
+    var onLongPressEnd: () -> Void
+    
+    @State private var isAnimating = false
+    @State private var isPressed = false
+    @State private var isRecording = false
+    @State private var pressTimer: Timer?
+    
+    var body: some View {
+        ZStack {
+            // 录音时的外发光扩散效果
+            if isRecording {
+                Circle()
+                    .stroke(Color(hex: "#10B981"), lineWidth: 2) // 加深波纹颜色
+                    .frame(width: 84, height: 84)
+                    .scaleEffect(isAnimating ? 1.4 : 1.0)
+                    .opacity(isAnimating ? 0 : 0.6)
+                    .animation(.easeOut(duration: 1.2).repeatForever(autoreverses: false), value: isAnimating)
+                
+                Circle()
+                    .stroke(Color(hex: "#34D399"), lineWidth: 2)
+                    .frame(width: 84, height: 84)
+                    .scaleEffect(isAnimating ? 1.4 : 1.0)
+                    .opacity(isAnimating ? 0 : 0.6)
+                    .animation(.easeOut(duration: 1.2).repeatForever(autoreverses: false).delay(0.4), value: isAnimating)
+            }
+            
+            // 呼吸光晕效果
+            Circle()
+                .fill(Color(hex: "#10B981")) // 加深光晕颜色
+                .frame(width: 64, height: 64)
+                .scaleEffect(isAnimating && !isRecording ? 1.3 : 1.0)
+                .opacity(isAnimating && !isRecording ? 0 : 0.25)
+            
+            // 主体按钮渐变背景
+            Circle()
+                .fill(Color.App.cardBackground)
+                .frame(width: 64, height: 64)
+                .shadow(color: Color.black.opacity(0.1), radius: 12, x: 0, y: 8)
+            
+            // 麦克风图标 (使用自定义图片)
+            Image("ai_button") // 假设图片名为 ai_button，请确保 Assets.xcassets 中有此图片
+                .resizable()
+                .scaledToFill()
+                .frame(width: 64, height: 64)
+                .clipShape(Circle())
+            
+            // 录音状态提示文字
+            if isRecording {
+                Text("正在录音...")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.App.primaryGreen)
+                    .clipShape(Capsule())
+                    .offset(y: -50)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        .scaleEffect(isPressed ? 0.92 : 1.0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isPressed)
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.5).repeatForever(autoreverses: false)) {
+                isAnimating = true
+            }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !isPressed {
+                        isPressed = true
+                        // 启动长按计时器
+                        pressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                            isRecording = true
+                            onLongPressStart()
+                        }
+                    }
+                }
+                .onEnded { _ in
+                    isPressed = false
+                    pressTimer?.invalidate()
+                    pressTimer = nil
+                    
+                    if isRecording {
+                        isRecording = false
+                        onLongPressEnd()
+                    } else {
+                        onShortTap()
+                    }
+                }
+        )
     }
 }
 

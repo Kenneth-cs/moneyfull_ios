@@ -2,6 +2,48 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 
+struct TypingIndicator: View {
+    @State private var isAnimating = false
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Color.gray.opacity(0.5))
+                .frame(width: 6, height: 6)
+                .offset(y: isAnimating ? -4 : 0)
+                .animation(.easeInOut(duration: 0.6).repeatForever().delay(0.0), value: isAnimating)
+            
+            Circle()
+                .fill(Color.gray.opacity(0.5))
+                .frame(width: 6, height: 6)
+                .offset(y: isAnimating ? -4 : 0)
+                .animation(.easeInOut(duration: 0.6).repeatForever().delay(0.2), value: isAnimating)
+            
+            Circle()
+                .fill(Color.gray.opacity(0.5))
+                .frame(width: 6, height: 6)
+                .offset(y: isAnimating ? -4 : 0)
+                .animation(.easeInOut(duration: 0.6).repeatForever().delay(0.4), value: isAnimating)
+        }
+        .onAppear {
+            isAnimating = true
+        }
+    }
+}
+struct CapybaraAvatar: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+            
+            // 这里用一个简单的Emoji代替复杂的SVG，或者如果有的话可以用图片
+            Text("🦫")
+                .font(.system(size: 24))
+        }
+    }
+}
+
 struct AIChatView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
@@ -12,6 +54,9 @@ struct AIChatView: View {
     @State private var showVoiceInput = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedImage: UIImage?
+    
+    var initialText: String?
+    var isFromShortcut: Bool = false
     
     private let speechService = SpeechService.shared
     private let llmService = LLMService.shared
@@ -26,33 +71,59 @@ struct AIChatView: View {
                     Button(action: {
                         dismiss()
                     }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(Color.App.textBlack)
-                            .frame(width: 40, height: 40)
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.white.opacity(0.25))
+                            .clipShape(Circle())
                     }
                     
-                    Spacer()
-                    
-                    Text("AI 助手")
-                        .font(.system(size: 20, weight: .heavy))
-                        .foregroundColor(Color.App.textBlack)
+                    HStack(spacing: 12) {
+                        ZStack(alignment: .bottomTrailing) {
+                            CapybaraAvatar()
+                                .frame(width: 40, height: 40)
+                            
+                            Circle()
+                                .fill(Color(hex: "#34D399")) // 更明亮的在线绿点
+                                .frame(width: 12, height: 12)
+                                .overlay(Circle().stroke(Color(hex: "#10B981"), lineWidth: 2)) // 边框融入背景
+                                .offset(x: 2, y: 2)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("AI 助手")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("在线")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color.white.opacity(0.9))
+                        }
+                    }
                     
                     Spacer()
                     
                     Button(action: {
-                        // 清空聊天记录
                         messages.removeAll()
                     }) {
                         Image(systemName: "trash")
-                            .font(.system(size: 18))
-                            .foregroundColor(Color.App.textBlack)
-                            .frame(width: 40, height: 40)
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.white.opacity(0.25))
+                            .clipShape(Circle())
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
                 .padding(.bottom, 16)
+                .background(
+                    LinearGradient(
+                        colors: [Color(hex: "#10B981"), Color(hex: "#34D399")], // 加深顶部导航栏渐变 (emerald-500 to emerald-400)
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
                 
                 // MARK: Chat Messages
                 ScrollViewReader { proxy in
@@ -78,10 +149,30 @@ struct AIChatView: View {
                             }
                             
                             if isLoading {
-                                HStack {
-                                    Spacer()
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
+                                HStack(alignment: .center, spacing: 8) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.white)
+                                            .frame(width: 36, height: 36)
+                                            .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                                        CapybaraAvatar()
+                                            .frame(width: 24, height: 24)
+                                    }
+                                    
+                                    TypingIndicator()
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 14)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .fill(Color.white)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 16)
+                                                        .stroke(Color(hex: "#10B981").opacity(0.15), lineWidth: 1)
+                                                )
+                                                .shadow(color: Color(hex: "#10B981").opacity(0.08), radius: 8, x: 0, y: 4)
+                                        )
+                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    
                                     Spacer()
                                 }
                                 .padding(.vertical, 8)
@@ -98,16 +189,16 @@ struct AIChatView: View {
                 }
                 
                 // MARK: Input Area
-                VStack(spacing: 12) {
-                    Divider()
+                VStack(spacing: 0) {
+                    Divider().background(Color.gray.opacity(0.1))
                     
                     HStack(spacing: 12) {
-                        // 图片选择按钮
+                        // 相册按钮
                         PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                             Image(systemName: "photo")
                                 .font(.system(size: 20))
-                                .foregroundColor(Color.App.darkGreen)
-                                .frame(width: 40, height: 40)
+                                .foregroundColor(Color.gray)
+                                .frame(width: 36, height: 36)
                         }
                         .onChange(of: selectedPhotoItem) { oldValue, newValue in
                             Task {
@@ -123,28 +214,32 @@ struct AIChatView: View {
                         Button(action: {
                             showVoiceInput.toggle()
                         }) {
-                            Image(systemName: showVoiceInput ? "keyboard" : "mic.fill")
+                            Image(systemName: showVoiceInput ? "keyboard" : "mic")
                                 .font(.system(size: 20))
-                                .foregroundColor(Color.App.darkGreen)
-                                .frame(width: 40, height: 40)
+                                .foregroundColor(Color.gray)
+                                .frame(width: 36, height: 36)
                         }
                         
                         if showVoiceInput {
                             // 语音输入按钮
-                            Button(action: {
+                            ZStack {
                                 if isRecording {
-                                    stopRecording()
+                                    Text("松开发送")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(Color.App.redExpense)
+                                        .clipShape(RoundedRectangle(cornerRadius: 20))
                                 } else {
-                                    startRecording()
+                                    Text("按住说话")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(Color.App.textBlack)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(Color.gray.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 20))
                                 }
-                            }) {
-                                Text(isRecording ? "松开发送" : "按住说话")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                                    .background(isRecording ? Color.red : Color.App.darkGreen)
-                                    .clipShape(RoundedRectangle(cornerRadius: 20))
                             }
                             .simultaneousGesture(
                                 DragGesture(minimumDistance: 0)
@@ -162,10 +257,10 @@ struct AIChatView: View {
                         } else {
                             // 文字输入框
                             TextField("输入消息...", text: $messageText)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Color.App.tabBackground)
+                                .font(.system(size: 14))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.gray.opacity(0.08))
                                 .clipShape(RoundedRectangle(cornerRadius: 20))
                         }
                         
@@ -173,20 +268,53 @@ struct AIChatView: View {
                         Button(action: {
                             sendMessage()
                         }) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 32))
-                                .foregroundColor(messageText.isEmpty ? Color.gray : Color.App.darkGreen)
+                            ZStack {
+                                Circle()
+                                    .fill(LinearGradient(
+                                        colors: [Color(hex: "#10B981"), Color(hex: "#34D399")], // 加深发送按钮渐变
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ))
+                                    .frame(width: 40, height: 40)
+                                    .shadow(color: Color(hex: "#10B981").opacity(0.4), radius: 4, x: 0, y: 2)
+                                
+                                Image(systemName: "paperplane.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.white)
+                                    .offset(x: -1, y: 1)
+                            }
                         }
                         .disabled(messageText.isEmpty)
+                        .opacity(messageText.isEmpty ? 0.5 : 1.0)
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    .padding(.vertical, 12)
                 }
-                .background(Color.App.cardBackground)
+                .background(Color.white)
             }
-            .background(Color.App.backgroundGray.ignoresSafeArea())
+            .background(
+                LinearGradient(
+                    colors: [Color.white, Color(hex: "#ECFDF5").opacity(0.5)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ).ignoresSafeArea()
+            )
             .onAppear {
                 loadChatHistory()
+                if let text = initialText, !text.isEmpty {
+                    if isFromShortcut {
+                        // 快捷指令来源：不显示用户气泡，直接显示 AI 处理
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            processOCRText(text)
+                        }
+                    } else {
+                        // 语音/手动输入：正常显示用户气泡
+                        messageText = text
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            sendMessage()
+                        }
+                    }
+                }
             }
         }
     }
@@ -401,6 +529,54 @@ struct AIChatView: View {
         }
     }
     
+    private func processOCRText(_ ocrText: String) {
+        Task {
+            await MainActor.run {
+                isLoading = true
+                
+                // 显示"正在识别账单..."消息
+                let processingMessage = ChatMessage(
+                    role: .assistant,
+                    content: "正在识别账单...",
+                    timestamp: Date()
+                )
+                messages.append(processingMessage)
+            }
+            
+            do {
+                // 获取context
+                let context = try contextManager.buildContext()
+                
+                // 调用LLM解析OCR文本
+                let result = try await llmService.parseOCRText(from: ocrText, context: context)
+                
+                await MainActor.run {
+                    // 移除"正在识别..."消息
+                    messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
+                    
+                    // 处理结果
+                    handleParseResult(result)
+                    
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    // 移除"正在识别..."消息
+                    messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
+                    
+                    let errorMessage = ChatMessage(
+                        role: .assistant,
+                        content: "识别失败，请重试",
+                        timestamp: Date()
+                    )
+                    messages.append(errorMessage)
+                    
+                    isLoading = false
+                }
+            }
+        }
+    }
+    
     private func handleParseResult(_ result: TransactionParseResult) {
         if result.status == "success" {
             // 创建交易确认卡片
@@ -553,12 +729,22 @@ struct ChatBubble: View {
     var onCreateProject: ((ProjectCreationData) -> Void)?
     
     var body: some View {
-        HStack {
+        HStack(alignment: .top, spacing: 8) {
             if message.role == .user {
                 Spacer()
+            } else {
+                // AI 头像
+                ZStack {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 36, height: 36)
+                        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                    CapybaraAvatar()
+                        .frame(width: 24, height: 24)
+                }
             }
             
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
                 if let cardData = message.transactionCard {
                     TransactionConfirmCard(cardData: cardData, onConfirm: onConfirm, onCancel: onCancel, onSaveMemory: onSaveMemory)
                 } else if let projectData = message.projectCreation {
@@ -572,13 +758,36 @@ struct ChatBubble: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 } else {
                     Text(message.content)
-                        .font(.system(size: 16))
-                        .foregroundColor(message.role == .user ? .white : Color.App.textBlack)
+                        .font(.system(size: 15))
+                        .foregroundColor(message.role == .user ? .white : Color(hex: "#1F2937"))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .background(message.role == .user ? Color.App.darkGreen : Color.App.cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .background(
+                            message.role == .user ?
+                            AnyView(LinearGradient(
+                                colors: [Color(hex: "#10B981"), Color(hex: "#34D399")], // 加深用户气泡渐变
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )) :
+                            AnyView(
+                                // AI 气泡：纯白背景 + 微弱的绿色边框 + 柔和阴影，拉开与背景的层次
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color.white)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color(hex: "#10B981").opacity(0.15), lineWidth: 1)
+                                    )
+                                    .shadow(color: Color(hex: "#10B981").opacity(0.08), radius: 8, x: 0, y: 4)
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
+                
+                // 时间
+                Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 10))
+                    .foregroundColor(Color.gray.opacity(0.6))
+                    .padding(.horizontal, 4)
             }
             
             if message.role == .assistant {

@@ -215,7 +215,7 @@ struct ProjectDetailCard: View {
                             Text(project.name)
                                 .font(.system(size: 20, weight: .heavy))
                                 .foregroundColor(Color.App.textBlack)
-                            Text("创建于 \(project.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                            Text("创建于 \(project.createdAt.formattedChineseDate)")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.gray)
                         }

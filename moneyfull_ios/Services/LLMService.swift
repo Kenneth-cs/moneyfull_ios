@@ -138,13 +138,15 @@ class LLMService {
         任务：从OCR提取的账单/支付截图文本中提取记账信息，并严格按照JSON格式输出。
         
         核心规则：
-        1. **OCR文本特点**：OCR提取的文本可能包含乱序、换行、无关信息（如广告、时间戳等），需要智能提取关键信息。
+        1. **OCR文本容错**：输入文本来自iOS系统OCR识别，可能存在以下问题，请智能容错：
+           - 字符误识别：如 "の" 实际是 "0"，"l" 是 "1"，"O" 是 "0"
+           - 文本乱序：金额、商户名、时间可能不按阅读顺序排列
+           - 包含无关内容：广告、界面按钮文字、导航栏文字等，请忽略
         
-        2. **关键信息提取**：
-           - 金额：寻找数字（可能带¥、元等符号）
-           - 商户/商品名：寻找中文名称
-           - 时间：如果有时间信息，可以作为备注
-           - 支付方式：微信、支付宝等（可选）
+        2. **关键信息提取优先级**：
+           - 金额（最重要）：寻找最大的数字，通常带¥或元符号，格式如 "¥25.00" "25元"
+           - 商户/商品名：寻找有意义的中文名称（商家名、商品名）
+           - 交易类型：支付宝/微信支付通常为支出，收款/转账收入为收入
         
         3. **分类识别**：
            - 根据商户/商品名推断一级分类(groupName)和二级分类(categoryName)
@@ -152,7 +154,7 @@ class LLMService {
            - 例如：滴滴出行 → groupName: "出行", categoryName: "打车"
         
         4. **输出格式**：
-           - 成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "projectName": "项目名或null"}
+           - 成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "projectName": null}
            - 无法识别：{"status": "need_clarification", "reply": "无法识别账单信息，请手动输入"}
         
         Context:
