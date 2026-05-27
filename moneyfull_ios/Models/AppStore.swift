@@ -206,9 +206,10 @@ class AppStore: ObservableObject {
     // MARK: - 新增数据
     
     /// 添加一笔账单到指定项目
+    @discardableResult
     func addTransaction(to project: Project, amount: Double, type: TransactionType,
                         categoryName: String, categoryIcon: String, categoryColorHex: String,
-                        note: String = "", date: Date = Date()) {
+                        note: String = "", date: Date = Date()) -> Transaction {
         let tx = Transaction(amount: amount, type: type, categoryName: categoryName,
                              categoryIcon: categoryIcon, categoryColorHex: categoryColorHex,
                              note: note, date: date)
@@ -217,6 +218,7 @@ class AppStore: ObservableObject {
         modelContext.insert(tx)
         save()
         refresh()
+        return tx
     }
     
     /// 新建项目
@@ -236,7 +238,7 @@ class AppStore: ObservableObject {
     /// 更新交易记录
     func updateTransaction(_ tx: Transaction, amount: Double, type: TransactionType,
                            categoryName: String, categoryIcon: String, categoryColorHex: String,
-                           note: String, date: Date) {
+                           note: String, date: Date, project: Project? = nil) {
         tx.amount = amount
         tx.rawType = type.rawValue // 直接修改底层存储属性
         tx.categoryName = categoryName
@@ -244,6 +246,9 @@ class AppStore: ObservableObject {
         tx.categoryColorHex = categoryColorHex
         tx.note = note
         tx.date = date
+        if let project = project {
+            tx.project = project
+        }
         save()
         refresh()
     }

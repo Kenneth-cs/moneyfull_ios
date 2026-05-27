@@ -18,7 +18,7 @@ class LLMService {
         let systemPrompt = """
         你是用户的专属财务管家"小满"，语气专业、温暖、简洁。
         
-        任务：从用户的自然语言中提取记账信息，并严格按照JSON格式输出。
+        任务：从用户的自然语言中提取记账信息或分析意图，并严格按照JSON格式输出。
         
         核心规则：
         1. **精细化分类识别**：必须识别到一级分类(groupName)和二级分类(name)。
@@ -33,14 +33,21 @@ class LLMService {
            - 返回状态 "suggest_new_category"
            - 提供 suggested_category（建议的二级分类名）
            - 提供 parent_group（建议的一级分类名）
-           - 例如：用户说"买咖啡"，但没有"咖啡"分类，返回：
-             {"status": "suggest_new_category", "suggested_category": "咖啡", "parent_group": "餐饮", "amount": 25, "type": "expense"}
         
         4. **模糊表达处理**：如果用户表达模糊（如"花了50"没说干嘛），不要猜测，返回：
            {"status": "need_clarification", "reply": "追问话术"}
         
         5. **完整信息输出**：如果信息完整且分类存在，输出：
-           {"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "projectName": "项目名或null"}
+           {"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "project_name": "项目名或null"}
+        
+        6. **消费分析意图**：如果用户询问支出分析（如"分析餐饮支出"、"本月花了多少"），返回：
+           {"status": "insight", "insight_type": "category_group", "target_group": "餐饮", "period": "last_month", "reply": "友好文案"}
+           - insight_type 可选值：category_group（分类分析）、monthly_overview（月度概览）
+           - period 可选值：last_month（上月）、this_month（本月）
+           - reply 中可用 **双星号** 包裹需要强调的数字或关键词，例如：**¥1,280**、**15%**
+           - 注意：reply 中不要编造具体金额，只写分析意图和引导语
+        
+        7. **富文本规则**：status 为 chat、need_clarification 时，reply 中可用 **双星号** 强调关键词。
         
         Context:
         \(context)
@@ -321,6 +328,10 @@ struct TransactionParseResult: Codable {
     let reply: String?
     let suggestedCategory: String?
     let parentGroup: String?
+    // 消费洞察字段（可选，有默认值）
+    var insightType: String? = nil  // "category_group" | "monthly_overview"
+    var targetGroup: String? = nil  // 目标一级分类名，如 "餐饮"
+    var period: String? = nil       // "last_month" | "this_month"
     
     enum CodingKeys: String, CodingKey {
         case status, amount, type, groupName, categoryName
@@ -328,5 +339,8 @@ struct TransactionParseResult: Codable {
         case projectName = "project_name"
         case suggestedCategory = "suggested_category"
         case parentGroup = "parent_group"
+        case insightType = "insight_type"
+        case targetGroup = "target_group"
+        case period
     }
 }

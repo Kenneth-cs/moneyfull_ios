@@ -11,48 +11,58 @@ struct MainTabView: View {
     @State private var isFromShortcut: Bool = false
     
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // ① 底层铺满整屏的背景色，消除顶部/底部白条
-            Color.App.backgroundGray.ignoresSafeArea()
-            
-            // ② 内容区域：TabView 透明背景，内容向上缩进避免被 Tab 栏遮住
-            TabView(selection: $selectedTab) {
-                DashboardView(selectedTab: $selectedTab, onResetProjectNav: {
-                    projectNavResetID = UUID()
-                })
-                .tag(0)
-                .toolbar(.hidden, for: .tabBar)
+        NavigationView {
+            ZStack(alignment: .bottom) {
+                Color.App.backgroundGray.ignoresSafeArea()
                 
-                NavigationView {
+                TabView(selection: $selectedTab) {
+                    DashboardView(selectedTab: $selectedTab, onResetProjectNav: {
+                        projectNavResetID = UUID()
+                    })
+                    .tag(0)
+                    .toolbar(.hidden, for: .tabBar)
+                    
                     ProjectsView()
+                        .id(projectNavResetID)
+                        .tag(1)
+                        .toolbar(.hidden, for: .tabBar)
+                    
+                    Color.clear
+                        .tag(2)
+                        .toolbar(.hidden, for: .tabBar)
+                    
+                    AnalyticsView()
+                        .tag(3)
+                        .toolbar(.hidden, for: .tabBar)
+                    
+                    ProfileView()
+                        .tag(4)
+                        .toolbar(.hidden, for: .tabBar)
                 }
-                .id(projectNavResetID)
-                .navigationViewStyle(.stack)
-                .tag(1)
-                .toolbar(.hidden, for: .tabBar)
+                .background(Color.clear)
                 
-                Color.clear
-                    .tag(2)
-                    .toolbar(.hidden, for: .tabBar)
+                CustomBottomTabBar(
+                    selectedTab: $selectedTab,
+                    isAddRecordPresented: $isAddRecordPresented,
+                    isAIChatPresented: $isAIChatPresented,
+                    aiInitialText: $aiInitialText
+                )
                 
-                AnalyticsView()
-                    .tag(3)
-                    .toolbar(.hidden, for: .tabBar)
-                
-                ProfileView()
-                    .tag(4)
-                    .toolbar(.hidden, for: .tabBar)
+                NavigationLink(isActive: $isAIChatPresented) {
+                    AIChatView(initialText: aiInitialText, isFromShortcut: isFromShortcut)
+                        .environmentObject(store)
+                        .onDisappear {
+                            aiInitialText = nil
+                            isFromShortcut = false
+                        }
+                } label: {
+                    EmptyView()
+                }
+                .hidden()
             }
-            .background(Color.clear) // TabView 本身透明，背景由底层提供
-            
-            // ③ 自定义底部 Tab 栏（含底部安全区填充）
-            CustomBottomTabBar(
-                selectedTab: $selectedTab,
-                isAddRecordPresented: $isAddRecordPresented,
-                isAIChatPresented: $isAIChatPresented,
-                aiInitialText: $aiInitialText
-            )
+            .navigationBarHidden(true)
         }
+        .navigationViewStyle(.stack)
         .onChange(of: selectedTab) {
             if selectedTab == 3 {
                 AnalyticsManager.shared.trackEvent(eventId: "analytics_view_page", eventName: "浏览统计页")
@@ -62,20 +72,14 @@ struct MainTabView: View {
             AddRecordView()
                 .environmentObject(store)
         }
-        .fullScreenCover(isPresented: $isAIChatPresented) {
-            AIChatView(initialText: aiInitialText, isFromShortcut: isFromShortcut)
-                .environmentObject(store)
-                .onDisappear {
-                    aiInitialText = nil
-                    isFromShortcut = false
-                }
-        }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onReceive(NotificationCenter.default.publisher(for: .deepLinkReceived)) { notification in
             if let text = notification.object as? String {
+                let todayKey = "ai_chat_usage_" + { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date()) }()
+                let usage = UserDefaults.standard.integer(forKey: todayKey)
+                guard usage < 15 else { return }
                 aiInitialText = text
                 isFromShortcut = true
-                // 先重置，再延迟弹出，确保第二次及以后每次都能重新弹出
                 isAIChatPresented = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     isAIChatPresented = true
@@ -83,7 +87,6 @@ struct MainTabView: View {
             }
         }
         .onAppear {
-            // 检查是否有待处理的 OCR 文本（从 Intent 传来）
             checkPendingOCRText()
         }
     }

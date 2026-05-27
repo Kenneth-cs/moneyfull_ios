@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Financial Assistant</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-error": "#ffffff",
+                      "on-secondary": "#ffffff",
+                      "on-background": "#191c1c",
+                      "on-primary-fixed-variant": "#03513f",
+                      "surface-dim": "#d8dada",
+                      "error-container": "#ffdad6",
+                      "surface-tint": "#276956",
+                      "on-tertiary-fixed-variant": "#574144",
+                      "tertiary-fixed": "#fbdbde",
+                      "tertiary": "#70585b",
+                      "on-surface-variant": "#3f4945",
+                      "on-primary-fixed": "#002118",
+                      "surface-bright": "#f8faf9",
+                      "on-tertiary-fixed": "#281719",
+                      "on-secondary-fixed": "#2a1704",
+                      "on-surface": "#191c1c",
+                      "surface-container": "#eceeed",
+                      "on-tertiary-container": "#6c5457",
+                      "on-tertiary": "#ffffff",
+                      "primary-fixed": "#aef0d8",
+                      "background": "#f8faf9",
+                      "inverse-surface": "#2e3131",
+                      "secondary-fixed-dim": "#e3c0a0",
+                      "tertiary-container": "#eacbce",
+                      "on-primary-container": "#226552",
+                      "on-primary": "#ffffff",
+                      "surface-container-low": "#f2f4f3",
+                      "surface": "#f8faf9",
+                      "inverse-on-surface": "#eff1f0",
+                      "secondary": "#74593f",
+                      "primary-container": "#9ee0c8",
+                      "outline-variant": "#bfc9c3",
+                      "inverse-primary": "#92d4bc",
+                      "on-error-container": "#93000a",
+                      "primary-fixed-dim": "#92d4bc",
+                      "outline": "#707974",
+                      "on-secondary-container": "#795d43",
+                      "primary": "#276956",
+                      "on-secondary-fixed-variant": "#5a422a",
+                      "error": "#ba1a1a",
+                      "secondary-fixed": "#ffdcbe",
+                      "tertiary-fixed-dim": "#debfc2",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-variant": "#e1e3e2",
+                      "secondary-container": "#fed9b8",
+                      "surface-container-high": "#e6e9e8",
+                      "surface-container-highest": "#e1e3e2"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "2xl": "1.5rem",
+                      "3xl": "2rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "bubble-padding": "16px 20px",
+                      "container-gap": "24px",
+                      "unit": "4px",
+                      "margin-mobile": "20px",
+                      "gutter": "16px",
+                      "margin-desktop": "40px"
+              },
+              "fontFamily": {
+                      "chat-bubble": ["Plus Jakarta Sans"],
+                      "headline-md": ["Plus Jakarta Sans"],
+                      "body-lg": ["Plus Jakarta Sans"],
+                      "body-sm": ["Plus Jakarta Sans"],
+                      "headline-lg-mobile": ["Plus Jakarta Sans"],
+                      "label-md": ["Plus Jakarta Sans"],
+                      "headline-lg": ["Plus Jakarta Sans"]
+              },
+              "fontSize": {
+                      "chat-bubble": ["15px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #fafbfa; /* Very faint light */
+            background-image: radial-gradient(rgba(0,0,0,0.03) 2px, transparent 2px);
+            background-size: 24px 24px;
+        }
+        
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .chat-container::-webkit-scrollbar {
+            width: 4px;
+        }
+        .chat-container::-webkit-scrollbar-thumb {
+            background-color: #e1e3e2;
+            border-radius: 4px;
+        }
+        
+        /* Soft minimalism utility classes */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.03);
+        }
+        
+        .bubble-bounce {
+            animation: bubbleBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        @keyframes bubbleBounce {
+            0% { opacity: 0; transform: translateY(20px) scale(0.95); }
+            100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="text-on-background antialiased flex flex-col h-screen max-w-[768px] mx-auto w-full shadow-[0_0_40px_rgba(0,0,0,0.02)] md:my-8 md:h-[calc(100vh-64px)] md:rounded-[40px] overflow-hidden bg-white/50 backdrop-blur-3xl">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-margin-mobile py-4 bg-white/70 backdrop-blur-xl sticky top-0 z-10 flat no shadows border-b border-surface-variant/20">
+<button class="w-12 h-12 flex items-center justify-center rounded-full text-[#226552] dark:text-primary-fixed hover:bg-surface-container transition-colors focus:outline-none hover:scale-95 duration-150 bg-white/80 backdrop-blur-sm shadow-[0_2px_8px_rgba(0,0,0,0.02)] border border-surface-variant/10">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="text-headline-md font-headline-md font-bold text-[#226552] dark:text-primary-fixed flex items-center gap-1">
+            ✨ 小满-您的财务管家 ✨
+        </h1>
+<div class="w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-surface-container-high flex items-center justify-center relative cursor-pointer hover:scale-95 duration-150 transition-transform shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+<img alt="AI Assistant Avatar" class="w-full h-full object-cover" data-alt="A close up, friendly and professional portrait of a young woman with a warm smile, serving as an AI assistant avatar. The background is soft and slightly blurred, fitting a modern app aesthetic. Lighting is bright and even, casting soft shadows. 8k, highly detailed, photorealistic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDd2hAlVxq7gXa8orKmn1lW39OMpWO_K74V765slB-HAE5jpKQmYsFXL0QvaY4HGTLUl3prwWMRK6P1x_2V5pulXIK4boMUs5_ox5XINCADkr_wxqU3xpAZif2uKQTBKYFcAZ3f65kMHGtg61-_c1v97wSRxBA2HD03Qn4C3f2H7Ym9Mam8QE2ChumQATE9hMxliF3L-X3G3f8MeosakBOwjEr4AeZJiYm-NNYnJfBNPfsT4ffycObX0ISKjjcqQVtR_Hn81Met8t0"/>
+<div class="absolute bottom-0 right-0 w-3.5 h-3.5 bg-[#9ee0c8] border-2 border-white rounded-full"></div>
+</div>
+</header>
+<!-- Chat Area -->
+<main class="chat-container px-margin-mobile py-6 flex flex-col gap-8" id="chat-box">
+<!-- Date Divider -->
+<div class="flex justify-center w-full mt-2">
+<span class="text-xs text-outline/80 font-medium bg-white/80 backdrop-blur-sm px-4 py-1.5 rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.02)] border border-surface-variant/20">今天 10:24 AM 🌸</span>
+</div>
+<!-- User Message -->
+<div class="flex justify-end w-full bubble-bounce" style="animation-delay: 0.1s; animation-fill-mode: both;">
+<div class="bg-white/90 backdrop-blur-md text-on-surface p-bubble-padding rounded-3xl rounded-tr-lg max-w-[85%] shadow-[0_4px_20px_rgba(0,0,0,0.02)] border border-surface-variant/10 text-chat-bubble font-chat-bubble">
+                帮我分析一下上个月的餐饮支出。
+            </div>
+</div>
+<!-- AI Message -->
+<div class="flex flex-col gap-3 w-full bubble-bounce" style="animation-delay: 0.3s; animation-fill-mode: both;">
+<div class="flex items-end gap-3">
+<div class="w-10 h-10 rounded-full overflow-hidden border border-white shrink-0 self-end mb-1 shadow-[0_2px_8px_rgba(0,0,0,0.03)] bg-white flex items-center justify-center text-xl">
+🤖
+</div>
+<div class="bg-[#f0fbf6]/90 backdrop-blur-md text-[#1a4d3e] p-bubble-padding rounded-3xl rounded-tl-lg max-w-[85%] shadow-[0_4px_20px_rgba(158,224,200,0.15)] border border-[#9ee0c8]/30 text-chat-bubble font-chat-bubble">
+                    哇哦！上个月您的餐饮支出共计 <strong class="font-bold text-[#226552] text-lg">¥1,280</strong>，占总支出的 15%。相比上上月下降了 5%，表现超级棒鸭！🎉 想看看具体的支出明细吗？嘿嘿~
+                </div>
+</div>
+<!-- Smart Insight Card (Embedded in AI response) -->
+<div class="ml-13 bg-white/85 backdrop-blur-xl rounded-3xl p-5 shadow-[0_4px_24px_rgba(0,0,0,0.03)] border border-white/60 max-w-[85%] relative overflow-hidden">
+<div class="absolute -top-6 -right-6 w-20 h-20 bg-[#9ee0c8]/20 rounded-full blur-2xl opacity-60"></div>
+<div class="flex items-center gap-2 mb-4 relative z-10">
+<span class="material-symbols-outlined text-[#9ee0c8] text-lg" data-icon="auto_awesome">auto_awesome</span>
+<span class="text-sm font-headline-md text-on-surface font-bold tracking-wide">餐饮支出洞察 🍩</span>
+</div>
+<div class="flex flex-col gap-4 relative z-10">
+<div>
+<div class="flex justify-between items-center text-xs text-on-surface-variant mb-1.5">
+<span class="font-medium">🍔 外卖</span>
+<span class="font-bold text-on-surface">¥650 (51%)</span>
+</div>
+<div class="w-full bg-surface-container-low rounded-full h-2.5 overflow-hidden">
+<div class="bg-pink-200 h-2.5 rounded-full transition-all duration-1000" style="width: 51%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center text-xs text-on-surface-variant mb-1.5 mt-1">
+<span class="font-medium">🍱 堂食</span>
+<span class="font-bold text-on-surface">¥420 (33%)</span>
+</div>
+<div class="w-full bg-surface-container-low rounded-full h-2.5 overflow-hidden">
+<div class="bg-yellow-200 h-2.5 rounded-full transition-all duration-1000" style="width: 33%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center text-xs text-on-surface-variant mb-1.5 mt-1">
+<span class="font-medium">🧋 零食/饮品</span>
+<span class="font-bold text-on-surface">¥210 (16%)</span>
+</div>
+<div class="w-full bg-surface-container-low rounded-full h-2.5 overflow-hidden">
+<div class="bg-[#9ee0c8] h-2.5 rounded-full transition-all duration-1000" style="width: 16%"></div>
+</div>
+</div>
+</div>
+<button class="mt-5 w-full py-3 bg-white/60 backdrop-blur-sm hover:bg-white/80 text-[#226552] text-xs font-bold rounded-2xl transition-colors flex items-center justify-center gap-1 shadow-[0_2px_8px_rgba(0,0,0,0.02)] border border-[#9ee0c8]/20">
+<span>查看完整明细</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="cruelty_free">cruelty_free</span>
+</button>
+</div>
+</div>
+</main>
+<!-- Bottom Action Area -->
+<div class="mt-auto bg-white/70 backdrop-blur-2xl border-t border-surface-variant/10 pt-4 pb-8 px-margin-mobile flex flex-col gap-4 relative z-20 rounded-t-[40px] shadow-[0_-4px_32px_rgba(0,0,0,0.02)]">
+<!-- Quick Action Chips -->
+<div class="flex gap-3 overflow-x-auto pb-2 scrollbar-hide no-scrollbar w-full items-center pl-1">
+<button class="whitespace-nowrap px-5 py-2.5 rounded-full bg-white/80 backdrop-blur-md hover:bg-white text-on-surface text-sm font-medium transition-all shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-surface-variant/10 flex items-center gap-1.5">
+<span class="text-lg">💰</span>
+                本月预算
+            </button>
+<button class="whitespace-nowrap px-5 py-2.5 rounded-full bg-white/80 backdrop-blur-md hover:bg-white text-on-surface text-sm font-medium transition-all shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-surface-variant/10 flex items-center gap-1.5">
+<span class="text-lg">💡</span>
+                省钱建议
+            </button>
+<button class="whitespace-nowrap px-5 py-2.5 rounded-full bg-white/80 backdrop-blur-md hover:bg-white text-on-surface text-sm font-medium transition-all shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-surface-variant/10 flex items-center gap-1.5">
+<span class="text-lg">📊</span>
+                导出账单
+            </button>
+</div>
+<!-- Input Bar -->
+<div class="flex items-center gap-3 bg-white/90 backdrop-blur-xl rounded-full p-2 pl-4 shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-surface-variant/20 focus-within:border-[#9ee0c8]/50 transition-all">
+<button class="w-10 h-10 flex items-center justify-center rounded-full text-outline hover:text-[#226552] hover:bg-surface-container transition-colors shrink-0 bg-surface-container-low/50">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-body-lg font-body-lg text-on-surface placeholder:text-outline/60 py-3 min-w-0" id="chat-input" placeholder="问我任何财务问题鸭..." type="text"/>
+<button class="w-12 h-12 flex items-center justify-center rounded-full bg-[#9ee0c8] text-[#002118] hover:scale-105 transition-transform shrink-0 shadow-[0_4px_16px_rgba(158,224,200,0.4)]" id="send-btn">
+<span class="material-symbols-outlined text-[24px] ml-1" data-icon="send">send</span>
+</button>
+</div>
+</div>
+<style>
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        
+    </style>
+<script>
+        // Simple script to scroll to bottom on load
+        document.addEventListener("DOMContentLoaded", () => {
+            const chatBox = document.getElementById('chat-box');
+            chatBox.scrollTop = chatBox.scrollHeight;
+            
+            // Interaction for input
+            const input = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+            
+            input.addEventListener('input', () => {
+                if(input.value.trim().length > 0) {
+                    sendBtn.classList.add('scale-110');
+                    sendBtn.classList.add('bg-[#aef0d8]');
+                    sendBtn.classList.remove('bg-[#9ee0c8]');
+                } else {
+                    sendBtn.classList.remove('scale-110');
+                    sendBtn.classList.remove('bg-[#aef0d8]');
+                    sendBtn.classList.add('bg-[#9ee0c8]');
+                }
+            });
+        });
+    </script>
+</body></html>

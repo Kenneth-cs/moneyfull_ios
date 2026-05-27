@@ -9,8 +9,6 @@ struct ProfileView: View {
     @State private var showThemePicker = false
     @State private var showCategoryManagement = false
     @State private var showProjectSorting = false
-    @State private var showAPITest = false
-    @State private var showAPITestDetail = false
     @State private var showBackTapTutorial = false
     @State private var showMemoryManagement = false
     @State private var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "钱小满用户"
@@ -105,6 +103,12 @@ struct ProfileView: View {
                         .padding(.horizontal, 8)
                     
                     VStack(spacing: 0) {
+                        MenuItem(icon: "hand.tap",
+                                 iconBg: Color.App.lightGreen.opacity(0.5),
+                                 iconColor: Color.App.darkGreen,
+                                 title: "无疼记账设置") {
+                            showBackTapTutorial = true
+                        }
                         MenuItem(icon: "chart.bar.doc.horizontal",
                                  iconBg: Color.App.primaryGreen.opacity(0.3),
                                  iconColor: Color.App.darkGreen,
@@ -145,24 +149,6 @@ struct ProfileView: View {
                                  iconBg: Color.gray.opacity(0.1),
                                  iconColor: .gray,
                                  title: "帮助与反馈") {}
-                        MenuItem(icon: "hand.tap",
-                                 iconBg: Color.App.lightGreen.opacity(0.5),
-                                 iconColor: Color.App.darkGreen,
-                                 title: "快捷记账设置") {
-                            showBackTapTutorial = true
-                        }
-                        MenuItem(icon: "network",
-                                 iconBg: Color.App.lightGreen.opacity(0.5),
-                                 iconColor: Color.App.darkGreen,
-                                 title: "API 测试") {
-                            showAPITest = true
-                        }
-                        MenuItem(icon: "network",
-                                 iconBg: Color.App.lightOrange.opacity(0.5),
-                                 iconColor: Color.App.darkOrange,
-                                 title: "API 详细测试") {
-                            showAPITestDetail = true
-                        }
                         ICloudStatusRow(store: store)
                             .environmentObject(store)
                     }
@@ -220,15 +206,7 @@ struct ProfileView: View {
             ProjectSortingView()
                 .environmentObject(store)
         }
-        // API测试页面
-        .sheet(isPresented: $showAPITest) {
-            APITestView()
-        }
-        // API详细测试页面
-        .sheet(isPresented: $showAPITestDetail) {
-            APITestDetailView()
-        }
-        // 快捷记账设置页面
+        // 无疼记账设置页面
         .sheet(isPresented: $showBackTapTutorial) {
             BackTapTutorialView()
         }

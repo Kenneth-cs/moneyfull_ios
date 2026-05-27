@@ -21,7 +21,7 @@ struct BackTapTutorialView: View {
                 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
-                        // MARK: 如何开启自动记账
+                        // MARK: 如何开启无疼记账
                         SectionCard {
                             VStack(alignment: .leading, spacing: 20) {
                                 HStack(spacing: 10) {
@@ -168,11 +168,6 @@ struct BackTapTutorialView: View {
                                 FAQItem(
                                     question: "4、轻点背面没有反应？",
                                     answer: "请检查是否已在「设置→辅助功能→触控→轻点背面→轻点两下」中选择了「钱小满自动记账」。戴厚保护壳时可能需要稍用力点击。"
-                                )
-                                
-                                FAQItem(
-                                    question: "5、如何修改快捷指令使用 App Intent 方式？",
-                                    answer: "推荐使用 App Intent 方式（无需粘贴权限）：\n① 打开「快捷指令」App，找到「钱小满自动记账」\n② 删除「打开 URL」操作\n③ 添加「运行钱小满截图记账」操作（在 App 中搜索「钱小满」）\n④ 将 OCR 文本作为参数传入\n⑤ 保存即可\n\n💡 App Intent 方式无需粘贴权限，体验更流畅。"
                                 )
                             }
                         }

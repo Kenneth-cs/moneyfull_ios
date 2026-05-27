@@ -16,6 +16,7 @@ struct AddRecordView: View {
     @State private var showQuickAddCategory = false
     @State private var showKeypad = true  // 控制数字键盘显示/收起
     @State private var selectedCategoryTab = "常用"  // 当前选中的分类 Tab
+    @FocusState private var isNoteFocused: Bool
     
     // 触觉反馈生成器
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -193,6 +194,7 @@ struct AddRecordView: View {
                             .overlay(Image(systemName: "pencil").foregroundColor(.gray))
                         TextField("添加备注...", text: $note)
                             .font(.system(size: 14, weight: .medium))
+                            .focused($isNoteFocused)
                     }
                     .padding(16)
                     .background(Color.App.tabBackground)
@@ -301,6 +303,12 @@ struct AddRecordView: View {
             if selectedCategory == nil {
                 selectedCategory = store.categories.first
             }
+        }
+        .onChange(of: isNoteFocused) { _, newValue in
+            if newValue { showKeypad = false }
+        }
+        .onChange(of: showKeypad) { _, newValue in
+            if newValue { isNoteFocused = false }
         }
     }
     

@@ -87,6 +87,15 @@ class ContextManager {
         try modelContext.save()
     }
     
+    func fetchChatHistory(limit: Int = 50) -> [ChatHistory] {
+        guard let modelContext = modelContext else { return [] }
+        var descriptor = FetchDescriptor<ChatHistory>(
+            sortBy: [SortDescriptor(\.timestamp, order: .forward)]
+        )
+        descriptor.fetchLimit = limit
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
+    
     func saveMemoryRule(keyword: String, categoryName: String, projectName: String?) throws {
         guard let modelContext = modelContext else {
             throw ContextError.noModelContext
