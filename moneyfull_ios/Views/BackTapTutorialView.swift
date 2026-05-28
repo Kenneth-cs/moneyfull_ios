@@ -27,7 +27,7 @@ struct BackTapTutorialView: View {
                                 HStack(spacing: 10) {
                                     Text("✋")
                                         .font(.system(size: 22))
-                                    Text("如何开启自动记账？")
+                                    Text("如何开启无疼记账？")
                                         .font(.system(size: 18, weight: .bold))
                                         .foregroundColor(Color(hex: "#1A3C2E"))
                                 }

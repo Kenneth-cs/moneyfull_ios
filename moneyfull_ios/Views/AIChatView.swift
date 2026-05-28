@@ -128,6 +128,8 @@ struct AIChatView: View {
     @State private var editingTransaction: Transaction?
     @State private var showToast = false
     @State private var toastMessage = ""
+    @State private var showBackTapTutorial = false
+    @State private var showFinancialAcademy = false
     @FocusState private var isInputFocused: Bool
     
     private static let dailyLimit = 15
@@ -151,7 +153,8 @@ struct AIChatView: View {
     private let analyticsEngine = AnalyticsEngine.shared
 
     private let quickActions: [(emoji: String, label: String)] = [
-        ("🐻", "本月预算"),
+        ("✋", "无疼记账"),
+        ("📚", "财商学堂"),
         ("💡", "省钱建议"),
         ("📊", "导出报告"),
     ]
@@ -211,6 +214,18 @@ struct AIChatView: View {
         .sheet(item: $editingTransaction) { tx in
             EditTransactionView(transaction: tx)
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $showBackTapTutorial) {
+            BackTapTutorialView()
+        }
+        .background {
+            NavigationLink(isActive: $showFinancialAcademy) {
+                FinancialAcademyView()
+                    .environmentObject(store)
+            } label: {
+                EmptyView()
+            }
+            .hidden()
         }
     }
 
@@ -380,10 +395,17 @@ struct AIChatView: View {
                 HStack(spacing: 10) {
                     ForEach(quickActions, id: \.label) { action in
                         Button(action: {
-                            toastMessage = "「\(action.label)」功能正在开发中～"
-                            showToast = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                showToast = false
+                            switch action.label {
+                            case "无疼记账":
+                                showBackTapTutorial = true
+                            case "财商学堂":
+                                showFinancialAcademy = true
+                            default:
+                                toastMessage = "「\(action.label)」功能正在开发中～"
+                                showToast = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    showToast = false
+                                }
                             }
                         }) {
                             HStack(spacing: 6) {
