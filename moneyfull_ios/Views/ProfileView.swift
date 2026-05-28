@@ -11,6 +11,7 @@ struct ProfileView: View {
     @State private var showProjectSorting = false
     @State private var showBackTapTutorial = false
     @State private var showMemoryManagement = false
+    @State private var showFeedback = false
     @State private var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "钱小满用户"
     @State private var showEditName = false
     @State private var tempName: String = ""
@@ -148,7 +149,9 @@ struct ProfileView: View {
                         MenuItem(icon: "questionmark.circle",
                                  iconBg: Color.gray.opacity(0.1),
                                  iconColor: .gray,
-                                 title: "帮助与反馈") {}
+                                 title: "帮助与反馈") {
+                            showFeedback = true
+                        }
                         ICloudStatusRow(store: store)
                             .environmentObject(store)
                     }
@@ -213,6 +216,10 @@ struct ProfileView: View {
         // AI记忆管理页面
         .sheet(isPresented: $showMemoryManagement) {
             MemoryManagementView()
+        }
+        // 问题反馈页面
+        .sheet(isPresented: $showFeedback) {
+            FeedbackSheetView()
         }
     }
 }
@@ -602,6 +609,111 @@ struct ProjectSortingView: View {
         .onAppear {
             projects = store.activeProjects
         }
+    }
+}
+
+// MARK: - 问题反馈页面
+struct FeedbackSheetView: View {
+    @Environment(\.presentationMode) var presentationMode
+    @State private var showSaveAlert = false
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // 顶部图标
+                    VStack(spacing: 12) {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(Color.App.darkGreen)
+                        
+                        Text("遇到问题？联系小助手")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(Color.App.textBlack)
+                        
+                        Text("添加微信时请备注：钱小满")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.top, 16)
+
+                    // 二维码图片（长按可保存）
+                    Image("contact_qr")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
+                        .contextMenu {
+                            Button {
+                                saveImageToAlbum()
+                            } label: {
+                                Label("保存图片", systemImage: "square.and.arrow.down")
+                            }
+                        }
+                    
+                    Text("长按图片可保存到相册")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.gray.opacity(0.6))
+
+                    // 温馨提示
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color.App.darkYellow)
+                            Text("反馈小贴士")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            tipRow(text: "描述遇到的问题或建议")
+                            tipRow(text: "如有截图可一并发送，方便定位")
+                            tipRow(text: "小助手通常 24 小时内回复")
+                        }
+                    }
+                    .padding(16)
+                    .background(Color(hex: "#FFF9E6"))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal, 4)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+            }
+            .background(Color.App.backgroundGray.ignoresSafeArea())
+            .navigationTitle("问题反馈")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+        }
+        .alert("已保存", isPresented: $showSaveAlert) {
+            Button("好的", role: .cancel) {}
+        } message: {
+            Text("图片已保存到相册")
+        }
+    }
+
+    private func tipRow(text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(Color.App.darkGreen.opacity(0.3))
+                .frame(width: 6, height: 6)
+                .padding(.top, 5)
+            Text(text)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(Color.App.textBlack.opacity(0.7))
+        }
+    }
+
+    private func saveImageToAlbum() {
+        guard let image = UIImage(named: "contact_qr") else { return }
+        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+        showSaveAlert = true
     }
 }
 

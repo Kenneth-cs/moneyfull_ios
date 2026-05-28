@@ -9,6 +9,14 @@ private func smartFormat(_ value: Double) -> String {
     return value.formatted(.number.precision(.fractionLength(2)))
 }
 
+// MARK: - 首页看板时间维度
+enum DashboardPeriod: String, CaseIterable {
+    case week = "本周"
+    case month = "本月"
+    case year = "本年"
+    case all = "累计"
+}
+
 struct DashboardView: View {
     @EnvironmentObject var store: AppStore
     @Binding var selectedTab: Int
@@ -17,7 +25,14 @@ struct DashboardView: View {
     @State private var editingTransaction: Transaction?
     @State private var viewingTransaction: Transaction?
     @State private var isAddRecordPresented = false
-    
+    @State private var selectedPeriod: DashboardPeriod = .month
+    @State private var showPeriodPicker = false
+
+    // 根据选中维度获取统计数据
+    private var currentStats: (expense: Double, income: Double, saving: Double) {
+        store.stats(for: selectedPeriod)
+    }
+
     // 进行中项目按创建时间倒序（最新在前）
     private var sortedActiveProjects: [Project] {
         store.activeProjects.sorted { $0.createdAt > $1.createdAt }
@@ -52,10 +67,17 @@ struct DashboardView: View {
                     // 财务数据
                     VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("当前支出")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color.App.textOnPrimary.opacity(0.8))
-                            Text("¥ \(smartFormat(store.monthlyExpense))")
+                            HStack(spacing: 6) {
+                                Text("\(selectedPeriod.rawValue)支出")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Color.App.textOnPrimary.opacity(0.8))
+                                Button(action: { showPeriodPicker = true }) {
+                                    Image(systemName: "chevron.down.circle.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(Color.App.textOnPrimary.opacity(0.6))
+                                }
+                            }
+                            Text("¥ \(smartFormat(currentStats.expense))")
                                 .font(.system(size: 34, weight: .heavy))
                                 .foregroundColor(Color.App.textOnPrimary)
                                 .minimumScaleFactor(0.7)
@@ -63,8 +85,8 @@ struct DashboardView: View {
                         }
                         
                         HStack(spacing: 12) {
-                            FinanceInfoCard(title: "收入", value: store.monthlyIncome)
-                            FinanceInfoCard(title: "储蓄", value: store.monthlySaving)
+                            FinanceInfoCard(title: "收入", value: currentStats.income)
+                            FinanceInfoCard(title: "储蓄", value: currentStats.saving)
                         }
                         .frame(maxWidth: 240)
                         
@@ -225,6 +247,72 @@ struct DashboardView: View {
             AddRecordView()
                 .environmentObject(store)
         }
+        .sheet(isPresented: $showPeriodPicker) {
+            PeriodPickerSheet(selectedPeriod: $selectedPeriod)
+        }
+    }
+}
+
+// MARK: - 时间维度选择器（莫兰迪绿风格）
+struct PeriodPickerSheet: View {
+    @Environment(\.presentationMode) var presentationMode
+    @Binding var selectedPeriod: DashboardPeriod
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 顶部标题栏
+            HStack {
+                Text("选择统计维度")
+                    .font(.system(size: 17, weight: .heavy))
+                    .foregroundColor(Color.App.textBlack)
+                Spacer()
+                Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.gray.opacity(0.4))
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 20)
+
+            // 选项列表
+            VStack(spacing: 10) {
+                ForEach(DashboardPeriod.allCases, id: \.self) { period in
+                    Button(action: {
+                        selectedPeriod = period
+                        presentationMode.wrappedValue.dismiss()
+                    }) {
+                        HStack {
+                            Text(period.rawValue)
+                                .font(.system(size: 16, weight: selectedPeriod == period ? .bold : .medium))
+                                .foregroundColor(selectedPeriod == period ? Color.App.darkGreen : Color.App.textBlack.opacity(0.7))
+
+                            Spacer()
+
+                            if selectedPeriod == period {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(Color.App.darkGreen)
+                            } else {
+                                Circle()
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1.5)
+                                    .frame(width: 20, height: 20)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(selectedPeriod == period ? Color.App.darkGreen.opacity(0.08) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+
+            Spacer()
+        }
+        .presentationDetents([.height(300)])
+        .presentationCornerRadius(24)
     }
 }
 

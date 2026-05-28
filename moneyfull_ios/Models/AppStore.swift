@@ -209,6 +209,33 @@ class AppStore: ObservableObject {
         monthlyIncome = monthlyTx.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
         monthlySaving = monthlyIncome - monthlyExpense
     }
+
+    // MARK: - 首页看板多维度统计
+    func stats(for period: DashboardPeriod) -> (expense: Double, income: Double, saving: Double) {
+        let calendar = Calendar.current
+        let now = Date()
+        var startDate: Date
+
+        switch period {
+        case .week:
+            startDate = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+        case .month:
+            startDate = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
+        case .year:
+            startDate = calendar.date(from: DateComponents(year: calendar.component(.year, from: now), month: 1, day: 1))!
+        case .all:
+            startDate = Date.distantPast
+        }
+
+        let descriptor = FetchDescriptor<Transaction>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        let allTxs = (try? modelContext.fetch(descriptor)) ?? []
+        let txs = period == .all ? allTxs : allTxs.filter { $0.date >= startDate }
+        let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        return (exp, inc, inc - exp)
+    }
     
     // MARK: - 新增数据
     

@@ -30,28 +30,30 @@ struct ProjectDetailView: View {
     private var accentColor: Color { Color(hex: colorPair.end) }
 
     // MARK: - 项目内分类占比数据
-    private var projectCategorySegments: [(name: String, amount: Double, colorHex: String)] {
+    private var projectCategorySegments: [(name: String, amount: Double, colorHex: String, icon: String)] {
         let expenses = (project.transactions ?? []).filter { $0.type == .expense }
-        var dict: [String: (Double, String)] = [:]
+        var dict: [String: (amount: Double, color: String, icon: String)] = [:]
         for tx in expenses {
             let name = tx.categoryName
             let color = tx.categoryColorHex
-            dict[name] = ((dict[name]?.0 ?? 0) + tx.amount, color)
+            let icon = tx.categoryIcon
+            let current = dict[name]?.amount ?? 0
+            dict[name] = (current + tx.amount, color, icon)
         }
-        return dict.map { (name: $0.key, amount: $0.value.0, colorHex: $0.value.1) }.sorted { $0.amount > $1.amount }
+        return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
     }
 
     private var projectTotalExpense: Double { projectCategorySegments.reduce(0) { $0 + $1.amount } }
 
     // MARK: - 项目收支趋势数据（按月）
-    private var projectTrendData: [(label: String, expense: Double, income: Double)] {
+    private var projectTrendData: [(label: String, expense: Double, income: Double, saving: Double)] {
         let calendar = Calendar.current
         let sorted = (project.transactions ?? []).sorted { $0.date < $1.date }
         guard let first = sorted.first else { return [] }
         let startDate = first.date
         let endDate = Date()
 
-        var result: [(label: String, expense: Double, income: Double)] = []
+        var result: [(label: String, expense: Double, income: Double, saving: Double)] = []
         var current = calendar.date(from: calendar.dateComponents([.year, .month], from: startDate))!
         let formatter = DateFormatter()
         formatter.dateFormat = "M月"
@@ -61,7 +63,7 @@ struct ProjectDetailView: View {
             let txs = (project.transactions ?? []).filter { $0.date >= current && $0.date < next }
             let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
             let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
-            result.append((label: formatter.string(from: current), expense: exp, income: inc))
+            result.append((label: formatter.string(from: current), expense: exp, income: inc, saving: inc - exp))
             current = next
         }
         return result
@@ -151,7 +153,7 @@ struct ProjectDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
             } else {
-                LineChartView(data: projectTrendData)
+                AreaChartView(data: projectTrendData)
                     .frame(height: 150)
 
                 HStack {
