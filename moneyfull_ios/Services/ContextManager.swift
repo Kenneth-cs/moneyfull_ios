@@ -96,6 +96,12 @@ class ContextManager {
         return (try? modelContext.fetch(descriptor)) ?? []
     }
     
+    func clearChatHistory() {
+        guard let modelContext = modelContext else { return }
+        try? modelContext.delete(model: ChatHistory.self)
+        try? modelContext.save()
+    }
+    
     func saveMemoryRule(keyword: String, categoryName: String, projectName: String?) throws {
         guard let modelContext = modelContext else {
             throw ContextError.noModelContext

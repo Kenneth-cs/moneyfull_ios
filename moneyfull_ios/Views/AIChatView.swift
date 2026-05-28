@@ -166,6 +166,14 @@ struct AIChatView: View {
                 chatArea
                 inputArea
             }
+            .gesture(
+                DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                    .onEnded { value in
+                        if value.translation.width > 60 && abs(value.translation.height) < 40 {
+                            dismiss()
+                        }
+                    }
+            )
             
             if showToast {
                 VStack {
@@ -195,6 +203,10 @@ struct AIChatView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { sendMessage() }
                 }
             }
+        }
+        .onDisappear {
+            messages = []
+            editingTransaction = nil
         }
         .sheet(item: $editingTransaction) { tx in
             EditTransactionView(transaction: tx)
@@ -236,8 +248,14 @@ struct AIChatView: View {
 
             Spacer()
 
-            // 对称占位，保持标题居中
-            Color.clear.frame(width: 42, height: 42)
+            Button(action: { clearChatHistory() }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(ChatDesign.onPrimaryContainer.opacity(0.5))
+                    .frame(width: 42, height: 42)
+                    .background(Color.white.opacity(0.5))
+                    .clipShape(Circle())
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -535,6 +553,11 @@ struct AIChatView: View {
     private func incrementUsage() {
         dailyUsageCount += 1
         UserDefaults.standard.set(dailyUsageCount, forKey: Self.todayKey)
+    }
+    
+    private func clearChatHistory() {
+        messages = []
+        contextManager.clearChatHistory()
     }
     
     private func loadChatHistory() {
