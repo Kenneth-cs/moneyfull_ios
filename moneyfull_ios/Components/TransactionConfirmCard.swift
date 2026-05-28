@@ -180,7 +180,6 @@ struct TransactionConfirmCard: View {
         timer?.invalidate()
         isConfirmed = true
         
-        // 如果是新分类，先创建分类
         if cardData.isNewCategory {
             store.addCategory(
                 name: cardData.categoryName,
@@ -190,40 +189,10 @@ struct TransactionConfirmCard: View {
             )
         }
         
-        // 查找或创建项目
-        let project: Project
-        if let projectName = cardData.projectName,
-           let existingProject = store.activeProjects.first(where: { $0.name == projectName }) {
-            project = existingProject
-        } else {
-            // 使用默认项目或第一个项目
-            project = store.activeProjects.first ?? store.addProject(
-                name: "日常收支",
-                icon: "wallet.bifold.fill",
-                colorHex: "#A8E6CF",
-                desc: "日常收支记录",
-                budget: 0
-            )
-        }
-        
-        // 保存交易
-        let transactionType: TransactionType = cardData.type == "income" ? .income : .expense
-        store.addTransaction(
-            to: project,
-            amount: cardData.amount,
-            type: transactionType,
-            categoryName: cardData.categoryName,
-            categoryIcon: cardData.categoryIcon,
-            categoryColorHex: cardData.categoryColorHex,
-            note: cardData.note
-        )
-        
-        // 保存记忆规则（使用note作为关键词）
         if !cardData.note.isEmpty {
             onSaveMemory?(cardData.note, cardData.categoryName, cardData.projectName)
         }
         
-        // 调用回调
         onConfirm?(cardData)
     }
     
