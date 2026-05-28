@@ -348,7 +348,8 @@ struct AIChatView: View {
                     if isLoading { loadingIndicator }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 140)
             }
             .onChange(of: messages.count) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -524,7 +525,7 @@ struct AIChatView: View {
             .padding(.horizontal, 16)
         }
         .padding(.top, 12)
-        .padding(.bottom, 24)
+        .padding(.bottom, 8)
         .background {
             UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
                 .fill(Color.white.opacity(0.75).shadow(.inner(color: .clear, radius: 0)))
@@ -533,8 +534,8 @@ struct AIChatView: View {
                         .fill(.ultraThinMaterial)
                 )
                 .shadow(color: Color.black.opacity(0.03), radius: 24, x: 0, y: -4)
-                .ignoresSafeArea(edges: .bottom)
         }
+        .ignoresSafeArea(edges: .bottom)
         .overlay(
             UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
                 .stroke(ChatDesign.surfaceVariant.opacity(0.12), lineWidth: 1),
