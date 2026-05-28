@@ -28,7 +28,149 @@ struct ProjectDetailView: View {
         progressColorPair(for: project.colorHex)
     }
     private var accentColor: Color { Color(hex: colorPair.end) }
-    
+
+    // MARK: - 项目内分类占比数据
+    private var projectCategorySegments: [(name: String, amount: Double, colorHex: String)] {
+        let expenses = (project.transactions ?? []).filter { $0.type == .expense }
+        var dict: [String: (Double, String)] = [:]
+        for tx in expenses {
+            let name = tx.categoryName
+            let color = tx.categoryColorHex
+            dict[name] = ((dict[name]?.0 ?? 0) + tx.amount, color)
+        }
+        return dict.map { (name: $0.key, amount: $0.value.0, colorHex: $0.value.1) }.sorted { $0.amount > $1.amount }
+    }
+
+    private var projectTotalExpense: Double { projectCategorySegments.reduce(0) { $0 + $1.amount } }
+
+    // MARK: - 项目收支趋势数据（按月）
+    private var projectTrendData: [(label: String, expense: Double, income: Double)] {
+        let calendar = Calendar.current
+        let sorted = (project.transactions ?? []).sorted { $0.date < $1.date }
+        guard let first = sorted.first else { return [] }
+        let startDate = first.date
+        let endDate = Date()
+
+        var result: [(label: String, expense: Double, income: Double)] = []
+        var current = calendar.date(from: calendar.dateComponents([.year, .month], from: startDate))!
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月"
+
+        while current <= endDate {
+            let next = calendar.date(byAdding: .month, value: 1, to: current)!
+            let txs = (project.transactions ?? []).filter { $0.date >= current && $0.date < next }
+            let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+            let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+            result.append((label: formatter.string(from: current), expense: exp, income: inc))
+            current = next
+        }
+        return result
+    }
+
+    // MARK: - 项目分类占比卡片
+    private var projectCategoryDonutCard: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Text("分类占比")
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundColor(Color.App.textBlack)
+                Spacer()
+                Text("支出明细")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.gray)
+            }
+
+            if projectTotalExpense == 0 {
+                HStack(spacing: 10) {
+                    Text("🦫").font(.system(size: 20))
+                    Text("暂无支出记录").font(.system(size: 14, weight: .medium)).foregroundColor(.gray)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            } else {
+                DonutChartView(segments: projectCategorySegments, total: projectTotalExpense)
+                    .frame(height: 200)
+
+                VStack(spacing: 10) {
+                    ForEach(projectCategorySegments.prefix(6), id: \.name) { seg in
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(Color(hex: seg.colorHex))
+                                .frame(width: 10, height: 10)
+                            Text(seg.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(Color.App.textBlack.opacity(0.8))
+                            Spacer()
+                            Text("¥\(seg.amount.formatted(.number.precision(.fractionLength(0))))")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                            Text("(\(Int(seg.amount / projectTotalExpense * 100))%)")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .background(Color.App.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 32))
+        .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - 项目收支趋势卡片
+    private var projectTrendCard: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Text("收支趋势")
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundColor(Color.App.textBlack)
+                Spacer()
+                Text("按月汇总")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.gray)
+            }
+
+            HStack(spacing: 20) {
+                HStack(spacing: 6) {
+                    Capsule().fill(Color.App.primaryGreen).frame(width: 20, height: 4)
+                    Text("支出").font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
+                }
+                HStack(spacing: 6) {
+                    Capsule().fill(Color.App.lightOrange).frame(width: 20, height: 4)
+                    Text("收入").font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
+                }
+            }
+
+            if projectTrendData.isEmpty || projectTrendData.allSatisfy({ $0.expense == 0 && $0.income == 0 }) {
+                HStack(spacing: 10) {
+                    Text("🦫").font(.system(size: 20))
+                    Text("暂无趋势数据").font(.system(size: 14, weight: .medium)).foregroundColor(.gray)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            } else {
+                LineChartView(data: projectTrendData)
+                    .frame(height: 150)
+
+                HStack {
+                    ForEach(projectTrendData.suffix(6), id: \.label) { item in
+                        Text(item.label)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.gray)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .background(Color.App.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 32))
+        .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
+        .padding(.horizontal, 24)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // MARK: 自定义顶部导航栏
@@ -162,7 +304,13 @@ struct ProjectDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 32))
                     .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
                     .padding(.horizontal, 24)
-                    
+
+                    // MARK: 项目内分类占比
+                    projectCategoryDonutCard
+
+                    // MARK: 项目收支趋势
+                    projectTrendCard
+
                     // MARK: 账单时间轴
                     VStack(alignment: .leading, spacing: 0) {
                         Text("账单时间轴")
