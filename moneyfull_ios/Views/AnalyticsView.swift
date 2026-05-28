@@ -3,7 +3,6 @@ import SwiftData
 
 // MARK: - 时间维度枚举
 enum TimeRange: String, CaseIterable {
-    case day = "日"
     case week = "周"
     case month = "月"
     case year = "年"
@@ -28,29 +27,27 @@ struct AnalyticsView: View {
     @State private var selectedWeekStart: Date = {
         Calendar.current.date(from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
     }()
-    @State private var selectedDay: Date = Calendar.current.startOfDay(for: Date())
     @State private var customStartDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date())!
     @State private var customEndDate: Date = Date()
     @State private var showMonthPicker = false
     @State private var showCustomRangeSheet = false
     @State private var chartDimension: ChartDimension = .byProject
     @State private var selectedProjectForChart: Project?
+    @State private var allTransactions: [Transaction] = []
 
     // MARK: - 时间过滤
     private var filteredTransactions: [Transaction] {
         let calendar = Calendar.current
         switch timeRange {
-        case .day:
-            return store.recentTransactions.filter { calendar.isDate($0.date, inSameDayAs: selectedDay) }
         case .week:
             guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: selectedWeekStart) else { return [] }
-            return store.recentTransactions.filter { $0.date >= selectedWeekStart && $0.date < weekEnd }
+            return allTransactions.filter { $0.date >= selectedWeekStart && $0.date < weekEnd }
         case .month:
-            return store.recentTransactions.filter { calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month) }
+            return allTransactions.filter { calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month) }
         case .year:
-            return store.recentTransactions.filter { calendar.component(.year, from: $0.date) == selectedYear }
+            return allTransactions.filter { calendar.component(.year, from: $0.date) == selectedYear }
         case .custom:
-            return store.recentTransactions.filter { $0.date >= customStartDate && $0.date <= customEndDate }
+            return allTransactions.filter { $0.date >= customStartDate && $0.date <= customEndDate }
         }
     }
 
@@ -104,7 +101,7 @@ struct AnalyticsView: View {
             formatter.dateFormat = "M月"
             for m in 1...12 {
                 guard let date = calendar.date(from: DateComponents(year: selectedYear, month: m)) else { continue }
-                let txs = store.recentTransactions.filter { calendar.isDate($0.date, equalTo: date, toGranularity: .month) }
+                let txs = allTransactions.filter { calendar.isDate($0.date, equalTo: date, toGranularity: .month) }
                 let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
                 let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
                 result.append((label: formatter.string(from: date), expense: exp, income: inc))
@@ -117,7 +114,7 @@ struct AnalyticsView: View {
             for day in stride(from: range.lowerBound, to: range.upperBound, by: step) {
                 guard let date = calendar.date(from: DateComponents(year: calendar.component(.year, from: selectedMonth), month: calendar.component(.month, from: selectedMonth), day: day)) else { continue }
                 let nextDate = calendar.date(byAdding: .day, value: step, to: date) ?? date
-                let txs = store.recentTransactions.filter { $0.date >= date && $0.date < nextDate }
+                let txs = allTransactions.filter { $0.date >= date && $0.date < nextDate }
                 let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
                 let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
                 result.append((label: formatter.string(from: date), expense: exp, income: inc))
@@ -128,22 +125,10 @@ struct AnalyticsView: View {
             for i in 0..<7 {
                 guard let date = calendar.date(byAdding: .day, value: i, to: selectedWeekStart) else { continue }
                 let nextDate = calendar.date(byAdding: .day, value: 1, to: date) ?? date
-                let txs = store.recentTransactions.filter { $0.date >= date && $0.date < nextDate }
+                let txs = allTransactions.filter { $0.date >= date && $0.date < nextDate }
                 let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
                 let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
                 result.append((label: formatter.string(from: date), expense: exp, income: inc))
-            }
-
-        case .day:
-            formatter.dateFormat = "HH:mm"
-            for hour in stride(from: 0, to: 24, by: 3) {
-                let startComponents = DateComponents(year: calendar.component(.year, from: selectedDay), month: calendar.component(.month, from: selectedDay), day: calendar.component(.day, from: selectedDay), hour: hour)
-                let endComponents = DateComponents(year: calendar.component(.year, from: selectedDay), month: calendar.component(.month, from: selectedDay), day: calendar.component(.day, from: selectedDay), hour: hour + 3)
-                guard let start = calendar.date(from: startComponents), let end = calendar.date(from: endComponents) else { continue }
-                let txs = store.recentTransactions.filter { $0.date >= start && $0.date < end }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
-                result.append((label: "\(hour)时", expense: exp, income: inc))
             }
 
         case .custom:
@@ -153,7 +138,7 @@ struct AnalyticsView: View {
             var current = calendar.startOfDay(for: customStartDate)
             while current < customEndDate {
                 let next = calendar.date(byAdding: .day, value: step, to: current) ?? customEndDate
-                let txs = store.recentTransactions.filter { $0.date >= current && $0.date < next }
+                let txs = allTransactions.filter { $0.date >= current && $0.date < next }
                 let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
                 let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
                 result.append((label: formatter.string(from: current), expense: exp, income: inc))
@@ -165,11 +150,43 @@ struct AnalyticsView: View {
 
     private var budgetProjects: [Project] { store.activeProjects.filter { $0.budget > 0 } }
 
+    // MARK: - 环比计算
+    private var previousPeriodExpense: Double {
+        let calendar = Calendar.current
+        var startDate: Date?
+        var endDate: Date?
+        switch timeRange {
+        case .week:
+            startDate = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedWeekStart)
+            endDate = selectedWeekStart
+        case .month:
+            startDate = calendar.date(byAdding: .month, value: -1, to: selectedMonth)
+            endDate = selectedMonth
+        case .year:
+            startDate = calendar.date(from: DateComponents(year: selectedYear - 1, month: 1, day: 1))
+            endDate = calendar.date(from: DateComponents(year: selectedYear, month: 1, day: 1))
+        case .custom:
+            let days = calendar.dateComponents([.day], from: customStartDate, to: customEndDate).day ?? 30
+            startDate = calendar.date(byAdding: .day, value: -days, to: customStartDate)
+            endDate = customStartDate
+        }
+        guard let s = startDate, let e = endDate else { return 0 }
+        return allTransactions.filter { $0.date >= s && $0.date < e && $0.type == .expense }.reduce(0) { $0 + $1.amount }
+    }
+
+    private var expenseChangePercent: Double? {
+        guard previousPeriodExpense > 0 else { return nil }
+        return (periodExpenseTransactions.reduce(0) { $0 + $1.amount } - previousPeriodExpense) / previousPeriodExpense
+    }
+
+    // MARK: - 预算健康度（联动时间维度）
+    private func projectPeriodSpent(_ project: Project) -> Double {
+        periodExpenseTransactions.filter { $0.project?.id == project.id }.reduce(0) { $0 + $1.amount }
+    }
+
     // MARK: - 时间显示文案
     private var periodDisplayText: String {
         switch timeRange {
-        case .day:
-            let f = DateFormatter(); f.dateFormat = "yyyy年M月d日"; return f.string(from: selectedDay)
         case .week:
             let f = DateFormatter(); f.dateFormat = "M/d"; let end = Calendar.current.date(byAdding: .day, value: 6, to: selectedWeekStart)!; return "\(f.string(from: selectedWeekStart)) - \(f.string(from: end))"
         case .month:
@@ -183,7 +200,6 @@ struct AnalyticsView: View {
 
     private var trendTitle: String {
         switch timeRange {
-        case .day: return "今日收支"
         case .week: return "本周收支"
         case .month: return "本月收支"
         case .year: return "全年收支"
@@ -195,7 +211,6 @@ struct AnalyticsView: View {
     private func navigatePrev() {
         let cal = Calendar.current
         switch timeRange {
-        case .day: selectedDay = cal.date(byAdding: .day, value: -1, to: selectedDay) ?? selectedDay
         case .week: selectedWeekStart = cal.date(byAdding: .weekOfYear, value: -1, to: selectedWeekStart) ?? selectedWeekStart
         case .month: selectedMonth = cal.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth
         case .year: selectedYear -= 1
@@ -206,7 +221,6 @@ struct AnalyticsView: View {
     private func navigateNext() {
         let cal = Calendar.current
         switch timeRange {
-        case .day: selectedDay = cal.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDay
         case .week: selectedWeekStart = cal.date(byAdding: .weekOfYear, value: 1, to: selectedWeekStart) ?? selectedWeekStart
         case .month: selectedMonth = cal.date(byAdding: .month, value: 1, to: selectedMonth) ?? selectedMonth
         case .year: selectedYear += 1
@@ -244,6 +258,9 @@ struct AnalyticsView: View {
         }
         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 110) }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        .onAppear {
+            allTransactions = store.fetchAllTransactions()
+        }
         .sheet(isPresented: $showMonthPicker) {
             MonthYearPickerSheet(selectedMonth: $selectedMonth)
         }
@@ -321,6 +338,19 @@ struct AnalyticsView: View {
                     .font(.system(size: 20, weight: .heavy))
                     .foregroundColor(Color.App.textBlack)
                 Spacer()
+                if let pct = expenseChangePercent {
+                    HStack(spacing: 4) {
+                        Image(systemName: pct >= 0 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("环比 \(Int(abs(pct) * 100))%")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundColor(pct >= 0 ? Color.App.redExpense : Color.App.darkGreen)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background((pct >= 0 ? Color.App.redExpense : Color.App.darkGreen).opacity(0.1))
+                    .clipShape(Capsule())
+                }
                 Text(periodDisplayText)
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.gray)
@@ -479,7 +509,7 @@ struct AnalyticsView: View {
             } else {
                 VStack(spacing: 16) {
                     ForEach(budgetProjects) { project in
-                        BudgetHealthBar(project: project)
+                        BudgetHealthBar(project: project, periodSpent: projectPeriodSpent(project))
                     }
                 }
             }
@@ -759,11 +789,13 @@ struct LineChartView: View {
 // MARK: - 预算健康度条
 struct BudgetHealthBar: View {
     let project: Project
+    var periodSpent: Double? = nil
 
-    private var progress: Double { min(project.budgetProgress, 1.0) }
+    private var spent: Double { periodSpent ?? project.totalSpent }
+    private var progress: Double { min(spent / project.budget, 1.0) }
     private var progressColor: Color {
-        if project.budgetProgress >= 1.0 { return Color.App.redExpense }
-        if project.budgetProgress >= 0.8 { return Color(hex: "#FFA500") }
+        if spent / project.budget >= 1.0 { return Color.App.redExpense }
+        if spent / project.budget >= 0.8 { return Color(hex: "#FFA500") }
         return Color.App.darkGreen
     }
 
@@ -781,10 +813,10 @@ struct BudgetHealthBar: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0)))) / ¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
+                    Text("¥\(spent.formatted(.number.precision(.fractionLength(0)))) / ¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(progressColor)
-                    Text("\(Int(project.budgetProgress * 100))%")
+                    Text("\(Int(spent / project.budget * 100))%")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.gray)
                 }

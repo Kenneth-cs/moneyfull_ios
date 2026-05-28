@@ -136,6 +136,13 @@ class AppStore: ObservableObject {
         descriptor.fetchLimit = 50
         recentTransactions = (try? modelContext.fetch(descriptor)) ?? []
     }
+
+    func fetchAllTransactions() -> [Transaction] {
+        let descriptor = FetchDescriptor<Transaction>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
     
     private func fetchCategories() {
         let descriptor = FetchDescriptor<Category>(
