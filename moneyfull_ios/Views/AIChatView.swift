@@ -167,7 +167,6 @@ struct AIChatView: View {
             VStack(spacing: 0) {
                 headerView
                 chatArea
-                inputArea
             }
             .gesture(
                 DragGesture(minimumDistance: 30, coordinateSpace: .local)
@@ -349,7 +348,10 @@ struct AIChatView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
-                .padding(.bottom, 140)
+                .padding(.bottom, 16)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                inputArea
             }
             .onChange(of: messages.count) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -427,8 +429,9 @@ struct AIChatView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 2)
+                .padding(.vertical, 6)
             }
+            .padding(.vertical, 4)
 
             // Input Bar
             HStack(spacing: 10) {
@@ -525,7 +528,7 @@ struct AIChatView: View {
             .padding(.horizontal, 16)
         }
         .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.bottom)
         .background {
             UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
                 .fill(Color.white.opacity(0.75).shadow(.inner(color: .clear, radius: 0)))
@@ -535,7 +538,6 @@ struct AIChatView: View {
                 )
                 .shadow(color: Color.black.opacity(0.03), radius: 24, x: 0, y: -4)
         }
-        .ignoresSafeArea(edges: .bottom)
         .overlay(
             UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
                 .stroke(ChatDesign.surfaceVariant.opacity(0.12), lineWidth: 1),
