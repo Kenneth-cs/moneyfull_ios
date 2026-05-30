@@ -363,6 +363,15 @@ struct EditTransactionView: View {
             project: selectedProject
         )
         
+        // 保存记忆规则
+        if !note.isEmpty {
+            try? ContextManager.shared.saveMemoryRule(
+                keyword: note,
+                categoryName: category.name,
+                projectName: selectedProject?.name
+            )
+        }
+        
         successFeedback.notificationOccurred(.success)
         presentationMode.wrappedValue.dismiss()
     }

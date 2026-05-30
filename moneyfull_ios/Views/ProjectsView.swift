@@ -156,6 +156,7 @@ struct ProjectsView: View {
 // MARK: - 项目卡片（大版，含详情按钮）
 struct ProjectDetailCard: View {
     let project: Project
+    @EnvironmentObject var store: AppStore
     
     // 进度条百分比预警色（超支用红，接近满用橙）
     private var progressPctColor: Color {
@@ -221,12 +222,24 @@ struct ProjectDetailCard: View {
                         }
                     }
                     Spacer()
-                    Text(project.isArchived ? "已归档" : "进行中")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(tagFg)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(tagBg)
-                        .clipShape(Capsule())
+                    HStack(spacing: 8) {
+                        // 活跃项目标星按钮
+                        if !project.isArchived {
+                            Button(action: {
+                                store.toggleActiveProject(project)
+                            }) {
+                                Image(systemName: project.isActiveProject ? "star.fill" : "star")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(project.isActiveProject ? Color.App.darkYellow : Color.gray.opacity(0.4))
+                            }
+                        }
+                        Text(project.isArchived ? "已归档" : "进行中")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(tagFg)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(tagBg)
+                            .clipShape(Capsule())
+                    }
                 }
                 
                 if !project.desc.isEmpty {

@@ -37,17 +37,31 @@ class LLMService {
         4. **模糊表达处理**：如果用户表达模糊（如"花了50"没说干嘛），不要猜测，返回：
            {"status": "need_clarification", "reply": "追问话术"}
         
-        5. **完整信息输出**：如果信息完整且分类存在，输出：
+        5. **项目归属规则 (project_name)**，按以下优先级匹配（非常重要，必须严格执行）：
+           - **第一层（最高优先级）：用户直接指令**
+             * 如果用户明确提及项目名称（如"记到旅游里"、"记在装修"），直接归入该项目
+           - **第二层：活跃项目（⭐标星项目）**
+             * 检查 Context 中是否有标记为 `(当前活跃项目⭐)` 或 `(近期高频活跃)` 的项目
+             * 如果有，**无论 User Memory Rules 中记录了什么项目，都必须将 project_name 设为该活跃项目**
+             * 活跃项目代表用户当前的记账意图，优先级高于一切历史记忆规则
+           - **第三层：记忆规则**
+             * 只有在没有任何活跃项目的情况下，才参考 User Memory Rules 中的 project 字段
+             * 注意：记忆规则中的 category 信息（分类）始终可以参考，但 project 字段在有活跃项目时忽略
+           - **第四层：语义推断**
+             * 只在无活跃项目时，根据消费特征（如酒店、机票、景区）推断项目
+           - **兜底**：以上都不满足时，project_name 设为 null（系统自动归入"日常收支"）
+        
+        6. **完整信息输出**：如果信息完整且分类存在，输出：
            {"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "project_name": "项目名或null"}
         
-        6. **消费分析意图**：如果用户询问支出分析（如"分析餐饮支出"、"本月花了多少"），返回：
+        7. **消费分析意图**：如果用户询问支出分析（如"分析餐饮支出"、"本月花了多少"），返回：
            {"status": "insight", "insight_type": "category_group", "target_group": "餐饮", "period": "last_month", "reply": "友好文案"}
            - insight_type 可选值：category_group（分类分析）、monthly_overview（月度概览）
            - period 可选值：last_month（上月）、this_month（本月）
            - reply 中可用 **双星号** 包裹需要强调的数字或关键词，例如：**¥1,280**、**15%**
            - 注意：reply 中不要编造具体金额，只写分析意图和引导语
         
-        7. **富文本规则**：status 为 chat、need_clarification 时，reply 中可用 **双星号** 强调关键词。
+        8. **富文本规则**：status 为 chat、need_clarification 时，reply 中可用 **双星号** 强调关键词。
         
         Context:
         \(context)
@@ -168,10 +182,26 @@ class LLMService {
            - 例如：滴滴出行 → groupName: "出行", categoryName: "打车"
            - 收入类：工资、红包、退款、转账收入、转入等
         
-        4. **输出格式**：
-           - 支出成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "projectName": null}
-           - 收入成功：{"status": "success", "amount": 数字, "type": "income", "groupName": "收入", "categoryName": "工资/红包/退款等", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "projectName": null}
+        4. **项目归属规则 (project_name)**，按以下优先级匹配（非常重要）：
+           - **第一层（最高优先级）：用户直接指令**
+             * 如果用户明确提及项目名称（如"记到旅游里"、"记在装修"），直接归入该项目
+           - **第二层：活跃项目（⭐标星项目）**
+             * 优先归入标记为 `(当前活跃项目⭐)` 的项目
+             * 活跃项目是用户主动设置的，代表用户当前的记账意图，优先级高于记忆规则
+             * **重要**：如果有活跃项目，所有消费（包括星巴克、机票等）都优先记入活跃项目
+           - **第三层：记忆规则**
+             * 检查 Context 中的 User Memory Rules，如果关键词匹配，归入对应项目
+             * 注意：记忆规则优先级低于活跃项目，因为活跃项目代表用户当前意图
+           - **第四层：语义推断**
+             * 消费特征明显（如酒店、景区、机票）且存在相关名称项目，自动推断归入
+             * 注意：仅在无活跃项目时才使用语义推断
+           - **兜底**：如果以上都不满足，project_name 设为 null（归入默认的"日常收支"）
+        
+        5. **输出格式**：
+           - 支出成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "projectName": "项目名或null"}
+           - 收入成功：{"status": "success", "amount": 数字, "type": "income", "groupName": "收入", "categoryName": "工资/红包/退款等", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "projectName": "项目名或null"}
            - 无法识别：{"status": "need_clarification", "reply": "无法识别账单信息，请手动输入"}
+           - 需要澄清项目：{"status": "need_clarification", "reply": "这笔支出是记在旅游还是装修里呢？"}
         
         Context:
         \(context)

@@ -47,10 +47,32 @@ class ContextManager {
             }
         }
         
-        // 项目列表
+        // 获取最近5条交易记录，用于动态推断活跃项目
+        let transactionDescriptor = FetchDescriptor<Transaction>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        let allTransactions = try modelContext.fetch(transactionDescriptor)
+        let recentTransactions = Array(allTransactions.prefix(5))
+        
+        // 统计最近交易中各项目的出现次数
+        var projectFrequency: [String: Int] = [:]
+        for transaction in recentTransactions {
+            if let projectName = transaction.project?.name, projectName != "日常收支" {
+                projectFrequency[projectName, default: 0] += 1
+            }
+        }
+        
+        // 找出高频活跃项目（最近5条中3条及以上）
+        let highFrequencyProjects = projectFrequency.filter { $0.value >= 3 }.map { $0.key }
+        
+        // 项目列表（带活跃标记）
         context += "\nAvailable Projects:\n"
         for project in projects {
-            context += "- \(project.name)\n"
+            var marker = ""
+            if project.isActiveProject {
+                marker = " (当前活跃项目⭐)"
+            } else if highFrequencyProjects.contains(project.name) {
+                marker = " (近期高频活跃)"
+            }
+            context += "- \(project.name)\(marker)\n"
         }
         
         // 记忆规则

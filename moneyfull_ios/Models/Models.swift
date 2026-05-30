@@ -48,6 +48,7 @@ final class Project {
     var budget: Double = 0
     var isArchived: Bool = false
     var isPinned: Bool = false
+    var isActiveProject: Bool = false
     var sortOrder: Int = 0
     var createdAt: Date = Date()
     
@@ -55,7 +56,7 @@ final class Project {
     var transactions: [Transaction]?
     
     init(name: String, icon: String = "folder.fill", colorHex: String = "#A8E6CF",
-         desc: String = "", budget: Double = 0, isPinned: Bool = false) {
+         desc: String = "", budget: Double = 0, isPinned: Bool = false, isActiveProject: Bool = false) {
         self.id = UUID()
         self.name = name
         self.icon = icon
@@ -64,6 +65,7 @@ final class Project {
         self.budget = budget
         self.isArchived = false
         self.isPinned = isPinned
+        self.isActiveProject = isActiveProject
         self.createdAt = Date()
     }
     

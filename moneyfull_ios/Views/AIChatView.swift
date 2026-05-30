@@ -4,18 +4,69 @@ import PhotosUI
 
 // MARK: - Design Tokens
 private enum ChatDesign {
-    static let background = Color(red: 0.98, green: 0.984, blue: 0.98)  // #FAFBFA
-    static let primary = Color(red: 0.153, green: 0.412, blue: 0.337)   // #276956
-    static let primaryContainer = Color(red: 0.620, green: 0.878, blue: 0.784) // #9EE0C8
-    static let onPrimaryContainer = Color(red: 0.133, green: 0.396, blue: 0.322) // #226552
-    static let onSurface = Color(red: 0.098, green: 0.110, blue: 0.110)  // #191C1C
-    static let surfaceVariant = Color(red: 0.882, green: 0.890, blue: 0.886) // #E1E3E2
-    static let aiBubbleBg = Color(red: 0.922, green: 0.976, blue: 0.953) // #EBF9F3
-    static let aiBubbleBorder = Color(red: 0.620, green: 0.878, blue: 0.784).opacity(0.3)
-    static let aiBubbleText = Color(red: 0.102, green: 0.302, blue: 0.243) // #1A4D3E
-    static let headerTop = Color(hex: "#D6F0E5")
-    static let headerBottom = Color(hex: "#F0FAF5")
-    static let dotColor = Color.black.opacity(0.03)
+    static let background = Color.dynamic(
+        light: Color(red: 0.98, green: 0.984, blue: 0.98),
+        dark: Color(hex: "#161A19")
+    )
+    static let primary = Color(red: 0.153, green: 0.412, blue: 0.337)
+    static let primaryContainer = Color(red: 0.620, green: 0.878, blue: 0.784)
+    static let onPrimaryContainer = Color(red: 0.133, green: 0.396, blue: 0.322)
+    static let onSurface = Color.dynamic(
+        light: Color(red: 0.098, green: 0.110, blue: 0.110),
+        dark: Color(hex: "#E2E6E4")
+    )
+    static let surfaceVariant = Color.dynamic(
+        light: Color(red: 0.882, green: 0.890, blue: 0.886),
+        dark: Color(hex: "#3A3D3C")
+    )
+    static let aiBubbleBg = Color.dynamic(
+        light: Color(red: 0.922, green: 0.976, blue: 0.953),
+        dark: Color(hex: "#1C2E28")
+    )
+    static let aiBubbleBorder = Color.dynamic(
+        light: Color(red: 0.620, green: 0.878, blue: 0.784).opacity(0.3),
+        dark: Color(red: 0.620, green: 0.878, blue: 0.784).opacity(0.15)
+    )
+    static let aiBubbleText = Color.dynamic(
+        light: Color(red: 0.102, green: 0.302, blue: 0.243),
+        dark: Color(hex: "#A8E6CF")
+    )
+    static let headerTop = Color.dynamic(
+        light: Color(hex: "#D6F0E5"),
+        dark: Color(hex: "#1C2E28")
+    )
+    static let headerBottom = Color.dynamic(
+        light: Color(hex: "#F0FAF5"),
+        dark: Color(hex: "#161A19")
+    )
+    static let chipBackground = Color.dynamic(
+        light: Color.white.opacity(0.85),
+        dark: Color(hex: "#2C2C2E").opacity(0.9)
+    )
+    static let inputBarBackground = Color.dynamic(
+        light: Color.white.opacity(0.95),
+        dark: Color(hex: "#2C2C2E")
+    )
+    static let bottomPanelBackground = Color.dynamic(
+        light: Color.white.opacity(0.75),
+        dark: Color(hex: "#1C1C1E").opacity(0.9)
+    )
+    static let headerButtonBg = Color.dynamic(
+        light: Color.white.opacity(0.7),
+        dark: Color.black.opacity(0.3)
+    )
+    static let userBubbleBg = Color.dynamic(
+        light: Color.white.opacity(0.92),
+        dark: Color(hex: "#2C2C2E")
+    )
+    static let badgeBg = Color.dynamic(
+        light: Color.white.opacity(0.8),
+        dark: Color.black.opacity(0.35)
+    )
+    static let dotColor = Color.dynamic(
+        light: Color.black.opacity(0.03),
+        dark: Color.white.opacity(0.04)
+    )
     static let dotSpacing: CGFloat = 24
     static let dotRadius: CGFloat = 1
 }
@@ -90,7 +141,7 @@ struct ChatDateDivider: View {
                 .padding(.vertical, 6)
                 .background(
                     Capsule()
-                        .fill(Color.white.opacity(0.8))
+                        .fill(ChatDesign.badgeBg)
                         .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 2)
                 )
             Spacer()
@@ -130,6 +181,7 @@ struct AIChatView: View {
     @State private var toastMessage = ""
     @State private var showBackTapTutorial = false
     @State private var showFinancialAcademy = false
+    @State private var showActiveProjectSheet = false
     @State private var showGuide = !UserDefaults.standard.bool(forKey: "hasSeenAIChatGuide")
     @FocusState private var isInputFocused: Bool
     
@@ -156,6 +208,7 @@ struct AIChatView: View {
     private let quickActions: [(emoji: String, label: String)] = [
         ("✋", "无疼记账"),
         ("📚", "财商学堂"),
+        ("⭐", "活跃项目"),
         ("💡", "省钱建议"),
         ("📊", "导出报告"),
     ]
@@ -251,7 +304,7 @@ struct AIChatView: View {
                 .padding(32)
                 .background(
                     RoundedRectangle(cornerRadius: 28)
-                        .fill(Color.white)
+                        .fill(Color.App.cardBackground)
                         .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 10)
                 )
                 .padding(.horizontal, 32)
@@ -259,6 +312,7 @@ struct AIChatView: View {
             }
         }
         .navigationBarHidden(true)
+        .preferredColorScheme(.light)
         .onAppear {
             dailyUsageCount = UserDefaults.standard.integer(forKey: Self.todayKey)
             loadChatHistory()
@@ -287,6 +341,9 @@ struct AIChatView: View {
         .sheet(isPresented: $showBackTapTutorial) {
             BackTapTutorialView()
         }
+        .sheet(isPresented: $showActiveProjectSheet) {
+            ActiveProjectSheetView(store: store)
+        }
         .background {
             NavigationLink(isActive: $showFinancialAcademy) {
                 FinancialAcademyView()
@@ -307,7 +364,7 @@ struct AIChatView: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(ChatDesign.onPrimaryContainer)
                     .frame(width: 42, height: 42)
-                    .background(Color.white.opacity(0.7))
+                    .background(ChatDesign.headerButtonBg)
                     .clipShape(Circle())
                     .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
             }
@@ -337,7 +394,7 @@ struct AIChatView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(ChatDesign.onPrimaryContainer.opacity(0.5))
                     .frame(width: 42, height: 42)
-                    .background(Color.white.opacity(0.5))
+                    .background(ChatDesign.headerButtonBg)
                     .clipShape(Circle())
             }
         }
@@ -484,6 +541,8 @@ struct AIChatView: View {
                                 showBackTapTutorial = true
                             case "财商学堂":
                                 showFinancialAcademy = true
+                            case "活跃项目":
+                                showActiveProjectSheet = true
                             default:
                                 toastMessage = "「\(action.label)」功能正在开发中～"
                                 showToast = true
@@ -502,7 +561,7 @@ struct AIChatView: View {
                             .padding(.vertical, 9)
                             .background(
                                 Capsule()
-                                    .fill(Color.white.opacity(0.85))
+                                    .fill(ChatDesign.chipBackground)
                                     .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
                             )
                             .overlay(Capsule().stroke(ChatDesign.surfaceVariant.opacity(0.15), lineWidth: 1))
@@ -602,7 +661,7 @@ struct AIChatView: View {
             .padding(.vertical, 10)
             .background(
                 Capsule()
-                    .fill(Color.white.opacity(0.95))
+                    .fill(ChatDesign.inputBarBackground)
                     .shadow(color: Color.black.opacity(0.04), radius: 20, x: 0, y: 4)
                     .overlay(Capsule().stroke(ChatDesign.surfaceVariant.opacity(0.2), lineWidth: 1))
             )
@@ -615,17 +674,11 @@ struct AIChatView: View {
                 Rectangle()
                     .fill(.ultraThinMaterial)
                     .ignoresSafeArea(edges: .bottom)
-                UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
-                    .fill(Color.white.opacity(0.75))
+                Rectangle()
+                    .fill(ChatDesign.bottomPanelBackground)
                     .ignoresSafeArea(edges: .bottom)
             }
-            .shadow(color: Color.black.opacity(0.03), radius: 24, x: 0, y: -4)
         }
-        .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
-                .stroke(ChatDesign.surfaceVariant.opacity(0.12), lineWidth: 1),
-            alignment: .top
-        )
     }
 
     // MARK: - Voice Input Button
@@ -1158,7 +1211,7 @@ struct ChatBubble: View {
     @ViewBuilder
     private var bubbleBackground: some View {
         if isUser {
-            Color.white.opacity(0.92)
+            ChatDesign.userBubbleBg
                 .clipShape(UnevenRoundedRectangle(
                     topLeadingRadius: 22, bottomLeadingRadius: 22,
                     bottomTrailingRadius: 22, topTrailingRadius: 6
@@ -1244,6 +1297,85 @@ struct GuideSuggestionRow: View {
                         .stroke(Color.App.primaryGreen.opacity(0.3), lineWidth: 1)
                 )
         )
+    }
+}
+
+// MARK: - Active Project Sheet View
+
+struct ActiveProjectSheetView: View {
+    @ObservedObject var store: AppStore
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        NavigationView {
+            List {
+                Section(header: Text("设置活跃项目")) {
+                    ForEach(store.activeProjects.filter { !$0.isArchived }) { project in
+                        Button(action: {
+                            store.toggleActiveProject(project)
+                        }) {
+                            HStack {
+                                Image(systemName: project.icon)
+                                    .foregroundColor(Color(hex: project.colorHex))
+                                    .frame(width: 30)
+                                
+                                Text(project.name)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(Color.App.textBlack)
+                                
+                                Spacer()
+                                
+                                if project.isActiveProject {
+                                    Image(systemName: "star.fill")
+                                        .foregroundColor(Color.App.darkYellow)
+                                } else {
+                                    Image(systemName: "star")
+                                        .foregroundColor(.gray.opacity(0.4))
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Section(header: Text("说明"), footer: Text("设置活跃项目后，所有消费（除非有直接指令）都会优先记入该项目。适合旅游、装修等阶段性项目。")) {
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.gray)
+                        Text("活跃项目全局唯一")
+                            .font(.system(size: 14))
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                if store.activeProjects.contains(where: { $0.isActiveProject }) {
+                    Section {
+                        Button(action: {
+                            if let active = store.activeProjects.first(where: { $0.isActiveProject }) {
+                                store.toggleActiveProject(active)
+                            }
+                        }) {
+                            HStack {
+                                Spacer()
+                                Text("取消活跃项目")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(Color(hex: "#EF4444"))
+                                Spacer()
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(InsetGroupedListStyle())
+            .navigationTitle("活跃项目")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 

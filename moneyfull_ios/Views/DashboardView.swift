@@ -347,8 +347,7 @@ struct FinanceInfoCard: View {
         .background(
             Group {
                 if colorScheme == .dark {
-                    Color.white.opacity(0.15)
-                        .background(.ultraThinMaterial)
+                    Color.white.opacity(0.3)
                 } else {
                     Color.white.opacity(0.4)
                 }

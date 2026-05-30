@@ -294,6 +294,24 @@ class AppStore: ObservableObject {
         refresh()
     }
     
+    /// 设置/取消活跃项目（全局唯一）
+    func toggleActiveProject(_ project: Project) {
+        // 如果当前项目已经是活跃项目，则取消
+        if project.isActiveProject {
+            project.isActiveProject = false
+        } else {
+            // 先取消所有其他项目的活跃状态
+            let allProjects = (try? modelContext.fetch(FetchDescriptor<Project>())) ?? []
+            for p in allProjects {
+                p.isActiveProject = false
+            }
+            // 设置当前项目为活跃项目
+            project.isActiveProject = true
+        }
+        save()
+        refresh()
+    }
+    
     // MARK: - 删除数据
     
     func deleteTransaction(_ tx: Transaction) {

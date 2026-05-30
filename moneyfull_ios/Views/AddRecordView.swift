@@ -370,6 +370,15 @@ struct AddRecordView: View {
             date: date
         )
         
+        // 保存记忆规则
+        if !note.isEmpty {
+            try? ContextManager.shared.saveMemoryRule(
+                keyword: note,
+                categoryName: category.name,
+                projectName: project.name
+            )
+        }
+        
         // 更新分类使用频率和最后使用时间
         category.useCount += 1
         category.lastUsedAt = Date()

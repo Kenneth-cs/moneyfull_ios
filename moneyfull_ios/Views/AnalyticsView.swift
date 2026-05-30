@@ -25,6 +25,7 @@ enum ChartFlowType: String, CaseIterable {
 // MARK: - 财务统计页
 struct AnalyticsView: View {
     @EnvironmentObject var store: AppStore
+    @Environment(\.colorScheme) private var colorScheme
     @State private var timeRange: TimeRange = .month
     @State private var selectedMonth: Date = {
         Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date()))!
@@ -497,7 +498,15 @@ struct AnalyticsView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .background(Color.App.cardBackground)
+        .background(
+            Group {
+                if colorScheme == .dark {
+                    Color.App.cardBackground
+                } else {
+                    Color(hex: "#F0FAF5")
+                }
+            }
+        )
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.App.darkGreen.opacity(0.06), radius: 8, x: 0, y: 4)
         .padding(.horizontal, 24)
