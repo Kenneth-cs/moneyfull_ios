@@ -83,7 +83,7 @@ struct AnalyticsView: View {
                 let color = tx.project?.colorHex ?? "#EEEEEE"
                 let icon = tx.project?.icon ?? "folder.fill"
                 let current = dict[name]?.amount ?? 0
-                dict[name] = (current + tx.amount, color, icon)
+                dict[name] = (current + abs(tx.amount), color, icon)
             }
             return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
 
@@ -94,7 +94,7 @@ struct AnalyticsView: View {
                 let color = tx.categoryColorHex
                 let icon = tx.categoryIcon
                 let current = dict[name]?.amount ?? 0
-                dict[name] = (current + tx.amount, color, icon)
+                dict[name] = (current + abs(tx.amount), color, icon)
             }
             return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
 
@@ -106,7 +106,7 @@ struct AnalyticsView: View {
                 let color = tx.categoryColorHex
                 let icon = tx.categoryIcon
                 let current = dict[name]?.amount ?? 0
-                dict[name] = (current + tx.amount, color, icon)
+                dict[name] = (current + abs(tx.amount), color, icon)
             }
             return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
         }
@@ -116,8 +116,8 @@ struct AnalyticsView: View {
 
     // 储蓄率
     private var savingRate: Double {
-        let income = periodIncomeTransactions.reduce(0) { $0 + $1.amount }
-        let expense = periodExpenseTransactions.reduce(0) { $0 + $1.amount }
+        let income = periodIncomeTransactions.reduce(0) { $0 + abs($1.amount) }
+        let expense = periodExpenseTransactions.reduce(0) { $0 + abs($1.amount) }
         guard income > 0 else { return 0 }
         return (income - expense) / income
     }
@@ -135,8 +135,8 @@ struct AnalyticsView: View {
             for m in 1...12 {
                 guard let date = calendar.date(from: DateComponents(year: selectedYear, month: m)) else { continue }
                 let txs = allTransactions.filter { calendar.isDate($0.date, equalTo: date, toGranularity: .month) }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 result.append((label: "\(m)月", expense: exp, income: inc, saving: inc - exp))
             }
 
@@ -147,8 +147,8 @@ struct AnalyticsView: View {
                 guard let date = calendar.date(from: DateComponents(year: calendar.component(.year, from: selectedMonth), month: calendar.component(.month, from: selectedMonth), day: day)) else { continue }
                 let nextDate = calendar.date(byAdding: .day, value: step, to: date) ?? date
                 let txs = allTransactions.filter { $0.date >= date && $0.date < nextDate }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 result.append((label: "\(day)日", expense: exp, income: inc, saving: inc - exp))
             }
 
@@ -157,8 +157,8 @@ struct AnalyticsView: View {
                 guard let date = calendar.date(byAdding: .day, value: i, to: selectedWeekStart) else { continue }
                 let nextDate = calendar.date(byAdding: .day, value: 1, to: date) ?? date
                 let txs = allTransactions.filter { $0.date >= date && $0.date < nextDate }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 let weekday = calendar.component(.weekday, from: date) - 1
                 result.append((label: "周\(weekDayNames[weekday])", expense: exp, income: inc, saving: inc - exp))
             }
@@ -170,8 +170,8 @@ struct AnalyticsView: View {
             while current <= customEndDate {
                 let next = calendar.date(byAdding: .day, value: step, to: current) ?? customEndDate
                 let txs = allTransactions.filter { $0.date >= current && $0.date < next }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 let m = calendar.component(.month, from: current)
                 let d = calendar.component(.day, from: current)
                 result.append((label: "\(m)月\(d)日", expense: exp, income: inc, saving: inc - exp))
@@ -208,19 +208,19 @@ struct AnalyticsView: View {
     }
 
     private var previousPeriodExpense: Double {
-        previousPeriodTransactions.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        previousPeriodTransactions.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
     }
 
     private var expenseChangeDiff: Double {
-        periodExpenseTransactions.reduce(0) { $0 + $1.amount } - previousPeriodExpense
+        periodExpenseTransactions.reduce(0) { $0 + abs($1.amount) } - previousPeriodExpense
     }
 
     // MARK: - 新健康分算法（权重组合）
     // 静态基本面（60分）：基于收支比阶梯扣分
     // 动态趋势面（40分）：初始20分，环比加扣分
     private var healthScore: Int {
-        let currentExp = periodExpenseTransactions.reduce(0) { $0 + $1.amount }
-        let currentInc = periodIncomeTransactions.reduce(0) { $0 + $1.amount }
+        let currentExp = periodExpenseTransactions.reduce(0) { $0 + abs($1.amount) }
+        let currentInc = periodIncomeTransactions.reduce(0) { $0 + abs($1.amount) }
         
         // 静态基本面（60分）
         var staticScore: Double = 60

@@ -69,12 +69,12 @@ final class Project {
     
     /// 计算已花费总额（支出之和）
     var totalSpent: Double {
-        (transactions ?? []).filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
+        (transactions ?? []).filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
     }
     
     /// 计算总收入
     var totalIncome: Double {
-        (transactions ?? []).filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        (transactions ?? []).filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
     }
     
     /// 预算使用进度 (0.0 ~ 1.0+，超过1表示超支)
@@ -111,6 +111,7 @@ final class Transaction {
     var note: String = ""
     var date: Date = Date()
     var createdAt: Date = Date()
+    var importBatchID: UUID? = nil // 导入批次标识，用于撤销整批导入
     
     var project: Project? = nil
     

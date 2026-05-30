@@ -38,7 +38,7 @@ struct ProjectDetailView: View {
             let color = tx.categoryColorHex
             let icon = tx.categoryIcon
             let current = dict[name]?.amount ?? 0
-            dict[name] = (current + tx.amount, color, icon)
+            dict[name] = (current + abs(tx.amount), color, icon)
         }
         return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
     }
@@ -61,8 +61,8 @@ struct ProjectDetailView: View {
         while current <= endDate {
             let next = calendar.date(byAdding: .month, value: 1, to: current)!
             let txs = (project.transactions ?? []).filter { $0.date >= current && $0.date < next }
-            let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-            let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+            let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+            let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
             result.append((label: formatter.string(from: current), expense: exp, income: inc, saving: inc - exp))
             current = next
         }

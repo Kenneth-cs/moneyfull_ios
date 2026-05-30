@@ -205,8 +205,8 @@ class AppStore: ObservableObject {
         )
         let monthlyTx = (try? modelContext.fetch(descriptor)) ?? []
         
-        monthlyExpense = monthlyTx.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-        monthlyIncome = monthlyTx.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        monthlyExpense = monthlyTx.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+        monthlyIncome = monthlyTx.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
         monthlySaving = monthlyIncome - monthlyExpense
     }
 
@@ -232,8 +232,8 @@ class AppStore: ObservableObject {
         )
         let allTxs = (try? modelContext.fetch(descriptor)) ?? []
         let txs = period == .all ? allTxs : allTxs.filter { $0.date >= startDate }
-        let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
-        let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
+        let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+        let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
         return (exp, inc, inc - exp)
     }
     
@@ -374,6 +374,70 @@ class AppStore: ObservableObject {
         let txCount = (try? modelContext.fetch(FetchDescriptor<Transaction>()).count) ?? 0
         let catCount = (try? modelContext.fetch(FetchDescriptor<Category>()).count) ?? 0
         return (projectCount, txCount, catCount)
+    }
+    
+    // MARK: - 导入数据
+    
+    static let historyProjectName = "历史账单"
+    
+    func getOrCreateHistoryProject() -> Project {
+        let descriptor = FetchDescriptor<Project>(
+            predicate: #Predicate { $0.name == "历史账单" }
+        )
+        if let existing = (try? modelContext.fetch(descriptor))?.first {
+            return existing
+        }
+        let project = Project(
+            name: Self.historyProjectName,
+            icon: "clock.arrow.circlepath",
+            colorHex: "#B3D1E6",
+            desc: "从其他 App 导入的历史账单，可使用 AI 整理功能分配到对应项目"
+        )
+        modelContext.insert(project)
+        save()
+        refresh()
+        return project
+    }
+    
+    @discardableResult
+    func addImportedTransactions(_ transactions: [(amount: Double, type: TransactionType, categoryName: String, categoryIcon: String, categoryColorHex: String, note: String, date: Date)], batchID: UUID) -> Int {
+        let project = getOrCreateHistoryProject()
+        
+        var count = 0
+        for item in transactions {
+            let tx = Transaction(
+                amount: item.amount,
+                type: item.type,
+                categoryName: item.categoryName,
+                categoryIcon: item.categoryIcon,
+                categoryColorHex: item.categoryColorHex,
+                note: item.note,
+                date: item.date
+            )
+            tx.importBatchID = batchID
+            tx.project = project
+            project.transactions = (project.transactions ?? []) + [tx]
+            modelContext.insert(tx)
+            count += 1
+        }
+        save()
+        refresh()
+        return count
+    }
+    
+    func undoImport(batchID: UUID) -> Int {
+        let descriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate<Transaction> { $0.importBatchID != nil }
+        )
+        guard let allImported = try? modelContext.fetch(descriptor) else { return 0 }
+        
+        let batch = allImported.filter { $0.importBatchID == batchID }
+        for tx in batch {
+            modelContext.delete(tx)
+        }
+        save()
+        refresh()
+        return batch.count
     }
     
     // MARK: - 私有工具

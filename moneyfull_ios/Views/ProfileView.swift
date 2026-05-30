@@ -5,7 +5,8 @@ struct ProfileView: View {
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var theme: ThemeManager
     @State private var showBudgetSetting = false
-    @State private var showExportAlert = false
+    @State private var showExportSheet = false
+    @State private var showImportSheet = false
     @State private var showThemePicker = false
     @State private var showCategoryManagement = false
     @State private var showProjectSorting = false
@@ -138,7 +139,13 @@ struct ProfileView: View {
                                  iconBg: Color.App.lightOrange.opacity(0.4),
                                  iconColor: Color.App.darkOrange,
                                  title: "导出数据") {
-                            showExportAlert = true
+                            showExportSheet = true
+                        }
+                        MenuItem(icon: "square.and.arrow.down",
+                                 iconBg: Color.App.lightGreen.opacity(0.5),
+                                 iconColor: Color.App.darkGreen,
+                                 title: "导入账单") {
+                            showImportSheet = true
                         }
                         MenuItem(icon: "paintpalette",
                                  iconBg: Color.App.lightYellow.opacity(0.6),
@@ -163,7 +170,7 @@ struct ProfileView: View {
                 .padding(.horizontal, 24)
                 
                 // MARK: 版本信息
-                Text("钱小满 v1.0  ·  每笔都算数 🦫")
+                Text("钱小满   ·  每笔都算数 🦫")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.gray.opacity(0.6))
                     .padding(.top, 8)
@@ -186,11 +193,15 @@ struct ProfileView: View {
             }
             Button("取消", role: .cancel) {}
         }
-        // 导出提示
-        .alert("导出数据", isPresented: $showExportAlert) {
-            Button("好的", role: .cancel) {}
-        } message: {
-            Text("数据导出功能正在开发中，敬请期待～")
+        // 导出账单
+        .sheet(isPresented: $showExportSheet) {
+            ExportConfigSheet()
+                .environmentObject(store)
+        }
+        // 导入账单
+        .sheet(isPresented: $showImportSheet) {
+            ImportConfigSheet()
+                .environmentObject(store)
         }
         // 预算设置页面
         .sheet(isPresented: $showBudgetSetting) {
