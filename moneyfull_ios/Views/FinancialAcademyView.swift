@@ -6,30 +6,30 @@ struct FinancialAcademyView: View {
     
     var body: some View {
         ZStack {
-            Color(hex: "#FAFBFA").ignoresSafeArea()
+            Color.App.backgroundGray.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "arrow.backward")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(Color(hex: "#276956"))
+                            .foregroundColor(Color.App.darkGreen)
                             .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.8))
+                            .background(Color.App.cardBackground.opacity(0.8))
                             .clipShape(Circle())
                             .shadow(color: Color.black.opacity(0.02), radius: 8, x: 0, y: 2)
                     }
                     Spacer()
                     Text("✨ 财商学堂 ✨")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(hex: "#226552"))
+                        .foregroundColor(Color.App.darkGreen)
                     Spacer()
                     Color.clear.frame(width: 44, height: 44)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
-                .background(Color.white.opacity(0.7).background(.ultraThinMaterial).ignoresSafeArea(edges: .top))
-                .overlay(Rectangle().fill(Color(hex: "#E1E3E2").opacity(0.2)).frame(height: 1), alignment: .bottom)
+                .background(Color.App.cardBackground.opacity(0.7).background(.ultraThinMaterial).ignoresSafeArea(edges: .top))
+                .overlay(Rectangle().fill(Color.App.separator).frame(height: 1), alignment: .bottom)
                 
                 HStack(spacing: 0) {
                     tabButton(title: "财务知识", index: 0)
@@ -38,7 +38,7 @@ struct FinancialAcademyView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
-                .background(Color.white)
+                .background(Color.App.cardBackground)
                 
                 if selectedTab == 0 {
                     articlesList
@@ -58,7 +58,7 @@ struct FinancialAcademyView: View {
             VStack(spacing: 6) {
                 Text(title)
                     .font(.system(size: 15, weight: selectedTab == index ? .bold : .medium))
-                    .foregroundColor(selectedTab == index ? Color(hex: "#276956") : Color.gray)
+                    .foregroundColor(selectedTab == index ? Color.App.darkGreen : Color.App.textSecondary)
                 
                 Rectangle()
                     .fill(selectedTab == index ? Color(hex: "#9EE0C8") : Color.clear)
@@ -137,26 +137,26 @@ struct ArticleCard: View {
                 Text(article.icon)
                     .font(.system(size: 28))
                     .frame(width: 44, height: 44)
-                    .background(Color(hex: "#F0FBF6"))
+                    .background(Color.App.lightGreen.opacity(0.3))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(article.title)
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(Color(hex: "#1A3C2E"))
+                            .foregroundColor(Color.App.textBlack)
                         Spacer()
                         Text(article.tag)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Color(hex: "#276956"))
+                            .foregroundColor(Color.App.darkGreen)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(Color(hex: "#9EE0C8").opacity(0.3))
+                            .background(Color.App.primaryGreen.opacity(0.3))
                             .clipShape(Capsule())
                     }
                     Text(article.subtitle)
                         .font(.system(size: 13))
-                        .foregroundColor(Color.gray)
+                        .foregroundColor(Color.App.textSecondary)
                         .lineLimit(2)
                 }
             }
@@ -164,7 +164,7 @@ struct ArticleCard: View {
             HStack {
                 Label("\(article.readTime) 分钟", systemImage: "clock")
                     .font(.system(size: 11))
-                    .foregroundColor(Color.gray)
+                    .foregroundColor(Color.App.textSecondary)
                 Spacer()
                 HStack(spacing: 4) {
                     Text("阅读全文")
@@ -172,11 +172,11 @@ struct ArticleCard: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .foregroundColor(Color(hex: "#276956"))
+                .foregroundColor(Color.App.darkGreen)
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
     }
@@ -191,19 +191,19 @@ struct BookCard: View {
                 Text(book.cover)
                     .font(.system(size: 36))
                     .frame(width: 52, height: 68)
-                    .background(Color(hex: "#FFF8E1"))
+                    .background(Color.App.lightYellow.opacity(0.3))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(book.title)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(Color(hex: "#1A3C2E"))
+                        .foregroundColor(Color.App.textBlack)
                     Text(book.author)
                         .font(.system(size: 12))
-                        .foregroundColor(Color.gray)
+                        .foregroundColor(Color.App.textSecondary)
                     Text(book.summary)
                         .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "#4A7A5E"))
+                        .foregroundColor(Color.App.darkGreen)
                         .lineLimit(2)
                 }
             }
@@ -211,7 +211,7 @@ struct BookCard: View {
             HStack {
                 Label("\(book.readTime) 分钟", systemImage: "clock")
                     .font(.system(size: 11))
-                    .foregroundColor(Color.gray)
+                    .foregroundColor(Color.App.textSecondary)
                 Spacer()
                 HStack(spacing: 4) {
                     Text("查看精读")
@@ -219,11 +219,11 @@ struct BookCard: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .foregroundColor(Color(hex: "#276956"))
+                .foregroundColor(Color.App.darkGreen)
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
     }

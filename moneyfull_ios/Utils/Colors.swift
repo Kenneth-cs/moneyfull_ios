@@ -65,9 +65,12 @@ extension Color {
         
         // ── 深色模式适配
         static let cardBackground  = Color.dynamic(light: Color.white, dark: Color(hex: "#1C1C1E"))
+        static let secondaryBackground = Color.dynamic(light: Color(hex: "#F4F9F2"), dark: Color(hex: "#2C2C2E"))
+        static let separator       = Color.dynamic(light: Color.gray.opacity(0.15), dark: Color.gray.opacity(0.3))
         
         // ── 语义色
         static let textOnPrimary   = Color.dynamic(light: Color(hex: "#2C6957"), dark: Color(hex: "#1A4034"))
+        static let textSecondary   = Color.dynamic(light: Color.gray, dark: Color.gray.opacity(0.8))
         static let progressTrack   = Color.dynamic(light: Color(hex: "#F0F0F0"), dark: Color(hex: "#333333"))
         
         static func projectIconColor(for colorHex: String) -> Color {

@@ -7,7 +7,7 @@ struct BackTapTutorialView: View {
     @State private var expandedMethod: Int? = 1 // 默认展开方法一
     @State private var showSafari = false
     
-    private let shortcutURL = URL(string: "https://www.icloud.com/shortcuts/1ace394bb1bd48d8a1cceaa8fa21eb26")!
+    private let shortcutURL = URL(string: "https://www.icloud.com/shortcuts/1b5541113ab745b69a06049192de3dd1")!
     
     var body: some View {
         NavigationView {

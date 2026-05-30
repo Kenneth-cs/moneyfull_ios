@@ -78,10 +78,12 @@ struct MainTabView: View {
                 let todayKey = "ai_chat_usage_" + { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date()) }()
                 let usage = UserDefaults.standard.integer(forKey: todayKey)
                 guard usage < 15 else { return }
-                aiInitialText = text
-                isFromShortcut = true
-                isAIChatPresented = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                
+                if isAIChatPresented {
+                    NotificationCenter.default.post(name: .newShortcutText, object: text)
+                } else {
+                    aiInitialText = text
+                    isFromShortcut = true
                     isAIChatPresented = true
                 }
             }
@@ -160,9 +162,13 @@ struct CustomBottomTabBar: View {
         .padding(.top, 14)
         .padding(.bottom, 14)
         .background(
-            Color.App.cardBackground
-                .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
+            ZStack {
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(Color.App.cardBackground.opacity(0.8))
+            }
+            .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)

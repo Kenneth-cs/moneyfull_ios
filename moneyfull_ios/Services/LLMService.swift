@@ -153,15 +153,24 @@ class LLMService {
         2. **关键信息提取优先级**：
            - 金额（最重要）：寻找最大的数字，通常带¥或元符号，格式如 "¥25.00" "25元"
            - 商户/商品名：寻找有意义的中文名称（商家名、商品名）
-           - 交易类型：支付宝/微信支付通常为支出，收款/转账收入为收入
+           - 交易类型判断（非常重要）：
+             * 金额前有 **加号 +** 或标注"收入"/"收款"/"转账收入" → type: "income"
+             * 金额前有 **减号 -** 或标注"支出"/"付款"/"消费" → type: "expense"
+             * 商品说明包含"转入"/"收款"/"到账"/"退款" → type: "income"
+             * 商品说明包含"转出"/"付款"/"消费" → type: "expense"
+             * 支付宝/微信支付默认为支出
+             * 示例："+19.90" 表示收入，"-25.00" 或 "25元" 表示支出
+             * 示例："余额宝-单次转入" 表示收入，"余额宝-单次转出" 表示支出
         
         3. **分类识别**：
            - 根据商户/商品名推断一级分类(groupName)和二级分类(categoryName)
            - 例如：星巴克 → groupName: "吃喝", categoryName: "咖啡"
            - 例如：滴滴出行 → groupName: "出行", categoryName: "打车"
+           - 收入类：工资、红包、退款、转账收入、转入等
         
         4. **输出格式**：
-           - 成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "projectName": null}
+           - 支出成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "projectName": null}
+           - 收入成功：{"status": "success", "amount": 数字, "type": "income", "groupName": "收入", "categoryName": "工资/红包/退款等", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "projectName": null}
            - 无法识别：{"status": "need_clarification", "reply": "无法识别账单信息，请手动输入"}
         
         Context:

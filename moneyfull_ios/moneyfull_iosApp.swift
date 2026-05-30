@@ -10,6 +10,10 @@ struct moneyfull_iosApp: App {
     init() {
         modelContainer = Self.createModelContainer()
         ContextManager.shared.setModelContext(modelContainer.mainContext)
+        
+        Task {
+            _ = await NotificationManager.shared.requestPermission()
+        }
     }
     
     private static func createModelContainer() -> ModelContainer {

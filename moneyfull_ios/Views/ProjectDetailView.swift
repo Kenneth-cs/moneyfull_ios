@@ -263,7 +263,8 @@ struct ProjectDetailView: View {
                         HStack(spacing: 12) {
                             StatCard(title: "总支出", value: project.totalSpent, color: Color.App.redExpense)
                             StatCard(title: "总收入", value: project.totalIncome, color: Color.App.darkGreen)
-                            StatCard(title: "净收益", value: project.totalIncome - project.totalSpent, color: Color.App.darkGreen)
+                            let netIncome = project.totalIncome - project.totalSpent
+                            StatCard(title: "净收益", value: netIncome, color: netIncome >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                         }
                         
                         // 预算进度条（同色系渐变）

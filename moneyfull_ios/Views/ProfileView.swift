@@ -13,6 +13,7 @@ struct ProfileView: View {
     @State private var showBackTapTutorial = false
     @State private var showMemoryManagement = false
     @State private var showFeedback = false
+    @State private var showReminderSetting = false
     @State private var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "钱小满用户"
     @State private var showEditName = false
     @State private var tempName: String = ""
@@ -153,11 +154,23 @@ struct ProfileView: View {
                                  title: "主题设置  (\(theme.mode.displayName))") {
                             showThemePicker = true
                         }
+                        MenuItem(icon: "bell.fill",
+                                 iconBg: Color.App.lightGreen.opacity(0.5),
+                                 iconColor: Color.App.darkGreen,
+                                 title: "记账提醒") {
+                            showReminderSetting = true
+                        }
                         MenuItem(icon: "questionmark.circle",
                                  iconBg: Color.gray.opacity(0.1),
                                  iconColor: .gray,
                                  title: "帮助与反馈") {
                             showFeedback = true
+                        }
+                        MenuItem(icon: "star.fill",
+                                 iconBg: Color.App.lightYellow.opacity(0.6),
+                                 iconColor: Color.App.darkYellow,
+                                 title: "给个好评 ❤️") {
+                            AppRatingManager.shared.openAppStore()
                         }
                         ICloudStatusRow(store: store)
                             .environmentObject(store)
@@ -231,6 +244,10 @@ struct ProfileView: View {
         // 问题反馈页面
         .sheet(isPresented: $showFeedback) {
             FeedbackSheetView()
+        }
+        // 记账提醒设置页面
+        .sheet(isPresented: $showReminderSetting) {
+            ReminderSettingView()
         }
     }
 }
@@ -685,7 +702,7 @@ struct FeedbackSheetView: View {
                         }
                     }
                     .padding(16)
-                    .background(Color(hex: "#FFF9E6"))
+                    .background(Color.App.lightYellow.opacity(0.3))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .padding(.horizontal, 4)
 

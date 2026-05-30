@@ -130,6 +130,7 @@ struct AIChatView: View {
     @State private var toastMessage = ""
     @State private var showBackTapTutorial = false
     @State private var showFinancialAcademy = false
+    @State private var showGuide = !UserDefaults.standard.bool(forKey: "hasSeenAIChatGuide")
     @FocusState private var isInputFocused: Bool
     
     private static let dailyLimit = 15
@@ -192,6 +193,70 @@ struct AIChatView: View {
                 }
                 .animation(.easeInOut(duration: 0.3), value: showToast)
             }
+            
+            if showGuide {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissGuide() }
+                
+                VStack(spacing: 20) {
+                    Text("🦫")
+                        .font(.system(size: 60))
+                    
+                    Text("小满在这里等你！")
+                        .font(.system(size: 24, weight: .heavy))
+                        .foregroundColor(Color(hex: "#1A5276"))
+                    
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("试着对我说：")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.gray)
+                        
+                        GuideSuggestionRow(text: "今天午餐花了35块")
+                        GuideSuggestionRow(text: "帮我看看这个月花了多少")
+                        GuideSuggestionRow(text: "打车28，记到出行项目里")
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    HStack(spacing: 6) {
+                        Text("也可以")
+                        Image(systemName: "camera.fill")
+                            .foregroundColor(Color(hex: "#1A5276"))
+                        Text("拍照 或")
+                        Image(systemName: "mic.fill")
+                            .foregroundColor(Color(hex: "#1A5276"))
+                        Text("按住说话")
+                    }
+                    .font(.system(size: 14))
+                    .foregroundColor(.gray)
+                    
+                    Button(action: { dismissGuide() }) {
+                        Text("知道了")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(hex: "#9EE0C8"), Color(hex: "#276956")],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(Capsule())
+                    }
+                    .padding(.horizontal, 40)
+                    .padding(.top, 8)
+                }
+                .padding(32)
+                .background(
+                    RoundedRectangle(cornerRadius: 28)
+                        .fill(Color.white)
+                        .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 10)
+                )
+                .padding(.horizontal, 32)
+                .transition(.scale.combined(with: .opacity))
+            }
         }
         .navigationBarHidden(true)
         .onAppear {
@@ -204,6 +269,11 @@ struct AIChatView: View {
                     messageText = text
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { sendMessage() }
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .newShortcutText)) { notification in
+            if let text = notification.object as? String {
+                processOCRText(text)
             }
         }
         .onDisappear {
@@ -354,8 +424,19 @@ struct AIChatView: View {
                 inputArea
             }
             .onChange(of: messages.count) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    proxy.scrollTo(messages.last?.id, anchor: .bottom)
+                DispatchQueue.main.async {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        proxy.scrollTo(messages.last?.id, anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: isLoading) {
+                if !isLoading {
+                    DispatchQueue.main.async {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            proxy.scrollTo(messages.last?.id, anchor: .bottom)
+                        }
+                    }
                 }
             }
         }
@@ -528,15 +609,17 @@ struct AIChatView: View {
             .padding(.horizontal, 16)
         }
         .padding(.top, 12)
-        .padding(.bottom)
+        .padding(.bottom, 8)
         .background {
-            UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
-                .fill(Color.white.opacity(0.75).shadow(.inner(color: .clear, radius: 0)))
-                .background(
-                    UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
-                        .fill(.ultraThinMaterial)
-                )
-                .shadow(color: Color.black.opacity(0.03), radius: 24, x: 0, y: -4)
+            ZStack {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .ignoresSafeArea(edges: .bottom)
+                UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
+                    .fill(Color.white.opacity(0.75))
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .shadow(color: Color.black.opacity(0.03), radius: 24, x: 0, y: -4)
         }
         .overlay(
             UnevenRoundedRectangle(topLeadingRadius: 36, topTrailingRadius: 36)
@@ -574,6 +657,15 @@ struct AIChatView: View {
         )
     }
 
+    // MARK: - Guide
+    private func dismissGuide() {
+        UserDefaults.standard.set(true, forKey: "hasSeenAIChatGuide")
+        AnalyticsManager.shared.trackEvent(eventId: "ai_chat_guide_dismiss", eventName: "关闭AI对话引导")
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showGuide = false
+        }
+    }
+    
     // MARK: - Business Logic
     private func incrementUsage() {
         dailyUsageCount += 1
@@ -716,10 +808,11 @@ struct AIChatView: View {
     }
 
     private func stopRecording() {
-        speechService.stopRecording()
         isRecording = false
-        let t = speechService.transcribedText
-        if !t.isEmpty { messageText = t; sendMessage() }
+        speechService.stopRecording {
+            let t = self.speechService.transcribedText
+            if !t.isEmpty { self.messageText = t; self.sendMessage() }
+        }
     }
 
     private func parseTransaction(from text: String) async {
@@ -937,10 +1030,10 @@ struct ProjectCreationData {
 }
 
 struct TransactionCardData {
-    let amount: Double; let type: String; let groupName: String
-    let categoryName: String; let categoryIcon: String; let categoryColorHex: String
-    let note: String; let projectName: String?
-    let isNewCategory: Bool; let suggestedCategory: String?; let parentGroup: String?
+    var amount: Double; var type: String; var groupName: String
+    var categoryName: String; var categoryIcon: String; var categoryColorHex: String
+    var note: String; var projectName: String?
+    var isNewCategory: Bool; var suggestedCategory: String?; var parentGroup: String?
     init(amount: Double, type: String, groupName: String = "",
          categoryName: String, categoryIcon: String, categoryColorHex: String,
          note: String, projectName: String? = nil,
@@ -1121,6 +1214,36 @@ struct ChatBubble: View {
             }
         }
         .padding(.top, 2)
+    }
+}
+
+// MARK: - Guide Suggestion Row
+
+struct GuideSuggestionRow: View {
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "text.bubble")
+                .font(.system(size: 14))
+                .foregroundColor(Color.App.darkGreen)
+            
+            Text(text)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color.App.textBlack)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.App.lightGreen.opacity(0.3))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.App.primaryGreen.opacity(0.3), lineWidth: 1)
+                )
+        )
     }
 }
 

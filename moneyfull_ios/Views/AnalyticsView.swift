@@ -405,7 +405,7 @@ struct AnalyticsView: View {
             }
         }
         .padding(3)
-        .background(Color.white.opacity(0.6))
+        .background(Color.App.cardBackground.opacity(0.6))
         .clipShape(Capsule())
         .padding(.horizontal, 48)
     }
@@ -497,7 +497,7 @@ struct AnalyticsView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .background(Color(hex: "#F4F9F2"))
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.App.darkGreen.opacity(0.06), radius: 8, x: 0, y: 4)
         .padding(.horizontal, 24)
@@ -660,7 +660,7 @@ struct AnalyticsView: View {
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .padding(.horizontal, 24)
     }
@@ -719,7 +719,7 @@ struct AnalyticsView: View {
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .padding(.horizontal, 24)
     }
@@ -746,7 +746,7 @@ struct AnalyticsView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
     
@@ -772,7 +772,7 @@ struct AnalyticsView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 140)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
@@ -1069,7 +1069,7 @@ struct DonutChartView: View {
                         startAngle += sweep
                     }
                     let innerR = radius - lineWidth / 2 - 2
-                    context.fill(Circle().path(in: CGRect(x: center.x - innerR, y: center.y - innerR, width: innerR * 2, height: innerR * 2)), with: .color(.white))
+                    context.fill(Circle().path(in: CGRect(x: center.x - innerR, y: center.y - innerR, width: innerR * 2, height: innerR * 2)), with: .color(Color.App.cardBackground))
                 }
 
                 VStack(spacing: 2) {
@@ -1078,7 +1078,7 @@ struct DonutChartView: View {
                         .foregroundColor(Color.App.textBlack)
                     Text("总支出")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color.App.textSecondary)
                 }
                 .position(center)
             }
@@ -1606,7 +1606,7 @@ struct TrendDetailView: View {
                             .frame(height: 200)
                     }
                     .padding(20)
-                    .background(Color.white)
+                    .background(Color.App.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .padding(.horizontal, 24)
                 }
@@ -1646,7 +1646,7 @@ struct TrendDetailView: View {
                                 }
                             }
                             .padding(14)
-                            .background(Color.white)
+                            .background(Color.App.cardBackground)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                         }
                     }
@@ -1684,7 +1684,7 @@ struct TrendStatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
@@ -1711,7 +1711,7 @@ struct PeakCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.white)
+        .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }

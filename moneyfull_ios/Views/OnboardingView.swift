@@ -30,6 +30,14 @@ struct OnboardingView: View {
             bgColor: "#DCDE8D",
             darkColor: "#5F621F"
         ),
+        OnboardingPage(
+            imageName: "onboarding_3",
+            title: "跟小满聊天，轻松记账",
+            subtitle: "说一句话、拍张照、甚至发语音\n小满都能帮你记下来。",
+            tip: "试试说'午餐花了35'～",
+            bgColor: "#B8E4F0",
+            darkColor: "#1A5276"
+        ),
     ]
     
     var body: some View {

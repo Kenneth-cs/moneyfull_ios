@@ -320,21 +320,40 @@ struct PeriodPickerSheet: View {
 struct FinanceInfoCard: View {
     let title: String
     let value: Double
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var isNegative: Bool { value < 0 }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(Color.App.textOnPrimary.opacity(0.8))
-            Text("¥ \(value.formatted(.number.precision(.fractionLength(0))))")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(Color.App.textOnPrimary)
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                if isNegative && colorScheme == .dark {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Color(hex: "#FF6B6B"))
+                }
+                Text("¥ \(value.formatted(.number.precision(.fractionLength(0...2))))")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(isNegative && colorScheme == .dark ? Color(hex: "#FF6B6B") : Color.App.textOnPrimary)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.white.opacity(0.4))
+        .background(
+            Group {
+                if colorScheme == .dark {
+                    Color.white.opacity(0.15)
+                        .background(.ultraThinMaterial)
+                } else {
+                    Color.white.opacity(0.4)
+                }
+            }
+        )
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }

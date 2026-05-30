@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var store: AppStore?
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
     @State private var deepLinkText: String?
+    @State private var showRatingPrompt = false
 
     var body: some View {
         Group {
@@ -22,6 +23,25 @@ struct ContentView: View {
         .onAppear {
             if store == nil {
                 store = AppStore(modelContext: modelContext)
+            }
+            
+            if let store = store, AppRatingManager.shared.shouldShowRating(transactionCount: store.recentTransactions.count) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    showRatingPrompt = true
+                }
+            }
+        }
+        .overlay {
+            if showRatingPrompt, let store = store {
+                AppRatingPromptView(
+                    isPresented: $showRatingPrompt,
+                    onRate: {
+                        AppRatingManager.shared.openAppStore()
+                    },
+                    onFeedback: {
+                        NotificationCenter.default.post(name: .showFeedback, object: nil)
+                    }
+                )
             }
         }
         // MARK: - URL Scheme 处理（备选方案，主要方案是 App Intent）
@@ -115,6 +135,8 @@ struct ContentView: View {
 
 extension Notification.Name {
     static let deepLinkReceived = Notification.Name("deepLinkReceived")
+    static let showFeedback = Notification.Name("showFeedback")
+    static let newShortcutText = Notification.Name("newShortcutText")
 }
 
 #Preview {
