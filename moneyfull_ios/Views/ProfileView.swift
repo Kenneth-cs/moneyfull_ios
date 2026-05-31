@@ -322,7 +322,7 @@ struct ICloudStatusRow: View {
 
 // MARK: - 本月财务小结
 struct MonthSummaryCard: View {
-    let store: AppStore
+    @ObservedObject var store: AppStore
     
     private var saving: Double { store.monthlyIncome - store.monthlyExpense }
     
