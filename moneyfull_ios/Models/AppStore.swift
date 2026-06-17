@@ -48,6 +48,7 @@ class AppStore: ObservableObject {
         migrateV3Categories()
         migrateV4Categories()
         migrateV5Categories()
+        migrateDailyProjectUnpin()
         
         refresh()
         startObservingDataChanges()
@@ -783,6 +784,22 @@ class AppStore: ObservableObject {
         save()
         fetchCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV5Done")
+    }
+    
+    /// 迁移：取消"日常收支"项目的置顶状态，让它参与正常排序
+    private func migrateDailyProjectUnpin() {
+        guard !UserDefaults.standard.bool(forKey: "dailyProjectUnpinDone") else { return }
+        
+        let descriptor = FetchDescriptor<Project>()
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        
+        for project in all where project.name == "日常收支" && project.isPinned {
+            project.isPinned = false
+        }
+        
+        save()
+        refresh()
+        UserDefaults.standard.set(true, forKey: "dailyProjectUnpinDone")
     }
     
     // MARK: - 去重逻辑

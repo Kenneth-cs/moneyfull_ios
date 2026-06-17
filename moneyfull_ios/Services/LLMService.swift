@@ -51,17 +51,24 @@ class LLMService {
              * 只在无活跃项目时，根据消费特征（如酒店、机票、景区）推断项目
            - **兜底**：以上都不满足时，project_name 设为 null（系统自动归入"日常收支"）
         
-        6. **完整信息输出**：如果信息完整且分类存在，输出：
-           {"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "project_name": "项目名或null"}
-        
-        7. **消费分析意图**：如果用户询问支出分析（如"分析餐饮支出"、"本月花了多少"），返回：
+        6. **备注规则 (note)**：
+           - 备注是用户消费的简短描述，**不包含金额信息**
+           - 例如：用户说"买咖啡花了25元"，note 应为 "买咖啡"
+           - 例如：用户说"打车花了30块"，note 应为 "打车"
+           - 例如：用户说"星巴克拿铁，给朋友买的"，note 应为 "星巴克拿铁，给朋友买的"
+           - 如果用户没有提供额外描述，note 可以为分类名称（如 "咖啡"）
+
+        7. **完整信息输出**：如果信息完整且分类存在，输出：
+           {"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注（不含金额）", "project_name": "项目名或null"}
+
+        8. **消费分析意图**：如果用户询问支出分析（如"分析餐饮支出"、"本月花了多少"），返回：
            {"status": "insight", "insight_type": "category_group", "target_group": "餐饮", "period": "last_month", "reply": "友好文案"}
            - insight_type 可选值：category_group（分类分析）、monthly_overview（月度概览）
            - period 可选值：last_month（上月）、this_month（本月）
            - reply 中可用 **双星号** 包裹需要强调的数字或关键词，例如：**¥1,280**、**15%**
            - 注意：reply 中不要编造具体金额，只写分析意图和引导语
         
-        8. **富文本规则**：status 为 chat、need_clarification 时，reply 中可用 **双星号** 强调关键词。
+        9. **富文本规则**：status 为 chat、need_clarification 时，reply 中可用 **双星号** 强调关键词。
         
         Context:
         \(context)
@@ -198,8 +205,8 @@ class LLMService {
            - **兜底**：如果以上都不满足，project_name 设为 null（归入默认的"日常收支"）
         
         5. **输出格式**：
-           - 支出成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "projectName": "项目名或null"}
-           - 收入成功：{"status": "success", "amount": 数字, "type": "income", "groupName": "收入", "categoryName": "工资/红包/退款等", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "projectName": "项目名或null"}
+           - 支出成功：{"status": "success", "amount": 数字, "type": "expense", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "商户名/商品名", "project_name": "项目名或null"}
+           - 收入成功：{"status": "success", "amount": 数字, "type": "income", "groupName": "收入", "categoryName": "工资/红包/退款等", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "project_name": "项目名或null"}
            - 无法识别：{"status": "need_clarification", "reply": "无法识别账单信息，请手动输入"}
            - 需要澄清项目：{"status": "need_clarification", "reply": "这笔支出是记在旅游还是装修里呢？"}
         

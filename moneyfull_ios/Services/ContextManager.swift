@@ -107,15 +107,27 @@ class ContextManager {
         let chat = ChatHistory(role: role, content: content)
         modelContext.insert(chat)
         try modelContext.save()
+        #if DEBUG
+        print("💾 saveChatHistory: 已保存 \(role) 消息: \(content.prefix(50))")
+        #endif
     }
     
     func fetchChatHistory(limit: Int = 50) -> [ChatHistory] {
-        guard let modelContext = modelContext else { return [] }
+        guard let modelContext = modelContext else {
+            #if DEBUG
+            print("⚠️ fetchChatHistory: modelContext 为 nil")
+            #endif
+            return []
+        }
         var descriptor = FetchDescriptor<ChatHistory>(
-            sortBy: [SortDescriptor(\.timestamp, order: .forward)]
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]  // 最新的先取
         )
         descriptor.fetchLimit = limit
-        return (try? modelContext.fetch(descriptor)) ?? []
+        let result = (try? modelContext.fetch(descriptor)) ?? []
+        #if DEBUG
+        print("📋 fetchChatHistory: 从数据库获取到 \(result.count) 条记录")
+        #endif
+        return result.reversed()  // 翻转回正序，UI 从上到下显示旧→新
     }
     
     func clearChatHistory() {

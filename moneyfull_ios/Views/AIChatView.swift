@@ -732,6 +732,12 @@ struct AIChatView: View {
     
     private func loadChatHistory() {
         let histories = contextManager.fetchChatHistory(limit: 60)
+        #if DEBUG
+        print("📋 loadChatHistory: 获取到 \(histories.count) 条历史记录")
+        for (index, history) in histories.prefix(5).enumerated() {
+            print("📋   [\(index)] \(history.role): \(history.content.prefix(50))")
+        }
+        #endif
         guard !histories.isEmpty else { return }
 
         messages = histories.compactMap { history in
@@ -756,6 +762,9 @@ struct AIChatView: View {
                 usesRichText: history.role == "assistant"
             )
         }
+        #if DEBUG
+        print("📋 loadChatHistory: 转换后 \(messages.count) 条消息")
+        #endif
     }
 
     private func handleTransactionConfirmed(_ cardData: TransactionCardData) {
@@ -764,10 +773,13 @@ struct AIChatView: View {
            let found = store.activeProjects.first(where: { $0.name == name }) {
             project = found
         } else {
-            project = store.activeProjects.first ?? store.addProject(
-                name: "日常收支", icon: "wallet.bifold.fill",
-                colorHex: "#A8E6CF", desc: "日常收支记录", budget: 0
-            )
+            // 优先：标星活跃项目 → 其次：列表第一个 → 最后：自动创建日常收支
+            project = store.activeProjects.first(where: { $0.isActiveProject })
+                ?? store.activeProjects.first
+                ?? store.addProject(
+                    name: "日常收支", icon: "wallet.bifold.fill",
+                    colorHex: "#A8E6CF", desc: "日常收支记录", budget: 0
+                )
         }
         let txType: TransactionType = cardData.type == "income" ? .income : .expense
         let tx = store.addTransaction(

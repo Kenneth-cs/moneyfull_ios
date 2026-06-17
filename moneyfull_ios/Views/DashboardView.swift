@@ -33,9 +33,9 @@ struct DashboardView: View {
         store.stats(for: selectedPeriod)
     }
 
-    // 进行中项目按创建时间倒序（最新在前）
+    // 进行中项目（使用 AppStore 已排序的顺序：置顶 → sortOrder → 创建时间）
     private var sortedActiveProjects: [Project] {
-        store.activeProjects.sorted { $0.createdAt > $1.createdAt }
+        store.activeProjects
     }
     
     var body: some View {
