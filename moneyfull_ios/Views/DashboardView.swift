@@ -27,6 +27,7 @@ struct DashboardView: View {
     @State private var isAddRecordPresented = false
     @State private var selectedPeriod: DashboardPeriod = .month
     @State private var showPeriodPicker = false
+    @State private var showAllTransactions = false
 
     // 根据选中维度获取统计数据
     private var currentStats: (expense: Double, income: Double, saving: Double) {
@@ -184,10 +185,22 @@ struct DashboardView: View {
                 
                 // MARK: 最近交易（真实数据）
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("最近交易")
-                        .font(.system(size: 20, weight: .heavy))
-                        .foregroundColor(Color.App.textBlack)
-                        .padding(.horizontal, 24)
+                    HStack {
+                        Text("最近交易")
+                            .font(.system(size: 20, weight: .heavy))
+                            .foregroundColor(Color.App.textBlack)
+                        Spacer()
+                        Button(action: { showAllTransactions = true }) {
+                            HStack(spacing: 4) {
+                                Text("查看全部")
+                                    .font(.system(size: 14, weight: .medium))
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .foregroundColor(Color.App.darkGreen)
+                        }
+                    }
+                    .padding(.horizontal, 24)
                     
                     if store.recentTransactions.isEmpty {
                         VStack(spacing: 12) {
@@ -249,6 +262,10 @@ struct DashboardView: View {
         }
         .sheet(isPresented: $showPeriodPicker) {
             PeriodPickerSheet(selectedPeriod: $selectedPeriod)
+        }
+        .sheet(isPresented: $showAllTransactions) {
+            AllTransactionsView()
+                .environmentObject(store)
         }
     }
 }
