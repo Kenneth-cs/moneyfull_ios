@@ -419,20 +419,32 @@ struct CustomDatePickerSheet: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("开始日期")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.gray)
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(Color.App.darkGreen)
+                            Text("开始日期")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                        }
                         DatePicker("开始日期", selection: $startDate, displayedComponents: .date)
                             .datePickerStyle(.graphical)
                             .environment(\.locale, Locale(identifier: "zh_CN"))
                     }
                     
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("结束日期")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.gray)
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(Color.App.darkGreen)
+                            Text("结束日期")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color.App.textBlack)
+                        }
                         DatePicker("结束日期", selection: $endDate, displayedComponents: .date)
                             .datePickerStyle(.graphical)
                             .environment(\.locale, Locale(identifier: "zh_CN"))
