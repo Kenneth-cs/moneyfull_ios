@@ -21,6 +21,14 @@ struct AllTransactionsView: View {
     @State private var showCustomDatePicker = false
     @State private var customStartDate = Date()
     @State private var customEndDate = Date()
+    @State private var selectedType: TransactionTypeFilter = .all
+    
+    // 交易类型筛选
+    enum TransactionTypeFilter: String, CaseIterable {
+        case all = "全部"
+        case expense = "支出"
+        case income = "收入"
+    }
     
     // 筛选选项
     enum FilterPeriod: String, CaseIterable {
@@ -45,6 +53,16 @@ struct AllTransactionsView: View {
         // 按分类筛选
         if let category = selectedCategory {
             transactions = transactions.filter { $0.categoryName == category }
+        }
+        
+        // 按类型筛选
+        switch selectedType {
+        case .all:
+            break
+        case .expense:
+            transactions = transactions.filter { $0.type == .expense }
+        case .income:
+            transactions = transactions.filter { $0.type == .income }
         }
         
         // 按时间筛选
@@ -197,6 +215,20 @@ struct AllTransactionsView: View {
                     )
                 }
                 
+                // 类型筛选
+                Menu {
+                    ForEach(TransactionTypeFilter.allCases, id: \.self) { type in
+                        Button(type.rawValue) {
+                            selectedType = type
+                        }
+                    }
+                } label: {
+                    FilterChip(
+                        title: selectedType.rawValue,
+                        isSelected: selectedType != .all
+                    )
+                }
+                
                 // 分类筛选
                 Menu {
                     Button("全部分类") {
@@ -215,11 +247,12 @@ struct AllTransactionsView: View {
                 }
                 
                 // 清除筛选
-                if selectedPeriod != .all || selectedProject != nil || selectedCategory != nil {
+                if selectedPeriod != .all || selectedProject != nil || selectedCategory != nil || selectedType != .all {
                     Button("清除筛选") {
                         selectedPeriod = .all
                         selectedProject = nil
                         selectedCategory = nil
+                        selectedType = .all
                     }
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(Color.App.darkGreen)
