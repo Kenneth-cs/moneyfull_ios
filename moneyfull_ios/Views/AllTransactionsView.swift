@@ -1,5 +1,13 @@
 import SwiftUI
 
+// 智能金额格式化：整数不显示小数，有小数才保留2位
+private func smartFormat(_ value: Double) -> String {
+    if value.truncatingRemainder(dividingBy: 1) == 0 {
+        return value.formatted(.number.precision(.fractionLength(0)))
+    }
+    return value.formatted(.number.precision(.fractionLength(2)))
+}
+
 struct AllTransactionsView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
@@ -10,6 +18,9 @@ struct AllTransactionsView: View {
     @State private var selectedProject: Project? = nil
     @State private var selectedCategory: String? = nil
     @State private var selectedPeriod: FilterPeriod = .all
+    @State private var showCustomDatePicker = false
+    @State private var customStartDate = Date()
+    @State private var customEndDate = Date()
     
     // 筛选选项
     enum FilterPeriod: String, CaseIterable {
@@ -19,6 +30,7 @@ struct AllTransactionsView: View {
         case thisMonth = "本月"
         case lastMonth = "上月"
         case thisYear = "今年"
+        case custom = "自定义"
     }
     
     // 筛选后的交易记录
@@ -58,6 +70,10 @@ struct AllTransactionsView: View {
         case .thisYear:
             let startOfYear = calendar.date(from: calendar.dateComponents([.year], from: now))!
             transactions = transactions.filter { $0.date >= startOfYear }
+        case .custom:
+            let startOfDay = calendar.startOfDay(for: customStartDate)
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: customEndDate))!
+            transactions = transactions.filter { $0.date >= startOfDay && $0.date < endOfDay }
         }
         
         return transactions
@@ -122,6 +138,22 @@ struct AllTransactionsView: View {
             TransactionDetailView(transaction: tx)
                 .environmentObject(store)
         }
+        .sheet(isPresented: $showCustomDatePicker) {
+            CustomDatePickerSheet(
+                startDate: $customStartDate,
+                endDate: $customEndDate,
+                onConfirm: {
+                    selectedPeriod = .custom
+                }
+            )
+        }
+    }
+    
+    // 自定义日期范围显示文本
+    private var customDateRangeText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月d日"
+        return "\(formatter.string(from: customStartDate))-\(formatter.string(from: customEndDate))"
     }
     
     // MARK: - 筛选栏
@@ -131,13 +163,19 @@ struct AllTransactionsView: View {
                 // 时间筛选
                 Menu {
                     ForEach(FilterPeriod.allCases, id: \.self) { period in
-                        Button(period.rawValue) {
-                            selectedPeriod = period
+                        if period == .custom {
+                            Button("自定义时间") {
+                                showCustomDatePicker = true
+                            }
+                        } else {
+                            Button(period.rawValue) {
+                                selectedPeriod = period
+                            }
                         }
                     }
                 } label: {
                     FilterChip(
-                        title: selectedPeriod.rawValue,
+                        title: selectedPeriod == .custom ? customDateRangeText : selectedPeriod.rawValue,
                         isSelected: selectedPeriod != .all
                     )
                 }
@@ -195,38 +233,43 @@ struct AllTransactionsView: View {
     
     // MARK: - 统计卡片
     private var statsCard: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("支出")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.gray)
-                Text("-¥\(totalExpense.formatted(.number.precision(.fractionLength(2))))")
-                    .font(.system(size: 18, weight: .bold))
+                Text("-¥\(smartFormat(totalExpense))")
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(Color.App.redExpense)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
             
             VStack(alignment: .center, spacing: 4) {
                 Text("收入")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.gray)
-                Text("+¥\(totalIncome.formatted(.number.precision(.fractionLength(2))))")
-                    .font(.system(size: 18, weight: .bold))
+                Text("+¥\(smartFormat(totalIncome))")
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(Color.App.darkGreen)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            
-            Spacer()
+            .frame(maxWidth: .infinity)
             
             VStack(alignment: .trailing, spacing: 4) {
                 Text("净收入")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.gray)
                 let net = totalIncome - totalExpense
-                Text("\(net >= 0 ? "+" : "-")¥\(abs(net).formatted(.number.precision(.fractionLength(2))))")
-                    .font(.system(size: 18, weight: .bold))
+                Text("\(net >= 0 ? "+" : "-")¥\(smartFormat(abs(net)))")
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(net >= 0 ? Color.App.darkGreen : Color.App.redExpense)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(16)
         .background(Color.App.cardBackground)
@@ -363,5 +406,55 @@ struct TransactionRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+}
+
+// MARK: - 自定义日期选择器
+struct CustomDatePickerSheet: View {
+    @Environment(\.presentationMode) var presentationMode
+    @Binding var startDate: Date
+    @Binding var endDate: Date
+    var onConfirm: () -> Void
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("开始日期")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.gray)
+                        DatePicker("开始日期", selection: $startDate, displayedComponents: .date)
+                            .datePickerStyle(.graphical)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("结束日期")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.gray)
+                        DatePicker("结束日期", selection: $endDate, displayedComponents: .date)
+                            .datePickerStyle(.graphical)
+                    }
+                }
+                .padding(.horizontal, 16)
+                
+                Spacer()
+            }
+            .navigationTitle("自定义时间")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("确定") {
+                        onConfirm()
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+            }
+        }
     }
 }

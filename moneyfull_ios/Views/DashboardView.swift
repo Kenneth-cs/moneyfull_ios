@@ -263,7 +263,7 @@ struct DashboardView: View {
         .sheet(isPresented: $showPeriodPicker) {
             PeriodPickerSheet(selectedPeriod: $selectedPeriod)
         }
-        .sheet(isPresented: $showAllTransactions) {
+        .fullScreenCover(isPresented: $showAllTransactions) {
             AllTransactionsView()
                 .environmentObject(store)
         }
