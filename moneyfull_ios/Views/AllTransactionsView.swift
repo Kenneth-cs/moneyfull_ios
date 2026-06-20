@@ -426,6 +426,7 @@ struct CustomDatePickerSheet: View {
                             .foregroundColor(.gray)
                         DatePicker("开始日期", selection: $startDate, displayedComponents: .date)
                             .datePickerStyle(.graphical)
+                            .environment(\.locale, Locale(identifier: "zh_CN"))
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
@@ -434,6 +435,7 @@ struct CustomDatePickerSheet: View {
                             .foregroundColor(.gray)
                         DatePicker("结束日期", selection: $endDate, displayedComponents: .date)
                             .datePickerStyle(.graphical)
+                            .environment(\.locale, Locale(identifier: "zh_CN"))
                     }
                 }
                 .padding(.horizontal, 16)
