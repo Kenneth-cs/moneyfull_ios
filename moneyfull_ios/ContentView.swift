@@ -23,6 +23,7 @@ struct ContentView: View {
         .onAppear {
             if store == nil {
                 store = AppStore(modelContext: modelContext)
+                store?.initialize()
             }
             
             if let store = store, AppRatingManager.shared.shouldShowRating(transactionCount: store.recentTransactions.count) {
@@ -32,7 +33,7 @@ struct ContentView: View {
             }
         }
         .overlay {
-            if showRatingPrompt, let store = store {
+            if showRatingPrompt {
                 AppRatingPromptView(
                     isPresented: $showRatingPrompt,
                     onRate: {

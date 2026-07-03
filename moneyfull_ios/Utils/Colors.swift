@@ -2,9 +2,18 @@ import SwiftUI
 
 // MARK: - Hex 解析扩展
 extension Color {
+    /// Hex 字符串 → Color 缓存，避免滚动时每帧重复解析字符串（主线程访问）
+    private static var hexCache: [String: Color] = [:]
+
     /// 从十六进制字符串创建颜色（支持 #RGB / #RRGGBB / #AARRGGBB）
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+    init(hex rawHex: String) {
+        // 命中缓存直接复用
+        if let cached = Color.hexCache[rawHex] {
+            self = cached
+            return
+        }
+
+        let hex = rawHex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
         Scanner(string: hex).scanHexInt64(&int)
         let a, r, g, b: UInt64
@@ -14,11 +23,13 @@ extension Color {
         case 8:  (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
         default: (a, r, g, b) = (255, 0, 0, 0)
         }
-        self.init(.sRGB,
-                  red:     Double(r) / 255,
-                  green:   Double(g) / 255,
-                  blue:    Double(b) / 255,
-                  opacity: Double(a) / 255)
+        let color = Color(.sRGB,
+                          red:     Double(r) / 255,
+                          green:   Double(g) / 255,
+                          blue:    Double(b) / 255,
+                          opacity: Double(a) / 255)
+        Color.hexCache[rawHex] = color
+        self = color
     }
 }
 

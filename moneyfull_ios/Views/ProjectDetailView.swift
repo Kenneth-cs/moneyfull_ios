@@ -3,25 +3,40 @@ import SwiftData
 struct ProjectDetailView: View {
     let project: Project
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var storeManager: StoreManager
     @Environment(\.presentationMode) var presentationMode
     @State private var editingTransaction: Transaction?
     @State private var viewingTransaction: Transaction?
     @State private var showColorPicker = false
     @State private var showEditProject = false
     @State private var showDeleteConfirm = false
+    @State private var showUpgradeAlert = false
+    
+    // MARK: - 缓存数据
+    @State private var _groupedTransactions: [(key: String, value: [Transaction])] = []
+    @State private var _projectCategorySegments: [(name: String, amount: Double, colorHex: String, icon: String)] = []
+    @State private var _projectTotalExpense: Double = 0
+    @State private var _projectTrendData: [(label: String, expense: Double, income: Double, saving: Double)] = []
+    // 概览数字缓存（避免 body 多次访问 project.totalSpent 等计算属性反复遍历账单）
+    @State private var _totalSpent: Double = 0
+    @State private var _totalIncome: Double = 0
+    @State private var _budgetProgress: Double = 0
+    
+    // MARK: - 静态 DateFormatter（避免 body 每次重渲时重复创建）
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy年M月d日"
+        return f
+    }()
+    
+    private static let monthFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M月"
+        return f
+    }()
     
     // 按日期分组的交易记录
-    private var groupedTransactions: [(key: String, value: [Transaction])] {
-        let sorted = (project.transactions ?? []).sorted { $0.date > $1.date }
-        var groups: [String: [Transaction]] = [:]
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月d日"
-        for tx in sorted {
-            let key = formatter.string(from: tx.date)
-            groups[key, default: []].append(tx)
-        }
-        return groups.sorted { $0.key > $1.key }
-    }
+    private var groupedTransactions: [(key: String, value: [Transaction])] { _groupedTransactions }
     
     // 进度条同色系色对
     private var colorPair: ProgressColorPair {
@@ -30,8 +45,41 @@ struct ProjectDetailView: View {
     private var accentColor: Color { Color(hex: colorPair.end) }
 
     // MARK: - 项目内分类占比数据
-    private var projectCategorySegments: [(name: String, amount: Double, colorHex: String, icon: String)] {
-        let expenses = (project.transactions ?? []).filter { $0.type == .expense }
+    private var projectCategorySegments: [(name: String, amount: Double, colorHex: String, icon: String)] { _projectCategorySegments }
+    private var projectTotalExpense: Double { _projectTotalExpense }
+
+    // MARK: - 项目收支趋势数据（按月）
+    private var projectTrendData: [(label: String, expense: Double, income: Double, saving: Double)] { _projectTrendData }
+    
+    private func reloadCache() {
+        Task { @MainActor in updateCacheData() }
+    }
+
+    private func updateCacheData() {
+        let txs = project.transactions ?? []
+        
+        // 0. 概览汇总（一次遍历算出总支出/总收入）
+        var totalExp: Double = 0
+        var totalInc: Double = 0
+        for tx in txs {
+            if tx.type == .expense { totalExp += abs(tx.amount) }
+            else if tx.type == .income { totalInc += abs(tx.amount) }
+        }
+        _totalSpent = totalExp
+        _totalIncome = totalInc
+        _budgetProgress = project.budget > 0 ? totalExp / project.budget : 0
+        
+        // 1. 分组交易记录
+        let sorted = txs.sorted { $0.date > $1.date }
+        var groups: [String: [Transaction]] = [:]
+        for tx in sorted {
+            let key = Self.dayFormatter.string(from: tx.date)
+            groups[key, default: []].append(tx)
+        }
+        _groupedTransactions = groups.sorted { $0.key > $1.key }
+        
+        // 2. 分类占比
+        let expenses = txs.filter { $0.type == .expense }
         var dict: [String: (amount: Double, color: String, icon: String)] = [:]
         for tx in expenses {
             let name = tx.categoryName
@@ -40,33 +88,30 @@ struct ProjectDetailView: View {
             let current = dict[name]?.amount ?? 0
             dict[name] = (current + abs(tx.amount), color, icon)
         }
-        return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
-    }
-
-    private var projectTotalExpense: Double { projectCategorySegments.reduce(0) { $0 + $1.amount } }
-
-    // MARK: - 项目收支趋势数据（按月）
-    private var projectTrendData: [(label: String, expense: Double, income: Double, saving: Double)] {
+        _projectCategorySegments = dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
+        _projectTotalExpense = _projectCategorySegments.reduce(0) { $0 + $1.amount }
+        
+        // 3. 趋势数据
         let calendar = Calendar.current
-        let sorted = (project.transactions ?? []).sorted { $0.date < $1.date }
-        guard let first = sorted.first else { return [] }
-        let startDate = first.date
-        let endDate = Date()
+        let ascSorted = txs.sorted { $0.date < $1.date }
+        if let first = ascSorted.first {
+            let startDate = first.date
+            let endDate = Date()
+            var result: [(label: String, expense: Double, income: Double, saving: Double)] = []
+            var current = calendar.date(from: calendar.dateComponents([.year, .month], from: startDate))!
 
-        var result: [(label: String, expense: Double, income: Double, saving: Double)] = []
-        var current = calendar.date(from: calendar.dateComponents([.year, .month], from: startDate))!
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M月"
-
-        while current <= endDate {
-            let next = calendar.date(byAdding: .month, value: 1, to: current)!
-            let txs = (project.transactions ?? []).filter { $0.date >= current && $0.date < next }
-            let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-            let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-            result.append((label: formatter.string(from: current), expense: exp, income: inc, saving: inc - exp))
-            current = next
+            while current <= endDate {
+                let next = calendar.date(byAdding: .month, value: 1, to: current)!
+                let monthTxs = txs.filter { $0.date >= current && $0.date < next }
+                let exp = monthTxs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+                let inc = monthTxs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
+                result.append((label: Self.monthFormatter.string(from: current), expense: exp, income: inc, saving: inc - exp))
+                current = next
+            }
+            _projectTrendData = result
+        } else {
+            _projectTrendData = []
         }
-        return result
     }
 
     // MARK: - 项目分类占比卡片
@@ -261,44 +306,66 @@ struct ProjectDetailView: View {
                         
                         // 收支汇总
                         HStack(spacing: 12) {
-                            StatCard(title: "总支出", value: project.totalSpent, color: Color.App.redExpense)
-                            StatCard(title: "总收入", value: project.totalIncome, color: Color.App.darkGreen)
-                            let netIncome = project.totalIncome - project.totalSpent
+                            StatCard(title: "总支出", value: _totalSpent, color: Color.App.redExpense)
+                            StatCard(title: "总收入", value: _totalIncome, color: Color.App.darkGreen)
+                            let netIncome = _totalIncome - _totalSpent
                             StatCard(title: "净收益", value: netIncome, color: netIncome >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                         }
                         
                         // 预算进度条（同色系渐变）
                         if project.budget > 0 {
-                            let progress = min(project.budgetProgress, 1.0)
-                            let pctColor: Color = project.budgetProgress >= 1.0 ? Color.App.redExpense :
-                                project.budgetProgress >= 0.8 ? Color(hex: "#FFA500") : accentColor
+                            let progress = min(_budgetProgress, 1.0)
+                            let pctColor: Color = _budgetProgress >= 1.0 ? Color.App.redExpense :
+                                _budgetProgress >= 0.8 ? Color(hex: "#FFA500") : accentColor
                             
                             VStack(spacing: 8) {
                                 HStack {
                                     Text("预算进度")
                                         .font(.system(size: 13, weight: .bold)).foregroundColor(.gray)
                                     Spacer()
-                                    Text("\(Int(project.budgetProgress * 100))%")
+                                    Text("\(Int(_budgetProgress * 100))%")
                                         .font(.system(size: 13, weight: .bold)).foregroundColor(pctColor)
                                 }
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        Capsule().fill(Color.App.progressTrack).frame(height: 10)
-                                        Capsule()
-                                            .fill(LinearGradient(
-                                                colors: [Color(hex: colorPair.start), Color(hex: colorPair.end)],
-                                                startPoint: .leading, endPoint: .trailing
-                                            ))
-                                            .frame(width: geo.size.width * progress, height: 10)
-                                    }
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.App.progressTrack)
+                                    Capsule()
+                                        .fill(LinearGradient(
+                                            colors: [Color(hex: colorPair.start), Color(hex: colorPair.end)],
+                                            startPoint: .leading, endPoint: .trailing
+                                        ))
+                                        .frame(maxWidth: .infinity)
+                                        .scaleEffect(x: max(0.001, CGFloat(progress)), y: 1, anchor: .leading)
                                 }
                                 .frame(height: 10)
                                 HStack {
-                                    Text("已用 ¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0))))")
+                                    Text("已用 ¥\(_totalSpent.formatted(.number.precision(.fractionLength(0))))")
                                     Spacer()
                                     Text("预算 ¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
                                 }
                                 .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
+                                
+                                // 预算超80%预警提示
+                                if _budgetProgress >= 0.8 && !storeManager.isPremium {
+                                    Button(action: { showUpgradeAlert = true }) {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "exclamationmark.triangle.fill")
+                                                .foregroundColor(Color(hex: "#FFA500"))
+                                            Text("预算即将超标，升级专业版解锁动态趋势预测")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(Color.App.textBlack)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 12, weight: .bold))
+                                                .foregroundColor(.gray)
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 10)
+                                        .background(Color(hex: "#FFA500").opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.top, 8)
+                                }
                             }
                         }
                     }
@@ -315,7 +382,7 @@ struct ProjectDetailView: View {
                     projectTrendCard
 
                     // MARK: 账单时间轴
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         Text("账单时间轴")
                             .font(.system(size: 20, weight: .heavy))
                             .foregroundColor(Color.App.textBlack)
@@ -329,7 +396,7 @@ struct ProjectDetailView: View {
                                 .padding(.horizontal, 24)
                         } else {
                             ForEach(groupedTransactions, id: \.key) { group in
-                                VStack(alignment: .leading, spacing: 0) {
+                                LazyVStack(alignment: .leading, spacing: 0) {
                                     HStack(spacing: 12) {
                                         Circle()
                                             .fill(Color(hex: project.colorHex))
@@ -341,7 +408,7 @@ struct ProjectDetailView: View {
                                     .padding(.leading, 24)
                                     .padding(.bottom, 10)
                                     
-                                    VStack(spacing: 10) {
+                                    LazyVStack(spacing: 10) {
                                         ForEach(group.value) { tx in
                                             SwipeActionView(
                                                 onEdit: { editingTransaction = tx },
@@ -392,7 +459,26 @@ struct ProjectDetailView: View {
         } message: {
             Text("删除后项目内所有账单将被一并清除，且无法恢复。")
         }
+        .alert("升级到专业版", isPresented: $showUpgradeAlert) {
+            Button("取消", role: .cancel) { }
+            Button("查看订阅方案") {
+                // TODO: 跳转到订阅页面
+            }
+        } message: {
+            Text("专业版用户可以解锁动态趋势预测、ROI 分析看板等高级功能，帮助你更好地掌控预算！")
+        }
         .navigationBarHidden(true)
+        .onAppear {
+            updateCacheData()
+        }
+        // 增删：count 变化
+        .onChange(of: project.transactions?.count) { _, _ in reloadCache() }
+        // 编辑金额（count 不变，但弹窗关闭时数据已写入 CoreData）
+        .onChange(of: editingTransaction != nil) { _, isPresented in
+            if !isPresented { reloadCache() }
+        }
+        // CloudKit 同步兜底：月度汇总变化时也刷新
+        .onChange(of: store.monthlyExpense) { _, _ in reloadCache() }
     }
 }
 

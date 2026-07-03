@@ -3,14 +3,36 @@ import SwiftData
 struct NewProjectView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var storeManager: StoreManager
     
     @State private var name = ""
     @State private var desc = ""
     @State private var budgetText = ""
     @State private var selectedIcon = "folder.fill"
     @State private var selectedColor = "#A8E0C2"
+    @State private var showUpgradeAlert = false
+    @State private var showPaywall = false
     
     @FocusState private var isAnyFieldFocused: Bool
+    
+    var canCreateProject: Bool {
+        #if DEBUG
+        print("🔍 项目创建检查:")
+        print("  - isPremium: \(storeManager.isPremium)")
+        print("  - customProjects: \(customProjectCount)")
+        #endif
+        
+        // 1. 专业版用户无限制
+        if storeManager.isPremium { return true }
+        // 2. 免费版最多3个自定义项目
+        return customProjectCount < 3
+    }
+    
+    /// 自定义项目数量（排除"日常"默认项目）
+    private var customProjectCount: Int {
+        let activeCustom = store.activeProjects.filter { !$0.isActiveProject }.count
+        return activeCustom + store.archivedProjects.count
+    }
     
     var body: some View {
         NavigationView {
@@ -145,6 +167,18 @@ struct NewProjectView: View {
             .background(Color.App.backgroundGray.ignoresSafeArea())
             .navigationTitle("新建项目")
             .navigationBarTitleDisplayMode(.inline)
+            .alert("升级到专业版", isPresented: $showUpgradeAlert) {
+                Button("取消", role: .cancel) { }
+                Button("查看订阅方案") {
+                    showPaywall = true
+                }
+            } message: {
+                Text("免费版最多可创建 3 个项目。升级到专业版即可解锁无限项目，还有更多高级功能等你探索！")
+            }
+            .fullScreenCover(isPresented: $showPaywall) {
+                PaywallView()
+                    .environmentObject(storeManager)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { presentationMode.wrappedValue.dismiss() }
@@ -152,20 +186,25 @@ struct NewProjectView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("创建") {
                         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        let budget = Double(budgetText) ?? 0
-                        store.addProject(name: name, icon: selectedIcon, colorHex: selectedColor,
-                                        desc: desc, budget: budget)
                         
-                        AnalyticsManager.shared.trackEvent(
-                            eventId: "project_create_success",
-                            eventName: "成功创建项目",
-                            params: [
-                                "has_budget": budget > 0,
-                                "icon_selected": selectedIcon
-                            ]
-                        )
-                        
-                        presentationMode.wrappedValue.dismiss()
+                        if canCreateProject {
+                            let budget = Double(budgetText) ?? 0
+                            store.addProject(name: name, icon: selectedIcon, colorHex: selectedColor,
+                                            desc: desc, budget: budget)
+                            
+                            AnalyticsManager.shared.trackEvent(
+                                eventId: "project_create_success",
+                                eventName: "成功创建项目",
+                                params: [
+                                    "has_budget": budget > 0,
+                                    "icon_selected": selectedIcon
+                                ]
+                            )
+                            
+                            presentationMode.wrappedValue.dismiss()
+                        } else {
+                            showUpgradeAlert = true
+                        }
                     }
                     .font(.system(size: 16, weight: .bold))
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)

@@ -167,6 +167,7 @@ struct ChatDateDivider: View {
 
 struct AIChatView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var storeManager: StoreManager
     @Environment(\.dismiss) private var dismiss
     @State private var messageText = ""
     @State private var messages: [ChatMessage] = []
@@ -185,16 +186,7 @@ struct AIChatView: View {
     @State private var showGuide = !UserDefaults.standard.bool(forKey: "hasSeenAIChatGuide")
     @FocusState private var isInputFocused: Bool
     
-    private static let dailyLimit = 15
-    @State private var dailyUsageCount = 0
-    private var isLimitReached: Bool { dailyUsageCount >= Self.dailyLimit }
-    private var remainingCount: Int { max(0, Self.dailyLimit - dailyUsageCount) }
-    
-    private static var todayKey: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return "ai_chat_usage_" + fmt.string(from: Date())
-    }
+    // 次数逻辑统一由 StoreManager 管理
 
     var initialText: String?
     var isFromShortcut: Bool = false
@@ -314,7 +306,7 @@ struct AIChatView: View {
         .navigationBarHidden(true)
         .preferredColorScheme(.light)
         .onAppear {
-            dailyUsageCount = UserDefaults.standard.integer(forKey: Self.todayKey)
+            storeManager.refreshDailyUsageIfNeeded()
             loadChatHistory()
             if let text = initialText, !text.isEmpty {
                 if isFromShortcut {
@@ -344,15 +336,16 @@ struct AIChatView: View {
         .sheet(isPresented: $showActiveProjectSheet) {
             ActiveProjectSheetView(store: store)
         }
-        .background {
+        .sheet(isPresented: $showFuelPackSheet) {
+            FuelPackSheet()
+                .environmentObject(storeManager)
+        }
+        .background(
             NavigationLink(isActive: $showFinancialAcademy) {
                 FinancialAcademyView()
                     .environmentObject(store)
-            } label: {
-                EmptyView()
-            }
-            .hidden()
-        }
+            } label: { EmptyView() }.hidden()
+        )
     }
 
     // MARK: - Header
@@ -376,14 +369,20 @@ struct AIChatView: View {
                     .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(ChatDesign.onPrimaryContainer)
                 
-                if isLimitReached {
+                if !storeManager.canSendMessage {
                     Text("今日次数已用完，明天再来～")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(Color(hex: "#EF4444"))
                 } else {
-                    Text("今日剩余 \(remainingCount)/\(AIChatView.dailyLimit) 次")
+                    Button(action: { showFuelPackSheet = true }) {
+                        HStack(spacing: 4) {
+                            Text("今日剩余 \(storeManager.totalRemaining) 次")
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(Color(hex: "#FFD700"))
+                        }
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(ChatDesign.onPrimaryContainer.opacity(0.5))
+                    }
                 }
             }
 
@@ -528,9 +527,39 @@ struct AIChatView: View {
     }
 
     // MARK: - Input Area
+    
+    @State private var showFuelPackSheet = false
 
     private var inputArea: some View {
         VStack(spacing: 10) {
+            // 额度耗尽提示横幅
+            if !storeManager.canSendMessage {
+                Button(action: { showFuelPackSheet = true }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                            .foregroundColor(Color.App.darkOrange)
+                        Text("今日 AI 次数已用完，点击补充燃料 ⚡️")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Color.App.textBlack)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.App.lightOrange.opacity(0.3))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.App.darkOrange.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             // Quick Action Chips（纯 UI，v2.2 暂不绑定逻辑）
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -633,10 +662,10 @@ struct AIChatView: View {
                 if showVoiceInput {
                     voiceInputButton
                 } else {
-                    TextField(isLimitReached ? "今日次数已用完" : "问我任何财务问题吧...", text: $messageText)
+                    TextField(storeManager.canSendMessage ? "问我任何财务问题吧..." : "今日次数已用完", text: $messageText)
                         .font(.system(size: 15, design: .rounded))
                         .focused($isInputFocused)
-                        .disabled(isLimitReached)
+                        .disabled(!storeManager.canSendMessage)
                 }
 
                 // 发送按钮
@@ -647,13 +676,13 @@ struct AIChatView: View {
                         .frame(width: 44, height: 44)
                         .background(
                             Circle()
-                                .fill((messageText.isEmpty && !showVoiceInput) || isLimitReached
+                                .fill((messageText.isEmpty && !showVoiceInput) || !storeManager.canSendMessage
                                       ? ChatDesign.primaryContainer.opacity(0.5)
                                       : ChatDesign.primaryContainer)
                                 .shadow(color: ChatDesign.primaryContainer.opacity(0.4), radius: 12, x: 0, y: 4)
                         )
                 }
-                .disabled((messageText.isEmpty && !showVoiceInput) || isLimitReached)
+                .disabled((messageText.isEmpty && !showVoiceInput) || !storeManager.canSendMessage)
                 .scaleEffect(messageText.isEmpty ? 0.93 : 1.0)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6), value: messageText.isEmpty)
             }
@@ -719,11 +748,7 @@ struct AIChatView: View {
         }
     }
     
-    // MARK: - Business Logic
-    private func incrementUsage() {
-        dailyUsageCount += 1
-        UserDefaults.standard.set(dailyUsageCount, forKey: Self.todayKey)
-    }
+    // MARK: - Business Logic（消耗逻辑已统一至 StoreManager.consumeOneCall()）
     
     private func clearChatHistory() {
         messages = []
@@ -829,7 +854,7 @@ struct AIChatView: View {
     }
 
     private func sendMessage() {
-        guard !messageText.isEmpty, !isLimitReached else { return }
+        guard !messageText.isEmpty, storeManager.canSendMessage else { return }
         let text = messageText
         messages.append(ChatMessage(role: .user, content: text, timestamp: Date()))
         messageText = ""
@@ -851,7 +876,7 @@ struct AIChatView: View {
             await MainActor.run {
                 messages.removeAll { $0.id == processingMsg.id }
                 handleParseResult(result)
-                incrementUsage()
+                _ = storeManager.consumeOneCall()
                 isLoading = false
             }
         } catch {
@@ -887,7 +912,7 @@ struct AIChatView: View {
             let result = try await llmService.parseTransaction(from: text, context: context)
             await MainActor.run {
                 handleParseResult(result)
-                incrementUsage()
+                _ = storeManager.consumeOneCall()
                 isLoading = false
             }
         } catch {
@@ -911,7 +936,7 @@ struct AIChatView: View {
                 await MainActor.run {
                     messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
                     handleParseResult(result)
-                    incrementUsage()
+                    _ = storeManager.consumeOneCall()
                     isLoading = false
                 }
             } catch {

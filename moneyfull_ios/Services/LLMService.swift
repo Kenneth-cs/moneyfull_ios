@@ -131,6 +131,11 @@ class LLMService {
             throw LLMError.noContent
         }
         
+        // 记录Token使用量
+        if let usage = llmResponse.usage {
+            TokenMonitor.shared.record(tokens: usage.totalTokens)
+        }
+        
         // 尝试解析JSON响应
         guard let jsonData = content.data(using: .utf8) else {
             throw LLMError.invalidJSON
@@ -251,6 +256,11 @@ class LLMService {
             throw LLMError.noContent
         }
         
+        // 记录Token使用量
+        if let usage = llmResponse.usage {
+            TokenMonitor.shared.record(tokens: usage.totalTokens)
+        }
+        
         guard let jsonData = content.data(using: .utf8) else {
             throw LLMError.invalidJSON
         }
@@ -351,6 +361,19 @@ enum LLMError: Error {
 
 struct LLMResponse: Codable {
     let choices: [Choice]
+    let usage: Usage?
+}
+
+struct Usage: Codable {
+    let promptTokens: Int
+    let completionTokens: Int
+    let totalTokens: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalTokens = "total_tokens"
+    }
 }
 
 struct Choice: Codable {

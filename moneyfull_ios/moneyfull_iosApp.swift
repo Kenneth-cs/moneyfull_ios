@@ -4,6 +4,7 @@ import SwiftData
 @main
 struct moneyfull_iosApp: App {
     @StateObject private var theme = ThemeManager()
+    @StateObject private var storeManager = StoreManager.shared
     
     private let modelContainer: ModelContainer
     
@@ -66,6 +67,7 @@ struct moneyfull_iosApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(theme)
+                .environmentObject(storeManager)
                 .preferredColorScheme(theme.colorScheme)
                 .tint(Color.App.darkGreen)
         }

@@ -82,7 +82,7 @@ struct ProjectsView: View {
                             NavigationLink(destination: ProjectDetailView(project: project).onAppear {
                                 AnalyticsManager.shared.trackEvent(eventId: "project_view_detail", eventName: "查看项目详情", params: ["project_status": selectedTab == 0 ? "active" : "archived", "source": "project_center"])
                             }) {
-                                ProjectDetailCard(project: project)
+                                ProjectDetailCard(project: project, onToggleActive: { store.toggleActiveProject(project) })
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
@@ -156,45 +156,31 @@ struct ProjectsView: View {
 // MARK: - 项目卡片（大版，含详情按钮）
 struct ProjectDetailCard: View {
     let project: Project
-    @EnvironmentObject var store: AppStore
-    
-    // 进度条百分比预警色（超支用红，接近满用橙）
-    private var progressPctColor: Color {
-        let p = project.budgetProgress
-        if p >= 1.0 { return Color.App.redExpense }
-        if p >= 0.8 { return Color(hex: "#FFA500") }
-        return progressEndColor
-    }
-    
-    // 进度条渐变：同色系，从浅到深，不跨色系（避免颜色"脏"）
-    private var progressStartColor: Color {
-        Color(hex: progressColorPair(for: project.colorHex).start)
-    }
-    private var progressEndColor: Color {
-        Color(hex: progressColorPair(for: project.colorHex).end)
-    }
-    
-    // 按钮背景色 = 项目主题色，文字色 = 对应深色
-    private var buttonBgColor: Color { Color(hex: project.colorHex) }
-    private var buttonFgColor: Color {
-        Color(hex: progressColorPair(for: project.colorHex).end)
-    }
-    
-    // 标签样式：进行中=绿，已归档=黄
-    private var tagBg: Color {
-        project.isArchived ? Color.App.lightYellow : Color.App.primaryGreen.opacity(0.5)
-    }
-    private var tagFg: Color {
-        project.isArchived ? Color.App.darkYellow : Color.App.darkGreen
-    }
-    
+    let onToggleActive: () -> Void
+
     var body: some View {
-        ZStack {
+        // 每次 body 只遍历一次 CoreData 关系
+        let totalSpent = project.totalSpent
+        let budgetProgress = project.budgetProgress
+        let pair = progressColorPair(for: project.colorHex)
+        let startColor = Color(hex: pair.start)
+        let endColor = Color(hex: pair.end)
+        let pctColor: Color = {
+            if budgetProgress >= 1.0 { return Color.App.redExpense }
+            if budgetProgress >= 0.8 { return Color(hex: "#FFA500") }
+            return endColor
+        }()
+        let tagBg = project.isArchived ? Color.App.lightYellow : Color.App.primaryGreen.opacity(0.5)
+        let tagFg = project.isArchived ? Color.App.darkYellow : Color.App.darkGreen
+        let btnBg = project.isArchived ? Color.App.lightYellow : Color(hex: project.colorHex)
+        let btnFg = project.isArchived ? Color.App.darkYellow : endColor
+
+        return ZStack {
             RoundedRectangle(cornerRadius: 32)
                 .fill(Color.App.cardBackground)
                 .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 4)
             
-            // 装饰模糊圆
+            // 装饰模糊圆（静态，不随滚动重算，安全使用 blur）
             Circle()
                 .fill(Color(hex: project.colorHex).opacity(0.45))
                 .frame(width: 120)
@@ -223,11 +209,8 @@ struct ProjectDetailCard: View {
                     }
                     Spacer()
                     HStack(spacing: 8) {
-                        // 活跃项目标星按钮
                         if !project.isArchived {
-                            Button(action: {
-                                store.toggleActiveProject(project)
-                            }) {
+                            Button(action: onToggleActive) {
                                 Image(systemName: project.isActiveProject ? "star.fill" : "star")
                                     .font(.system(size: 18))
                                     .foregroundColor(project.isActiveProject ? Color.App.darkYellow : Color.gray.opacity(0.4))
@@ -258,28 +241,24 @@ struct ProjectDetailCard: View {
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundColor(.gray)
                             Spacer()
-                            Text("\(Int(project.budgetProgress * 100))%")
+                            Text("\(Int(budgetProgress * 100))%")
                                 .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(progressPctColor)
+                                .foregroundColor(pctColor)
                         }
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                // 轨道：干净浅灰
-                                Capsule()
-                                    .fill(Color.App.progressTrack)
-                                    .frame(height: 10)
-                                // 填充：同色系渐变
-                                Capsule()
-                                    .fill(LinearGradient(
-                                        colors: [progressStartColor, progressEndColor],
-                                        startPoint: .leading, endPoint: .trailing
-                                    ))
-                                    .frame(width: max(0, min(geo.size.width, geo.size.width * project.budgetProgress)), height: 10)
-                            }
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.App.progressTrack)
+                                .frame(height: 10)
+                            Capsule()
+                                .fill(LinearGradient(
+                                    colors: [startColor, endColor],
+                                    startPoint: .leading, endPoint: .trailing
+                                ))
+                                .frame(height: 10)
+                                .scaleEffect(x: min(1, budgetProgress), anchor: .leading)
                         }
-                        .frame(height: 10)
                         HStack {
-                            Text("已用: ¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0))))")
+                            Text("已用: ¥\(totalSpent.formatted(.number.precision(.fractionLength(0))))")
                             Spacer()
                             Text("预算: ¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
                         }
@@ -287,21 +266,21 @@ struct ProjectDetailCard: View {
                         .foregroundColor(.gray)
                     }
                 } else {
-                    Text("总支出: ¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0))))")
+                    Text("总支出: ¥\(totalSpent.formatted(.number.precision(.fractionLength(0))))")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.gray)
                 }
                 
-                // 查看详情按钮：使用项目自己的颜色（对标原型）
+                // 查看详情按钮
                 HStack {
                     Text("查看详情")
                     Image(systemName: "arrow.right")
                 }
                 .font(.system(size: 16, weight: .heavy))
-                .foregroundColor(project.isArchived ? Color.App.darkYellow : buttonFgColor)
+                .foregroundColor(btnFg)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(project.isArchived ? Color.App.lightYellow : buttonBgColor)
+                .background(btnBg)
                 .clipShape(Capsule())
             }
             .padding(24)

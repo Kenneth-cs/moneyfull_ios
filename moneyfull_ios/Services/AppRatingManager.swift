@@ -76,7 +76,7 @@ class AppRatingManager {
     func openAppStore() {
         markAsRated()
         
-        let appStoreURL = "https://apps.apple.com/app/id{APP_ID}?action=write-review"
+        let appStoreURL = "https://apps.apple.com/cn/app/%E9%92%B1%E5%B0%8F%E6%BB%A1-%E6%B2%BB%E6%84%88%E7%B3%BB%E9%A1%B9%E7%9B%AE%E8%AE%B0%E8%B4%A6%E7%AE%A1%E5%AE%B6/id6762140727"
         if let url = URL(string: appStoreURL) {
             UIApplication.shared.open(url)
         }

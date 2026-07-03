@@ -1,0 +1,137 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "D5DCFE50",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "6",
+      "familyShareable" : false,
+      "internalID" : "57A92CB7",
+      "localizations" : [
+        {
+          "description" : "",
+          "displayName" : "小份能量饼干",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.moneyfull.fuelpack.200",
+      "referenceName" : "Fuel Pack 200",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "12",
+      "familyShareable" : false,
+      "internalID" : "C6A771F6",
+      "localizations" : [
+        {
+          "description" : "",
+          "displayName" : "大份能量套餐",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.moneyfull.fuelpack.500",
+      "referenceName" : "Fuel Pack 500",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "DDD4F78C",
+      "localizations" : [
+
+      ],
+      "name" : "Subscription Group ",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "9.9",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "8931E8D3",
+          "introductoryOffers" : [
+
+          ],
+          "localizations" : [
+            {
+              "description" : "",
+              "displayName" : "",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.moneyfull.premium.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Premium Monthly",
+          "subscriptionGroupID" : "DDD4F78C",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "68",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "1DB4F131",
+          "introductoryOffers" : [
+
+          ],
+          "localizations" : [
+            {
+              "description" : "",
+              "displayName" : "",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.moneyfull.premium.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Premium Annual",
+          "subscriptionGroupID" : "DDD4F78C",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 5,
+    "minor" : 0
+  }
+}

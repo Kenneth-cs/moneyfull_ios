@@ -3,6 +3,7 @@ import SwiftData
 
 struct ProfileView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var storeManager: StoreManager
     @EnvironmentObject var theme: ThemeManager
     @State private var showBudgetSetting = false
     @State private var showExportSheet = false
@@ -17,6 +18,8 @@ struct ProfileView: View {
     @State private var userName: String = UserDefaults.standard.string(forKey: "userName") ?? "钱小满用户"
     @State private var showEditName = false
     @State private var tempName: String = ""
+    @State private var showPaywall = false
+    @State private var showFuelPackSheet = false
     
     // 从 AppStore 拿真实统计
     private var activeCount: Int { store.activeProjects.count }
@@ -96,89 +99,207 @@ struct ProfileView: View {
                 // MARK: 本月财务小结
                 MonthSummaryCard(store: store)
                     .padding(.horizontal, 24)
-                
-                // MARK: 功能菜单
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("账户管理")
-                        .font(.system(size: 12, weight: .black))
-                        .foregroundColor(.gray.opacity(0.8))
-                        .kerning(2)
-                        .padding(.horizontal, 8)
-                    
-                    VStack(spacing: 0) {
-                        MenuItem(icon: "hand.tap",
-                                 iconBg: Color.App.lightGreen.opacity(0.5),
-                                 iconColor: Color.App.darkGreen,
-                                 title: "无疼记账设置") {
-                            showBackTapTutorial = true
+
+                // MARK: Premium 入口
+                if storeManager.isPremium {
+                    // 已订阅：状态展示
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("我的订阅")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundColor(.gray.opacity(0.8))
+                            .kerning(2)
+                            .padding(.horizontal, 8)
+
+                        VStack(spacing: 0) {
+                            PremiumStatusRow(
+                                planTitle: storeManager.currentPlanTitle,
+                                expiryText: storeManager.currentPlanExpiry.isEmpty ? "已激活" : storeManager.currentPlanExpiry,
+                                onTap: { showPaywall = true }
+                            )
+                            
+                            Divider().padding(.leading, 72).opacity(0.5)
+                            
+                            RedeemCodeRow(onTap: { storeManager.presentOfferCodeSheet() })
+                            
+                            Divider().padding(.leading, 72).opacity(0.5)
+                            
+                            Button { showFuelPackSheet = true } label: {
+                                HStack(spacing: 16) {
+                                    Circle()
+                                        .fill(Color.App.lightOrange.opacity(0.3))
+                                        .frame(width: 42, height: 42)
+                                        .overlay(
+                                            Image(systemName: "bolt.fill")
+                                                .foregroundColor(Color.App.darkOrange)
+                                                .font(.system(size: 18, weight: .semibold))
+                                        )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("能量饼干")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(Color.App.textBlack)
+                                        if storeManager.fuelCredits > 0 {
+                                            Text("\(storeManager.fuelCredits) 次 AI 调用额度")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.gray)
+                                        } else {
+                                            Text("购买后获得额外 AI 次数")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.5))
+                                }
+                                .contentShape(Rectangle())
+                                .padding(16)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        MenuItem(icon: "chart.bar.doc.horizontal",
-                                 iconBg: Color.App.primaryGreen.opacity(0.3),
-                                 iconColor: Color.App.darkGreen,
-                                 title: "月度预算设置") {
-                            showBudgetSetting = true
-                        }
-                        MenuItem(icon: "tag.fill",
-                                 iconBg: Color.App.lightGreen.opacity(0.5),
-                                 iconColor: Color.App.darkGreen,
-                                 title: "分类管理") {
-                            showCategoryManagement = true
-                        }
-                        MenuItem(icon: "arrow.up.arrow.down",
-                                 iconBg: Color.App.lightYellow.opacity(0.4),
-                                 iconColor: Color.App.darkYellow,
-                                 title: "项目排序") {
-                            showProjectSorting = true
-                        }
-                        MenuItem(icon: "brain",
-                                 iconBg: Color.purple.opacity(0.2),
-                                 iconColor: .purple,
-                                 title: "AI 记忆管理") {
-                            showMemoryManagement = true
-                        }
-                        MenuItem(icon: "arrow.down.doc",
-                                 iconBg: Color.App.lightOrange.opacity(0.4),
-                                 iconColor: Color.App.darkOrange,
-                                 title: "导出数据") {
-                            showExportSheet = true
-                        }
-                        MenuItem(icon: "square.and.arrow.down",
-                                 iconBg: Color.App.lightGreen.opacity(0.5),
-                                 iconColor: Color.App.darkGreen,
-                                 title: "导入账单") {
-                            showImportSheet = true
-                        }
-                        MenuItem(icon: "paintpalette",
-                                 iconBg: Color.App.lightYellow.opacity(0.6),
-                                 iconColor: Color.App.darkYellow,
-                                 title: "主题设置  (\(theme.mode.displayName))") {
-                            showThemePicker = true
-                        }
-                        MenuItem(icon: "bell.fill",
-                                 iconBg: Color.App.lightGreen.opacity(0.5),
-                                 iconColor: Color.App.darkGreen,
-                                 title: "记账提醒") {
-                            showReminderSetting = true
-                        }
-                        MenuItem(icon: "questionmark.circle",
-                                 iconBg: Color.gray.opacity(0.1),
-                                 iconColor: .gray,
-                                 title: "帮助与反馈") {
-                            showFeedback = true
-                        }
-                        MenuItem(icon: "star.fill",
-                                 iconBg: Color.App.lightYellow.opacity(0.6),
-                                 iconColor: Color.App.darkYellow,
-                                 title: "给个好评 ❤️") {
-                            AppRatingManager.shared.openAppStore()
-                        }
-                        ICloudStatusRow(store: store)
-                            .environmentObject(store)
+                        .background(Color.App.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 28))
+                        .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
                     }
-                    .padding(8)
+                    .padding(.horizontal, 24)
+                } else {
+                    // 未订阅：升级横幅 + 兑换码入口
+                    VStack(spacing: 12) {
+                        PremiumUpgradeBanner(onTap: { showPaywall = true })
+                        
+                        VStack(spacing: 0) {
+                            RedeemCodeRow(onTap: { storeManager.presentOfferCodeSheet() })
+                            
+                            Divider().padding(.leading, 72).opacity(0.5)
+                            
+                            Button { showFuelPackSheet = true } label: {
+                                HStack(spacing: 16) {
+                                    Circle()
+                                        .fill(Color.App.lightOrange.opacity(0.3))
+                                        .frame(width: 42, height: 42)
+                                        .overlay(
+                                            Image(systemName: "bolt.fill")
+                                                .foregroundColor(Color.App.darkOrange)
+                                                .font(.system(size: 18, weight: .semibold))
+                                        )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("能量饼干")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text("购买后获得额外 AI 次数")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.5))
+                                }
+                                .contentShape(Rectangle())
+                                .padding(16)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .background(Color.App.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 28))
+                        .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
+                    }
+                    .padding(.horizontal, 24)
+                }
+
+                // MARK: 功能菜单
+                VStack(spacing: 16) {
+
+                    // 常用操作（网格）
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("常用操作")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundColor(.gray.opacity(0.8))
+                            .kerning(2)
+                            .padding(.horizontal, 8)
+
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 4),
+                            spacing: 4
+                        ) {
+                            MenuGridItem(icon: "hand.tap",
+                                         iconBg: Color.App.lightGreen.opacity(0.5),
+                                         iconColor: Color.App.darkGreen,
+                                         title: "无痛记账") { showBackTapTutorial = true }
+                            MenuGridItem(icon: "chart.bar.doc.horizontal",
+                                         iconBg: Color.App.primaryGreen.opacity(0.3),
+                                         iconColor: Color.App.darkGreen,
+                                         title: "月度预算") { showBudgetSetting = true }
+                            MenuGridItem(icon: "tag.fill",
+                                         iconBg: Color.App.lightGreen.opacity(0.5),
+                                         iconColor: Color.App.darkGreen,
+                                         title: "分类管理") { showCategoryManagement = true }
+                            MenuGridItem(icon: "arrow.up.arrow.down",
+                                         iconBg: Color.App.lightYellow.opacity(0.4),
+                                         iconColor: Color.App.darkYellow,
+                                         title: "项目排序") { showProjectSorting = true }
+                            MenuGridItem(icon: "brain",
+                                         iconBg: Color.purple.opacity(0.2),
+                                         iconColor: .purple,
+                                         title: "AI 记忆") { showMemoryManagement = true }
+                            MenuGridItem(icon: "paintpalette",
+                                         iconBg: Color.App.lightYellow.opacity(0.6),
+                                         iconColor: Color.App.darkYellow,
+                                         title: "主题设置") { showThemePicker = true }
+                            MenuGridItem(icon: "bell.fill",
+                                         iconBg: Color.App.lightGreen.opacity(0.5),
+                                         iconColor: Color.App.darkGreen,
+                                         title: "记账提醒") { showReminderSetting = true }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                    .padding(12)
                     .background(Color.App.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 32))
+                    .clipShape(RoundedRectangle(cornerRadius: 28))
                     .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
+
+                    // 数据管理 + 其他（四格平铺）
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("数据管理 · 其他")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundColor(.gray.opacity(0.8))
+                            .kerning(2)
+                            .padding(.horizontal, 8)
+
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 4),
+                            spacing: 4
+                        ) {
+                            MenuGridItem(icon: "arrow.down.doc",
+                                         iconBg: Color.App.lightOrange.opacity(0.4),
+                                         iconColor: Color.App.darkOrange,
+                                         title: "导出数据") { showExportSheet = true }
+                            MenuGridItem(icon: "square.and.arrow.down",
+                                         iconBg: Color.App.lightGreen.opacity(0.5),
+                                         iconColor: Color.App.darkGreen,
+                                         title: "导入账单") { showImportSheet = true }
+                            MenuGridItem(icon: "questionmark.circle",
+                                         iconBg: Color.gray.opacity(0.1),
+                                         iconColor: .gray,
+                                         title: "帮助反馈") { showFeedback = true }
+                            MenuGridItem(icon: "star.fill",
+                                         iconBg: Color.App.lightYellow.opacity(0.6),
+                                         iconColor: Color.App.darkYellow,
+                                         title: "好评支持") { AppRatingManager.shared.openAppStore() }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                    .padding(12)
+                    .background(Color.App.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 28))
+                    .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
+
+                    // iCloud 同步状态（全宽行）
+                    ICloudStatusRow(store: store)
+                        .environmentObject(store)
+                        .background(Color.App.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
                 }
                 .padding(.horizontal, 24)
                 
@@ -248,6 +369,14 @@ struct ProfileView: View {
         // 记账提醒设置页面
         .sheet(isPresented: $showReminderSetting) {
             ReminderSettingView()
+        }
+        // Premium 订阅页
+        .fullScreenCover(isPresented: $showPaywall) {
+            PaywallView()
+        }
+        // 能量饼干页
+        .fullScreenCover(isPresented: $showFuelPackSheet) {
+            FuelPackSheet()
         }
     }
 }
@@ -402,6 +531,39 @@ struct MenuItem: View {
                 alignment: .bottom
             )
         }
+    }
+}
+
+// MARK: - 网格菜单项
+struct MenuGridItem: View {
+    let icon: String
+    let iconBg: Color
+    let iconColor: Color
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(iconBg)
+                        .frame(width: 48, height: 48)
+                    Image(systemName: icon)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(iconColor)
+                }
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color.App.textBlack)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -748,5 +910,6 @@ struct FeedbackSheetView: View {
 #Preview {
     ProfileView()
         .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
+        .environmentObject(StoreManager.shared)
         .environmentObject(ThemeManager())
 }

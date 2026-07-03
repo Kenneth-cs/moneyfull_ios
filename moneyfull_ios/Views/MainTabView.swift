@@ -162,13 +162,12 @@ struct CustomBottomTabBar: View {
         .padding(.top, 14)
         .padding(.bottom, 14)
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(Color.App.cardBackground.opacity(0.8))
-            }
-            .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
+            // 用不透明卡片背景代替实时毛玻璃（.ultraThinMaterial）。
+            // 实时模糊会在滚动时每帧重算背后移动的内容，是滚动卡顿的主因；
+            // 原本上层已盖了 0.8 不透明卡片，外观几乎一致。
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(Color.App.cardBackground)
+                .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: -4)
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)

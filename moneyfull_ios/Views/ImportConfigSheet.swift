@@ -391,15 +391,12 @@ struct ImportConfigSheet: View {
             do {
                 let data = try Data(contentsOf: url)
                 
-                var encoding: String.Encoding = .utf8
                 if let string = String(data: data, encoding: .utf8) {
                     csvContent = string
                 } else if let string = String(data: data, encoding: .shiftJIS) {
                     csvContent = string
-                    encoding = .shiftJIS
                 } else if let string = String(data: data, encoding: .isoLatin1) {
                     csvContent = string
-                    encoding = .isoLatin1
                 } else {
                     errorMessage = "无法识别文件编码，请确保是 UTF-8 编码的 CSV 文件"
                     showError = true
@@ -434,11 +431,11 @@ struct ImportConfigSheet: View {
     
     private func performImport() {
         guard let content = csvContent else { return }
-        
         isImporting = true
+        // 在主线程提前捕获 @MainActor 数据
+        let categoryLookup = Dictionary(uniqueKeysWithValues: store.categories.map { ($0.name, $0) })
         
         DispatchQueue.global(qos: .userInitiated).async {
-            let categoryLookup = Dictionary(uniqueKeysWithValues: store.categories.map { ($0.name, $0) })
             
             let parsed = CSVImportService.importTransactions(
                 from: content,
@@ -470,7 +467,7 @@ struct ImportConfigSheet: View {
     
     private func undoLastImport() {
         guard let result = importResult else { return }
-        let deleted = store.undoImport(batchID: result.batchID)
+        _ = store.undoImport(batchID: result.batchID)
         importResult = nil
         step = .selectSource
         csvContent = nil

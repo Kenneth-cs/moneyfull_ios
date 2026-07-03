@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4041C8342FEBF85C00AE05C3 /* Products.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 4041C8332FEBF85C00AE05C3 /* Products.storekit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		40AF15EB2F8A840D0070BB51 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		4041C8332FEBF85C00AE05C3 /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Products.storekit; sourceTree = "<group>"; };
 		40AF15D92F8A840B0070BB51 /* moneyfull_ios.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = moneyfull_ios.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		40AF15EA2F8A840D0070BB51 /* moneyfull_iosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = moneyfull_iosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		40AF15F42F8A840D0070BB51 /* moneyfull_iosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = moneyfull_iosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -88,6 +93,7 @@
 		40AF15D02F8A840B0070BB51 = {
 			isa = PBXGroup;
 			children = (
+				4041C8332FEBF85C00AE05C3 /* Products.storekit */,
 				40AF15DB2F8A840B0070BB51 /* moneyfull_ios */,
 				40AF15ED2F8A840D0070BB51 /* moneyfull_iosTests */,
 				40AF15F72F8A840D0070BB51 /* moneyfull_iosUITests */,
@@ -225,6 +231,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4041C8342FEBF85C00AE05C3 /* Products.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -433,7 +440,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cs.moneyfull-ios";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
@@ -476,7 +483,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cs.moneyfull-ios";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;

@@ -802,6 +802,23 @@ class AppStore: ObservableObject {
         UserDefaults.standard.set(true, forKey: "dailyProjectUnpinDone")
     }
     
+    // MARK: - 初始化检查
+    
+    /// 执行一次性初始化检查（Grandfathering检测）
+    func initialize() {
+        // 仅执行一次（UserDefaults flag 保护）
+        if !UserDefaults.standard.bool(forKey: "grandfatheringChecked") {
+            let count = activeProjects.count + archivedProjects.count
+            if count > 3 {
+                UserDefaults.standard.set(true, forKey: "hasGrandfatheredProjects")
+                #if DEBUG
+                print("✅ Grandfathering检测: 老用户，已有\(count)个项目")
+                #endif
+            }
+            UserDefaults.standard.set(true, forKey: "grandfatheringChecked")
+        }
+    }
+    
     // MARK: - 去重逻辑
     
     private func deduplicateDefaultProjects() {

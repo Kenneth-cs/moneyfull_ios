@@ -300,10 +300,13 @@ struct ExportConfigSheet: View {
     
     private func performExport() {
         isExporting = true
+        // 在主线程提前捕获 @MainActor 数据，再派发到后台线程处理
+        let allTransactions = store.fetchAllTransactions()
+        let categoryLookup: [String: Category] = Dictionary(
+            uniqueKeysWithValues: store.categories.map { ($0.name, $0) }
+        )
         
         DispatchQueue.global(qos: .userInitiated).async {
-            let allTransactions = store.fetchAllTransactions()
-            
             let projectScope: ExportProjectScope
             if useAllProjects {
                 projectScope = .all
@@ -320,11 +323,6 @@ struct ExportConfigSheet: View {
                 customEndDate: customEndDate,
                 projectScope: projectScope
             )
-            
-            var categoryLookup: [String: Category] = [:]
-            for cat in store.categories {
-                categoryLookup[cat.name] = cat
-            }
             
             let csvContent = CSVExportService.generateCSV(
                 transactions: filtered,

@@ -48,87 +48,172 @@ struct AnalyticsView: View {
     
     @State private var allTransactions: [Transaction] = []
 
-    // MARK: - 时间过滤
-    private var filteredTransactions: [Transaction] {
+    // MARK: - 缓存计算结果（避免 body 每次重渲时重复执行耗时操作）
+    @State private var _filteredTransactions: [Transaction] = []
+    @State private var _periodExpenseTxs: [Transaction] = []
+    @State private var _periodIncomeTxs: [Transaction] = []
+    @State private var _donutSegments: [(name: String, amount: Double, colorHex: String, icon: String)] = []
+    @State private var _donutTotal: Double = 0
+    @State private var _savingRate: Double = 0
+    @State private var _trendData: [(label: String, expense: Double, income: Double, saving: Double)] = []
+    @State private var _healthScore: Int = 0
+    @State private var _expenseChangeDiff: Double = 0
+    @State private var _previousPeriodExpense: Double = 0
+    // 额外缓存：避免在 body 里内联计算
+    @State private var _allTxDaysCount: Int = 0
+    @State private var _budgetProjects: [Project] = []
+    @State private var _activeProjects: [Project] = []
+
+    // MARK: - 计算属性代理（body 直接读缓存，零计算开销）
+    private var filteredTransactions: [Transaction] { _filteredTransactions }
+    private var periodExpenseTransactions: [Transaction] { _periodExpenseTxs }
+    private var periodIncomeTransactions: [Transaction] { _periodIncomeTxs }
+    private var donutSegments: [(name: String, amount: Double, colorHex: String, icon: String)] { _donutSegments }
+    private var donutTotal: Double { _donutTotal }
+    private var savingRate: Double { _savingRate }
+    private var trendData: [(label: String, expense: Double, income: Double, saving: Double)] { _trendData }
+    private var healthScore: Int { _healthScore }
+    private var expenseChangeDiff: Double { _expenseChangeDiff }
+    private var previousPeriodExpense: Double { _previousPeriodExpense }
+    private var budgetProjects: [Project] { _budgetProjects }
+
+    // MARK: - 核心统计刷新（仅在过滤条件变化时调用，不在 body 里计算）
+    private func updateFilteredData() {
         let calendar = Calendar.current
+
+        // 1. 过滤当期交易
+        let filtered: [Transaction]
         switch timeRange {
         case .week:
-            guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: selectedWeekStart) else { return [] }
-            return allTransactions.filter { $0.date >= selectedWeekStart && $0.date < weekEnd }
+            guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: selectedWeekStart) else {
+                _filteredTransactions = []; _periodExpenseTxs = []; _periodIncomeTxs = []
+                _trendData = []; _healthScore = 0; _expenseChangeDiff = 0; _previousPeriodExpense = 0
+                updateDonutData(); return
+            }
+            filtered = allTransactions.filter { $0.date >= selectedWeekStart && $0.date < weekEnd }
         case .month:
-            return allTransactions.filter { calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month) }
+            filtered = allTransactions.filter { calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month) }
         case .year:
-            return allTransactions.filter { calendar.component(.year, from: $0.date) == selectedYear }
+            filtered = allTransactions.filter { calendar.component(.year, from: $0.date) == selectedYear }
         case .custom:
-            return allTransactions.filter { $0.date >= customStartDate && $0.date <= customEndDate }
+            filtered = allTransactions.filter { $0.date >= customStartDate && $0.date <= customEndDate }
+        }
+        _filteredTransactions = filtered
+        _periodExpenseTxs = filtered.filter { $0.type == .expense }
+        _periodIncomeTxs  = filtered.filter { $0.type == .income }
+
+        // 2. 上期对比
+        var prevStart: Date?; var prevEnd: Date?
+        switch timeRange {
+        case .week:
+            prevStart = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedWeekStart)
+            prevEnd = selectedWeekStart
+        case .month:
+            prevStart = calendar.date(byAdding: .month, value: -1, to: selectedMonth)
+            prevEnd = selectedMonth
+        case .year:
+            prevStart = calendar.date(from: DateComponents(year: selectedYear - 1, month: 1, day: 1))
+            prevEnd   = calendar.date(from: DateComponents(year: selectedYear, month: 1, day: 1))
+        case .custom:
+            let days = calendar.dateComponents([.day], from: customStartDate, to: customEndDate).day ?? 30
+            prevStart = calendar.date(byAdding: .day, value: -days, to: customStartDate)
+            prevEnd   = customStartDate
+        }
+        let prevExpense: Double
+        if let s = prevStart, let e = prevEnd {
+            prevExpense = allTransactions
+                .filter { $0.date >= s && $0.date < e && $0.type == .expense }
+                .reduce(0) { $0 + abs($1.amount) }
+        } else { prevExpense = 0 }
+        _previousPeriodExpense = prevExpense
+
+        // 3. 收支汇总
+        let currentExp = _periodExpenseTxs.reduce(0) { $0 + abs($1.amount) }
+        let currentInc = _periodIncomeTxs.reduce(0)  { $0 + abs($1.amount) }
+        _expenseChangeDiff = currentExp - prevExpense
+        _savingRate = currentInc > 0 ? (currentInc - currentExp) / currentInc : 0
+
+        // 4. 健康分（静态60 + 动态40）
+        var staticScore: Double = 60
+        if currentInc == 0 {
+            if currentExp > 0 { staticScore = 30 }
+        } else {
+            let ratio = currentExp / currentInc
+            if ratio <= 1 { staticScore = 60 }
+            else if ratio <= 1.2 { staticScore = 50 }
+            else if ratio <= 1.5 { staticScore = 40 }
+            else { staticScore = 20 }
+        }
+        var dynamicScore: Double = 20
+        if prevExpense > 0 {
+            if currentExp < prevExpense {
+                dynamicScore += min((prevExpense - currentExp) / prevExpense * 20, 20)
+            } else if currentExp > prevExpense {
+                dynamicScore -= min((currentExp - prevExpense) / prevExpense * 20, 20)
+            }
+        }
+        _healthScore = max(0, min(Int(staticScore + dynamicScore), 100))
+
+        // 5. 趋势图数据
+        _trendData = computeTrendData()
+
+        // 6. 环形图数据
+        updateDonutData()
+
+        // 7. 累计记账天数（Set 哈希去重，较慢，只在此处算一次存起来）
+        _allTxDaysCount = Set(allTransactions.map { Calendar.current.startOfDay(for: $0.date) }).count
+
+        // 8. 项目列表缓存（避免 body 直接持有 store.activeProjects 依赖）
+        _activeProjects = store.activeProjects
+        _budgetProjects = store.activeProjects.filter { $0.budget > 0 }
+    }
+
+    /// store 数据变化时调用：重新抓取所有账单并刷新缓存
+    private func reloadFromStore() {
+        Task { @MainActor in
+            allTransactions = store.fetchAllTransactions()
+            updateFilteredData()
         }
     }
 
-    private var periodExpenseTransactions: [Transaction] {
-        filteredTransactions.filter { $0.type == .expense }
-    }
-    
-    private var periodIncomeTransactions: [Transaction] {
-        filteredTransactions.filter { $0.type == .income }
-    }
-
-    // MARK: - 环形图数据（多维度 + 收支切换）
-    private var donutSegments: [(name: String, amount: Double, colorHex: String, icon: String)] {
-        let transactions = chartFlowType == .expense ? periodExpenseTransactions : periodIncomeTransactions
+    private func updateDonutData() {
+        let transactions = chartFlowType == .expense ? _periodExpenseTxs : _periodIncomeTxs
+        var segments: [(name: String, amount: Double, colorHex: String, icon: String)]
 
         switch chartDimension {
         case .byProject:
             var dict: [String: (amount: Double, color: String, icon: String)] = [:]
             for tx in transactions {
                 let name = tx.project?.name ?? "未分类"
-                let color = tx.project?.colorHex ?? "#EEEEEE"
-                let icon = tx.project?.icon ?? "folder.fill"
                 let current = dict[name]?.amount ?? 0
-                dict[name] = (current + abs(tx.amount), color, icon)
+                dict[name] = (current + abs(tx.amount), tx.project?.colorHex ?? "#EEEEEE", tx.project?.icon ?? "folder.fill")
             }
-            return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
-
+            segments = dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
         case .allCategories:
             var dict: [String: (amount: Double, color: String, icon: String)] = [:]
             for tx in transactions {
-                let name = tx.categoryName
-                let color = tx.categoryColorHex
-                let icon = tx.categoryIcon
-                let current = dict[name]?.amount ?? 0
-                dict[name] = (current + abs(tx.amount), color, icon)
+                let current = dict[tx.categoryName]?.amount ?? 0
+                dict[tx.categoryName] = (current + abs(tx.amount), tx.categoryColorHex, tx.categoryIcon)
             }
-            return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
-
+            segments = dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
         case .projectCategories:
-            guard let project = selectedProjectForChart ?? store.activeProjects.first else { return [] }
+            guard let project = selectedProjectForChart ?? store.activeProjects.first else {
+                _donutSegments = []; _donutTotal = 0; return
+            }
             var dict: [String: (amount: Double, color: String, icon: String)] = [:]
             for tx in transactions where tx.project?.id == project.id {
-                let name = tx.categoryName
-                let color = tx.categoryColorHex
-                let icon = tx.categoryIcon
-                let current = dict[name]?.amount ?? 0
-                dict[name] = (current + abs(tx.amount), color, icon)
+                let current = dict[tx.categoryName]?.amount ?? 0
+                dict[tx.categoryName] = (current + abs(tx.amount), tx.categoryColorHex, tx.categoryIcon)
             }
-            return dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
+            segments = dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
         }
+        _donutSegments = segments
+        _donutTotal = segments.reduce(0) { $0 + $1.amount }
     }
 
-    private var donutTotal: Double { donutSegments.reduce(0) { $0 + $1.amount } }
-
-    // 储蓄率
-    private var savingRate: Double {
-        let income = periodIncomeTransactions.reduce(0) { $0 + abs($1.amount) }
-        let expense = periodExpenseTransactions.reduce(0) { $0 + abs($1.amount) }
-        guard income > 0 else { return 0 }
-        return (income - expense) / income
-    }
-
-    // MARK: - 趋势图数据（自适应 + 中文标签 + 储蓄线）
-    private var trendData: [(label: String, expense: Double, income: Double, saving: Double)] {
+    private func computeTrendData() -> [(label: String, expense: Double, income: Double, saving: Double)] {
         let calendar = Calendar.current
         var result: [(label: String, expense: Double, income: Double, saving: Double)] = []
-
-        // 中文星期映射
         let weekDayNames = ["日", "一", "二", "三", "四", "五", "六"]
 
         switch timeRange {
@@ -140,7 +225,6 @@ struct AnalyticsView: View {
                 let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 result.append((label: "\(m)月", expense: exp, income: inc, saving: inc - exp))
             }
-
         case .month:
             let range = calendar.range(of: .day, in: .month, for: selectedMonth) ?? 1..<32
             let step = range.count > 20 ? 5 : 1
@@ -152,7 +236,6 @@ struct AnalyticsView: View {
                 let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 result.append((label: "\(day)日", expense: exp, income: inc, saving: inc - exp))
             }
-
         case .week:
             for i in 0..<7 {
                 guard let date = calendar.date(byAdding: .day, value: i, to: selectedWeekStart) else { continue }
@@ -163,7 +246,6 @@ struct AnalyticsView: View {
                 let weekday = calendar.component(.weekday, from: date) - 1
                 result.append((label: "周\(weekDayNames[weekday])", expense: exp, income: inc, saving: inc - exp))
             }
-
         case .custom:
             let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: customStartDate), to: calendar.startOfDay(for: customEndDate)).day ?? 1
             let step = days > 60 ? 7 : (days > 20 ? 3 : 1)
@@ -180,93 +262,6 @@ struct AnalyticsView: View {
             }
         }
         return result
-    }
-
-    private var budgetProjects: [Project] { store.activeProjects.filter { $0.budget > 0 } }
-
-    // MARK: - 环比计算与健康分
-    private var previousPeriodTransactions: [Transaction] {
-        let calendar = Calendar.current
-        var startDate: Date?
-        var endDate: Date?
-        switch timeRange {
-        case .week:
-            startDate = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedWeekStart)
-            endDate = selectedWeekStart
-        case .month:
-            startDate = calendar.date(byAdding: .month, value: -1, to: selectedMonth)
-            endDate = selectedMonth
-        case .year:
-            startDate = calendar.date(from: DateComponents(year: selectedYear - 1, month: 1, day: 1))
-            endDate = calendar.date(from: DateComponents(year: selectedYear, month: 1, day: 1))
-        case .custom:
-            let days = calendar.dateComponents([.day], from: customStartDate, to: customEndDate).day ?? 30
-            startDate = calendar.date(byAdding: .day, value: -days, to: customStartDate)
-            endDate = customStartDate
-        }
-        guard let s = startDate, let e = endDate else { return [] }
-        return allTransactions.filter { $0.date >= s && $0.date < e }
-    }
-
-    private var previousPeriodExpense: Double {
-        previousPeriodTransactions.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-    }
-
-    private var expenseChangeDiff: Double {
-        periodExpenseTransactions.reduce(0) { $0 + abs($1.amount) } - previousPeriodExpense
-    }
-
-    // MARK: - 新健康分算法（权重组合）
-    // 静态基本面（60分）：基于收支比阶梯扣分
-    // 动态趋势面（40分）：初始20分，环比加扣分
-    private var healthScore: Int {
-        let currentExp = periodExpenseTransactions.reduce(0) { $0 + abs($1.amount) }
-        let currentInc = periodIncomeTransactions.reduce(0) { $0 + abs($1.amount) }
-        
-        // 静态基本面（60分）
-        var staticScore: Double = 60
-        
-        if currentInc == 0 {
-            // 边界情况：无收入但有支出 → 资产消耗状态，固定30分
-            if currentExp > 0 {
-                staticScore = 30
-            }
-        } else {
-            // 计算收支比
-            let ratio = currentExp / currentInc
-            
-            if ratio <= 1 {
-                // 收支平衡或有结余，拿满60分
-                staticScore = 60
-            } else if ratio <= 1.2 {
-                // 轻度赤字：扣10分
-                staticScore = 50
-            } else if ratio <= 1.5 {
-                // 中度赤字：扣20分
-                staticScore = 40
-            } else {
-                // 严重赤字：扣40分
-                staticScore = 20
-            }
-        }
-        
-        // 动态趋势面（40分）
-        var dynamicScore: Double = 20  // 初始20分
-        
-        if previousPeriodExpense > 0 {
-            if currentExp < previousPeriodExpense {
-                // 比上期节省：加分（最多+20，上限40分）
-                let ratio = (previousPeriodExpense - currentExp) / previousPeriodExpense
-                dynamicScore += min(ratio * 20, 20)
-            } else if currentExp > previousPeriodExpense {
-                // 比上期多花：扣分（最多-20，下限0分）
-                let ratio = (currentExp - previousPeriodExpense) / previousPeriodExpense
-                dynamicScore -= min(ratio * 20, 20)
-            }
-        }
-        
-        // 最终得分 = 静态分 + 动态分
-        return max(0, min(Int(staticScore + dynamicScore), 100))
     }
 
     // MARK: - IP 形象联动
@@ -290,36 +285,51 @@ struct AnalyticsView: View {
         }
     }
 
+    // MARK: - 静态 DateFormatter（避免 body 每次重渲时重复创建）
+    private static let weekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M月d日"
+        return f
+    }()
+    
+    private static let monthFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy年M月"
+        return f
+    }()
+    
+    private static let shortWeekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M/d"
+        return f
+    }()
+
     // MARK: - 时间显示文案
     private var periodDisplayText: String {
         switch timeRange {
         case .week:
-            let f = DateFormatter(); f.dateFormat = "M月d日"
             let end = Calendar.current.date(byAdding: .day, value: 6, to: selectedWeekStart)!
-            return "\(f.string(from: selectedWeekStart)) - \(f.string(from: end))"
+            return "\(Self.weekFormatter.string(from: selectedWeekStart)) - \(Self.weekFormatter.string(from: end))"
         case .month:
-            let f = DateFormatter(); f.dateFormat = "yyyy年M月"; return f.string(from: selectedMonth)
+            return Self.monthFormatter.string(from: selectedMonth)
         case .year:
             return String(format: "%d年", selectedYear)
         case .custom:
-            let f = DateFormatter(); f.dateFormat = "M月d日"
-            return "\(f.string(from: customStartDate)) - \(f.string(from: customEndDate))"
+            return "\(Self.weekFormatter.string(from: customStartDate)) - \(Self.weekFormatter.string(from: customEndDate))"
         }
     }
 
     private var shortPeriodDisplayText: String {
         switch timeRange {
         case .week:
-            let f = DateFormatter(); f.dateFormat = "M/d"
             let end = Calendar.current.date(byAdding: .day, value: 6, to: selectedWeekStart)!
-            return "\(f.string(from: selectedWeekStart))-\(f.string(from: end))"
+            return "\(Self.shortWeekFormatter.string(from: selectedWeekStart))-\(Self.shortWeekFormatter.string(from: end))"
         case .month:
-            let f = DateFormatter(); f.dateFormat = "yyyy年M月"; return f.string(from: selectedMonth)
+            return Self.monthFormatter.string(from: selectedMonth)
         case .year:
             return String(format: "%d年", selectedYear)
         case .custom:
-            let f = DateFormatter(); f.dateFormat = "M/d"
-            return "\(f.string(from: customStartDate))-\(f.string(from: customEndDate))"
+            return "\(Self.shortWeekFormatter.string(from: customStartDate))-\(Self.shortWeekFormatter.string(from: customEndDate))"
         }
     }
 
@@ -367,9 +377,24 @@ struct AnalyticsView: View {
         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 110) }
         .background(Color.App.backgroundGray.ignoresSafeArea())
         .onAppear {
-            // 获取所有不带 fetchLimit 的数据
             allTransactions = store.fetchAllTransactions()
+            updateFilteredData()
         }
+        // 数据源变化时重新计算（用 Task 推迟到下一个 RunLoop，让当前渲染帧先完成）
+        // 同时监听 count（增删）和 monthlyExpense（编辑金额），覆盖所有 CRUD 场景
+        .onChange(of: store.recentTransactions.count) { _, _ in reloadFromStore() }
+        .onChange(of: store.monthlyExpense) { _, _ in reloadFromStore() }
+        // 时间过滤条件变化
+        .onChange(of: timeRange)       { _, _ in updateFilteredData() }
+        .onChange(of: selectedMonth)   { _, _ in updateFilteredData() }
+        .onChange(of: selectedYear)    { _, _ in updateFilteredData() }
+        .onChange(of: selectedWeekStart) { _, _ in updateFilteredData() }
+        .onChange(of: customStartDate) { _, _ in updateFilteredData() }
+        .onChange(of: customEndDate)   { _, _ in updateFilteredData() }
+        // 环形图维度变化（只更新 donut，不需要重走全量计算）
+        .onChange(of: chartFlowType)   { _, _ in updateDonutData() }
+        .onChange(of: chartDimension)  { _, _ in updateDonutData() }
+        .onChange(of: selectedProjectForChart?.id) { _, _ in updateDonutData() }
         .sheet(isPresented: $showMonthPicker) {
             MonthYearPickerSheet(selectedMonth: $selectedMonth)
         }
@@ -383,10 +408,7 @@ struct AnalyticsView: View {
             NavigationLink(isActive: $showTrendDetail) {
                 TrendDetailView(transactions: filteredTransactions, periodLabel: periodDisplayText)
                     .environmentObject(store)
-            } label: {
-                EmptyView()
-            }
-            .hidden()
+            } label: { EmptyView() }.hidden()
         )
     }
 
@@ -566,7 +588,7 @@ struct AnalyticsView: View {
             if chartDimension == .projectCategories {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(store.activeProjects) { project in
+                        ForEach(_activeProjects) { project in
                             Button(action: { selectedProjectForChart = project }) {
                                 HStack(spacing: 4) {
                                     Circle()
@@ -594,7 +616,7 @@ struct AnalyticsView: View {
                 HStack(spacing: 24) {
                     // 左侧：环形图 + 储蓄率
                     VStack(spacing: 12) {
-                        DonutChartView(segments: donutSegments, total: donutTotal)
+                        DonutChartView(segments: donutSegments, total: donutTotal, centerLabel: chartFlowType == .expense ? "总支出" : "总收入")
                             .frame(width: 130, height: 130)
 
                         // 储蓄率指标
@@ -602,17 +624,17 @@ struct AnalyticsView: View {
                             Text("储蓄率")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.gray)
-                            Text("\(Int(savingRate * 100))%")
+                            let displayPct = Int(savingRate * 100)
+                            Text(abs(displayPct) > 999 ? (displayPct > 0 ? ">999%" : "<-999%") : "\(displayPct)%")
                                 .font(.system(size: 18, weight: .heavy))
                                 .foregroundColor(savingRate >= 0 ? Color.App.darkGreen : Color.App.redExpense)
-                            // 进度条
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.gray.opacity(0.1))
-                                    Capsule()
-                                        .fill(savingRate >= 0 ? Color.App.darkGreen : Color.App.redExpense)
-                                        .frame(width: max(0, geo.size.width * min(max(savingRate, 0), 1)))
-                                }
+                            // 进度条（用 scaleEffect 代替 GeometryReader，避免额外布局 pass）
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.gray.opacity(0.1))
+                                Capsule()
+                                    .fill(savingRate >= 0 ? Color.App.darkGreen : Color.App.redExpense)
+                                    .frame(maxWidth: .infinity)
+                                    .scaleEffect(x: max(0.001, CGFloat(min(max(savingRate, 0), 1))), y: 1, anchor: .leading)
                             }
                             .frame(height: 4)
                             .frame(width: 80)
@@ -645,13 +667,12 @@ struct AnalyticsView: View {
                                 }
                                 
                                 HStack(spacing: 6) {
-                                    GeometryReader { geo in
-                                        ZStack(alignment: .leading) {
-                                            Capsule().fill(Color.gray.opacity(0.1))
-                                            Capsule()
-                                                .fill(Color(hex: seg.colorHex))
-                                                .frame(width: geo.size.width * CGFloat(seg.amount / donutTotal))
-                                        }
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.gray.opacity(0.1))
+                                        Capsule()
+                                            .fill(Color(hex: seg.colorHex))
+                                            .frame(maxWidth: .infinity)
+                                            .scaleEffect(x: max(0.001, CGFloat(seg.amount / donutTotal)), y: 1, anchor: .leading)
                                     }
                                     .frame(height: 3)
                                     
@@ -774,7 +795,7 @@ struct AnalyticsView: View {
                 SummaryRow(icon: "list.bullet.rectangle.portrait", color: Color.App.darkGreen, title: "本期共支出", value: "\(periodExpenseTransactions.count) 笔")
                 SummaryRow(icon: "calendar", color: Color.App.darkGreen, title: "平均每天支出", value: "¥\(Int(avgDaily))")
                 SummaryRow(icon: "cup.and.saucer", color: Color.App.darkGreen, title: "最高一笔支出", value: "¥\(Int(maxExpense))")
-                SummaryRow(icon: "clock", color: Color.App.darkGreen, title: "累计记账", value: "\(Set(allTransactions.map{Calendar.current.startOfDay(for: $0.date)}).count) 天")
+                SummaryRow(icon: "clock", color: Color.App.darkGreen, title: "累计记账", value: "\(_allTxDaysCount) 天")
             }
             Spacer(minLength: 0)
         }
@@ -884,13 +905,17 @@ struct WeekPickerSheet: View {
         return cal.component(.weekOfYear, from: date) == 1 ? 52 : cal.component(.weekOfYear, from: date)
     }
 
+    private static let weekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M月d日"
+        return f
+    }()
+
     private func weekDateRange(year: Int, week: Int) -> String {
         let cal = Calendar.current
         guard let start = cal.date(from: DateComponents(weekOfYear: week, yearForWeekOfYear: year)) else { return "" }
         let end = cal.date(byAdding: .day, value: 6, to: start)!
-        let f = DateFormatter()
-        f.dateFormat = "M月d日"
-        return "\(f.string(from: start)) - \(f.string(from: end))"
+        return "\(Self.weekFormatter.string(from: start)) - \(Self.weekFormatter.string(from: end))"
     }
 
     var body: some View {
@@ -1055,6 +1080,7 @@ struct CustomDateRangeSheet: View {
 struct DonutChartView: View {
     let segments: [(name: String, amount: Double, colorHex: String, icon: String)]
     let total: Double
+    var centerLabel: String = "总支出"
 
     private let lineWidth: CGFloat = 26
     private let chartColors: [String] = ["#A8E6CF", "#FDD1B4", "#DCDE8D", "#DBEAFE", "#F3E8FF", "#FFD6C4", "#C8E6C9", "#FFF9C4", "#FCE4EC", "#E8EAF6"]
@@ -1085,13 +1111,14 @@ struct DonutChartView: View {
                     Text("¥\(Int(total))")
                         .font(.system(size: 18, weight: .heavy))
                         .foregroundColor(Color.App.textBlack)
-                    Text("总支出")
+                    Text(centerLabel)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(Color.App.textSecondary)
                 }
                 .position(center)
             }
         }
+        .drawingGroup()  // 将多层 Canvas 合并为单个 GPU 纹理，减少合成开销
     }
 }
 
@@ -1256,22 +1283,22 @@ struct BudgetHealthBar: View {
     let project: Project
     var periodSpent: Double? = nil
 
-    private var spent: Double { periodSpent ?? project.totalSpent }
-    private var progress: Double { min(spent / project.budget, 1.0) }
-    private var progressColor: Color {
-        if spent / project.budget >= 1.0 { return Color.App.redExpense }
-        if spent / project.budget >= 0.8 { return Color(hex: "#FFA500") }
-        return Color.App.darkGreen
-    }
-
     var body: some View {
-        VStack(spacing: 4) {
+        // 一次性算出，避免 spent (project.totalSpent) 在 body 里多次遍历账单
+        let spent = periodSpent ?? project.totalSpent
+        let ratio = project.budget > 0 ? spent / project.budget : 0
+        let progress = min(ratio, 1.0)
+        let progressColor: Color = ratio >= 1.0 ? Color.App.redExpense
+            : (ratio >= 0.8 ? Color(hex: "#FFA500") : Color.App.darkGreen)
+        let projectColor = Color(hex: project.colorHex)
+
+        return VStack(spacing: 4) {
             HStack {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(Color(hex: project.colorHex).opacity(0.3))
+                        .fill(projectColor.opacity(0.3))
                         .frame(width: 16, height: 16)
-                        .overlay(AppIconView(name: project.icon, size: 8, color: Color(hex: project.colorHex)))
+                        .overlay(AppIconView(name: project.icon, size: 8, color: projectColor))
                     Text(project.name)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(Color.App.textBlack)
@@ -1281,18 +1308,17 @@ struct BudgetHealthBar: View {
                     Text("¥\(spent.formatted(.number.precision(.fractionLength(0)))) / ¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(progressColor)
-                    Text("\(Int(spent / project.budget * 100))%")
+                    Text("\(Int(ratio * 100))%")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.gray)
                 }
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.gray.opacity(0.1)).frame(height: 4)
-                    Capsule()
-                        .fill(LinearGradient(colors: [Color(hex: project.colorHex).opacity(0.6), progressColor], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: geo.size.width * progress, height: 4)
-                }
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.gray.opacity(0.1))
+                Capsule()
+                    .fill(LinearGradient(colors: [projectColor.opacity(0.6), progressColor], startPoint: .leading, endPoint: .trailing))
+                    .frame(maxWidth: .infinity)
+                    .scaleEffect(x: max(0.001, CGFloat(progress)), y: 1, anchor: .leading)
             }
             .frame(height: 4)
         }
@@ -1484,11 +1510,23 @@ struct EmptyStateView: View {
 
 // MARK: - Date 扩展
 extension Date {
+    private static let monthYearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy年M月"
+        return f
+    }()
+    
+    private static let monthOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M月"
+        return f
+    }()
+
     var monthYearDisplay: String {
-        let f = DateFormatter(); f.dateFormat = "yyyy年M月"; return f.string(from: self)
+        return Self.monthYearFormatter.string(from: self)
     }
     var monthDisplay: String {
-        let f = DateFormatter(); f.dateFormat = "M月"; return f.string(from: self)
+        return Self.monthOnlyFormatter.string(from: self)
     }
 }
 
@@ -1506,11 +1544,13 @@ struct TrendDetailView: View {
         let income: Double
     }
 
-    private var dailyData: [DayData] {
+    @State private var dailyData: [DayData] = []
+
+    private func computeDailyData() {
         let cal = Calendar.current
         let grouped = Dictionary(grouping: transactions) { cal.startOfDay(for: $0.date) }
         let weekDayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-        return grouped.map { (date, txs) in
+        let computed = grouped.map { (date, txs) in
             let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + $1.amount }
             let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
             let m = cal.component(.month, from: date)
@@ -1519,6 +1559,8 @@ struct TrendDetailView: View {
             return DayData(date: date, label: "\(m)月\(d)日 \(weekDayNames[weekday])", expense: exp, income: inc)
         }
         .sorted { $0.date < $1.date }
+        
+        dailyData = computed
     }
 
     private var peakExpenseDay: DayData? { dailyData.max(by: { $0.expense < $1.expense }) }
@@ -1621,7 +1663,7 @@ struct TrendDetailView: View {
                 }
 
                 // 每日明细列表
-                VStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     Text("每日明细")
                         .font(.system(size: 16, weight: .heavy))
                         .foregroundColor(Color.App.textBlack)
@@ -1667,6 +1709,12 @@ struct TrendDetailView: View {
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
         .navigationBarHidden(true)
+        .onAppear {
+            computeDailyData()
+        }
+        .onChange(of: transactions.count) { _, _ in
+            computeDailyData()
+        }
     }
 }
 

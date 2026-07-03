@@ -29,7 +29,7 @@ struct DashboardView: View {
     @State private var showPeriodPicker = false
     @State private var showAllTransactions = false
 
-    // 根据选中维度获取统计数据
+    // 根据选中维度获取统计数据（store.refresh() 有 500ms 防抖，不会在滚动中触发，直接计算保证实时同步）
     private var currentStats: (expense: Double, income: Double, saving: Double) {
         store.stats(for: selectedPeriod)
     }
@@ -378,18 +378,13 @@ struct FinanceInfoCard: View {
 struct ProjectCard: View {
     let project: Project
     
-    private var progressPair: ProgressColorPair {
-        progressColorPair(for: project.colorHex)
-    }
-    private var progressPctColor: Color {
-        let p = project.budgetProgress
-        if p >= 1.0 { return Color.App.redExpense }
-        if p >= 0.8 { return Color(hex: "#FFA500") }
-        return Color(hex: progressPair.end)
-    }
-    
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        // 每次 body 只计算一次，避免多次遍历 CoreData 关系
+        let totalSpent = project.totalSpent
+        let budgetProgress = project.budgetProgress
+        let pair = progressColorPair(for: project.colorHex)
+        
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Circle()
                     .fill(Color(hex: project.colorHex).opacity(0.4))
@@ -414,27 +409,27 @@ struct ProjectCard: View {
             
             if project.budget > 0 {
                 HStack {
-                    Text("¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0))))")
+                    Text("¥\(totalSpent.formatted(.number.precision(.fractionLength(0))))")
                     Spacer()
                     Text("预算¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
                 }
                 .font(.system(size: 10))
                 .foregroundColor(.gray)
                 
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.App.progressTrack).frame(height: 6)
-                        Capsule()
-                            .fill(LinearGradient(
-                                colors: [Color(hex: progressPair.start), Color(hex: progressPair.end)],
-                                startPoint: .leading, endPoint: .trailing
-                            ))
-                            .frame(width: max(0, min(geo.size.width, geo.size.width * project.budgetProgress)), height: 6)
-                    }
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.App.progressTrack)
+                        .frame(height: 6)
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: [Color(hex: pair.start), Color(hex: pair.end)],
+                            startPoint: .leading, endPoint: .trailing
+                        ))
+                        .frame(height: 6)
+                        .scaleEffect(x: min(1, budgetProgress), anchor: .leading)
                 }
-                .frame(height: 6)
             } else {
-                Text("已用 ¥\(project.totalSpent.formatted(.number.precision(.fractionLength(0))))")
+                Text("已用 ¥\(totalSpent.formatted(.number.precision(.fractionLength(0))))")
                     .font(.system(size: 10))
                     .foregroundColor(.gray)
                 Spacer().frame(height: 6)
@@ -486,35 +481,48 @@ struct TransactionItem: View {
 
 // MARK: - 日期相对显示扩展
 extension Date {
+    // 静态 DateFormatter：创建一次，反复复用
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+    private static let shortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M/d"
+        return f
+    }()
+    private static let fullDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy/M/d"
+        return f
+    }()
+    static let chineseDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy年M月d日"
+        return f
+    }()
+
     var relativeDisplay: String {
         let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        
         if calendar.isDateInToday(self) {
-            formatter.dateFormat = "HH:mm"
-            return "今天 \(formatter.string(from: self))"
+            return "今天 \(Date.timeFormatter.string(from: self))"
         }
         if calendar.isDateInYesterday(self) {
-            formatter.dateFormat = "HH:mm"
-            return "昨天 \(formatter.string(from: self))"
+            return "昨天 \(Date.timeFormatter.string(from: self))"
         }
-        
-        // 今年的日期显示 月/日
         if calendar.component(.year, from: self) == calendar.component(.year, from: Date()) {
-            formatter.dateFormat = "M/d"
-        } else {
-            // 非今年显示 年/月/日
-            formatter.dateFormat = "yyyy/M/d"
+            return Date.shortDateFormatter.string(from: self)
         }
-        return formatter.string(from: self)
+        return Date.fullDateFormatter.string(from: self)
     }
     
     var formattedChineseDate: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy年M月d日"
-        return formatter.string(from: self)
+        Date.chineseDateFormatter.string(from: self)
     }
 }
 
