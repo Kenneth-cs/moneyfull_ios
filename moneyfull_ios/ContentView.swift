@@ -5,6 +5,14 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var store: AppStore?
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+    @State private var showAssessment = false
+    @State private var showPersonaResult = false
+    @State private var assessmentPersona: PersonaType = .steady
+    @State private var assessmentScore: Int = 0
+    @State private var assessmentHabit: HabitTag = .none
+    @State private var assessmentMethod: MethodTag = .none
+    @State private var assessmentIncome: IncomeTag = .salary
+    @State private var assessmentJTBD: JTBDTag = .ease
     @State private var deepLinkText: String?
     @State private var showRatingPrompt = false
 
@@ -14,7 +22,42 @@ struct ContentView: View {
                 MainTabView()
                     .environmentObject(store)
                     .fullScreenCover(isPresented: $showOnboarding) {
-                        OnboardingView(isPresented: $showOnboarding)
+                        OnboardingView(isPresented: $showOnboarding) {
+                            // 引导页结束后，若未完成测评则展示测评
+                            if !UserDefaults.standard.bool(forKey: "hasCompletedAssessment") {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    showAssessment = true
+                                }
+                            }
+                        }
+                    }
+                    .fullScreenCover(isPresented: $showAssessment) {
+                        AssessmentView { persona, score, habit, method, income, jtbd in
+                            assessmentPersona = persona
+                            assessmentScore   = score
+                            assessmentHabit   = habit
+                            assessmentMethod  = method
+                            assessmentIncome  = income
+                            assessmentJTBD    = jtbd
+                            showAssessment    = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                showPersonaResult = true
+                            }
+                        }
+                    }
+                    .fullScreenCover(isPresented: $showPersonaResult) {
+                        PersonaResultView(
+                            persona:     assessmentPersona,
+                            healthScore: assessmentScore,
+                            habit:       assessmentHabit,
+                            method:      assessmentMethod,
+                            income:      assessmentIncome,
+                            jtbd:        assessmentJTBD
+                        ) {
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                showPersonaResult = false
+                            }
+                        }
                     }
             } else {
                 Color.App.backgroundGray.ignoresSafeArea()

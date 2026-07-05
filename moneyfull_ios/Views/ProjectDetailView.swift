@@ -11,6 +11,13 @@ struct ProjectDetailView: View {
     @State private var showEditProject = false
     @State private var showDeleteConfirm = false
     @State private var showUpgradeAlert = false
+
+    // MARK: 新增状态
+    @State private var showPaywall = false
+    @State private var showBudgetManagement = false
+    @State private var showArchiveReview = false
+    @State private var showEarningDashboard = false
+    @State private var showLifestyleDashboard = false
     
     // MARK: - 缓存数据
     @State private var _groupedTransactions: [(key: String, value: [Transaction])] = []
@@ -245,9 +252,14 @@ struct ProjectDetailView: View {
                         Button { showEditProject = true } label: {
                             Label("编辑项目", systemImage: "pencil")
                         }
-                        Button { store.toggleArchive(project: project) } label: {
-                            Label(project.isArchived ? "取消归档" : "归档项目",
-                                  systemImage: "archivebox")
+                        if project.isArchived {
+                            Button { store.toggleArchive(project: project) } label: {
+                                Label("取消归档", systemImage: "archivebox")
+                            }
+                        } else {
+                            Button { showArchiveReview = true } label: {
+                                Label("归档并复盘", systemImage: "archivebox.fill")
+                            }
                         }
                         Divider()
                         Button(role: .destructive) { showDeleteConfirm = true } label: {
@@ -270,7 +282,7 @@ struct ProjectDetailView: View {
                 VStack(spacing: 24) {
                     // 项目概览卡片
                     VStack(alignment: .leading, spacing: 20) {
-                        // 项目图标 + 描述（不再重复项目名，导航栏已显示）
+                        // 项目图标 + 描述 + 模式切换
                         HStack(spacing: 14) {
                             ZStack(alignment: .bottomTrailing) {
                                 Circle()
@@ -292,9 +304,30 @@ struct ProjectDetailView: View {
                                     .onTapGesture { showColorPicker = true }
                             }
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(project.name)
-                                    .font(.system(size: 20, weight: .heavy))
-                                    .foregroundColor(Color.App.textBlack)
+                                HStack(spacing: 8) {
+                                    Text(project.name)
+                                        .font(.system(size: 20, weight: .heavy))
+                                        .foregroundColor(Color.App.textBlack)
+                                    // 模式切换标签
+                                    Button {
+                                        let newMode = projectModeEnum == .earning ? "lifestyle" : "earning"
+                                        store.updateProject(project, name: project.name, icon: project.icon,
+                                                           colorHex: project.colorHex, desc: project.desc,
+                                                           budget: project.budget, projectMode: newMode)
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: projectModeEnum == .earning ? "briefcase.fill" : "heart.fill")
+                                                .font(.system(size: 10, weight: .bold))
+                                            Text(projectModeEnum == .earning ? "搞钱" : "生活")
+                                                .font(.system(size: 11, weight: .bold))
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(projectModeEnum == .earning ? Color.App.darkGreen : Color(hex: "#FF6B9D"))
+                                        .clipShape(Capsule())
+                                    }
+                                }
                                 if !project.desc.isEmpty {
                                     Text(project.desc)
                                         .font(.system(size: 13))
@@ -375,11 +408,17 @@ struct ProjectDetailView: View {
                     .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
                     .padding(.horizontal, 24)
 
+                    // MARK: ② 预算分类卡片（新增）
+                    budgetCategoryCard
+
                     // MARK: 项目内分类占比
                     projectCategoryDonutCard
 
                     // MARK: 项目收支趋势
                     projectTrendCard
+
+                    // MARK: ⑤ 看板入口卡片（新增）
+                    dashboardEntryCard
 
                     // MARK: 账单时间轴
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -461,11 +500,56 @@ struct ProjectDetailView: View {
         }
         .alert("升级到专业版", isPresented: $showUpgradeAlert) {
             Button("取消", role: .cancel) { }
-            Button("查看订阅方案") {
-                // TODO: 跳转到订阅页面
-            }
+            Button("查看订阅方案") { showPaywall = true }
         } message: {
-            Text("专业版用户可以解锁动态趋势预测、ROI 分析看板等高级功能，帮助你更好地掌控预算！")
+            Text("专业版用户可以解锁预算预警、经营看板、ROI 分析等高级功能！")
+        }
+        .fullScreenCover(isPresented: $showBudgetManagement) {
+            NavigationView {
+                BudgetManagementSheet(
+                    project: project,
+                    onShowPaywall: { showPaywall = true }
+                )
+                .environmentObject(store)
+                .environmentObject(storeManager)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("关闭") { showBudgetManagement = false }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showArchiveReview) {
+            ProjectReviewSheet(
+                project: project,
+                projectMode: projectModeEnum,
+                onArchive: {
+                    store.toggleArchive(project: project)
+                    showArchiveReview = false
+                    presentationMode.wrappedValue.dismiss()
+                },
+                onShowPaywall: { showPaywall = true }
+            )
+            .environmentObject(storeManager)
+        }
+        .fullScreenCover(isPresented: $showEarningDashboard) {
+            ProjectEarningView(
+                project: project,
+                onShowPaywall: { showPaywall = true }
+            )
+            .environmentObject(store)
+            .environmentObject(storeManager)
+        }
+        .fullScreenCover(isPresented: $showLifestyleDashboard) {
+            ProjectLifestyleView(
+                project: project,
+                onShowPaywall: { showPaywall = true }
+            )
+            .environmentObject(store)
+            .environmentObject(storeManager)
+        }
+        .fullScreenCover(isPresented: $showPaywall) {
+            PaywallView().environmentObject(storeManager)
         }
         .navigationBarHidden(true)
         .onAppear {
@@ -479,6 +563,324 @@ struct ProjectDetailView: View {
         }
         // CloudKit 同步兜底：月度汇总变化时也刷新
         .onChange(of: store.monthlyExpense) { _, _ in reloadCache() }
+    }
+}
+
+// MARK: - ② 预算分类卡片
+extension ProjectDetailView {
+    var budgetCategoryCard: some View {
+        let budgetItems = project.budgetItems ?? []
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("预算分类")
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundColor(Color.App.textBlack)
+                Spacer()
+                if !budgetItems.isEmpty {
+                    Button("管理分类 ›") { showBudgetManagement = true }
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.gray)
+                }
+            }
+
+            if budgetItems.isEmpty {
+                // 空状态
+                VStack(spacing: 14) {
+                    HStack(spacing: 10) {
+                        Text("🦫").font(.system(size: 20))
+                        Text("还没有设置预算分类")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                    HStack(spacing: 12) {
+                        // AI 生成（检查付费状态）
+                        Button {
+                            if storeManager.isPremium {
+                                // Plus 用户：调用 AI 生成
+                                generateAIBudgetForProject()
+                            } else {
+                                showPaywall = true
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: storeManager.isPremium ? "sparkles" : "lock.fill")
+                                    .font(.system(size: 12, weight: .bold))
+                                Text(storeManager.isPremium ? "AI 生成" : "AI 生成  Plus")
+                                    .font(.system(size: 13, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16).padding(.vertical, 9)
+                            .background(storeManager.isPremium ? Color.App.darkGreen : Color.gray.opacity(0.5))
+                            .clipShape(Capsule())
+                        }
+                        Button { showBudgetManagement = true } label: {
+                            Text("手动添加")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color.App.darkGreen)
+                                .padding(.horizontal, 16).padding(.vertical, 9)
+                                .background(Color.App.primaryGreen.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            } else {
+                // 总进度条
+                let totalAllocated = budgetItems.reduce(0) { $0 + $1.amount }
+                let totalProg      = totalAllocated > 0 ? min(project.currentCycleSpent / totalAllocated, 1.0) : 0
+                let progColor: Color = totalProg >= 1.0 ? Color.App.redExpense
+                    : totalProg >= 0.8 ? Color(hex: "#FFA500") : accentColor
+
+                VStack(spacing: 6) {
+                    HStack {
+                        Text("总进度").font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
+                        Spacer()
+                        Text("\(Int(totalProg * 100))%")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(progColor)
+                    }
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.App.progressTrack).frame(height: 8)
+                        Capsule()
+                            .fill(LinearGradient(
+                                colors: [Color(hex: colorPair.start), Color(hex: colorPair.end)],
+                                startPoint: .leading, endPoint: .trailing))
+                            .scaleEffect(x: max(0.001, CGFloat(totalProg)), y: 1, anchor: .leading)
+                            .frame(height: 8)
+                    }
+                }
+
+                // 分类列表（最多展示 3 条，超出折叠）
+                let displayItems = budgetItems.prefix(3)
+                VStack(spacing: 10) {
+                    ForEach(displayItems) { item in
+                        BudgetProgressRow(item: BudgetItemUI(
+                            categoryName: item.categoryName,
+                            categoryIcon: item.categoryIcon,
+                            categoryColorHex: item.categoryColorHex,
+                            amount: item.amount,
+                            alertThreshold: item.alertThreshold,
+                            spent: calculateSpentForCategory(item.categoryName)
+                        ))
+                    }
+                }
+                if budgetItems.count > 3 {
+                    Button("展开全部 \(budgetItems.count) 个分类") { showBudgetManagement = true }
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.gray)
+                }
+
+                // 未分类支出提示
+                let unclassifiedSpent = _totalSpent - project.currentCycleSpent
+                if unclassifiedSpent > 0.01 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "questionmark.circle").font(.system(size: 12))
+                        Text("未分类支出 ¥\(Int(unclassifiedSpent))（无对应预算分类）")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(.gray)
+                    .padding(.top, 4)
+                }
+            }
+        }
+        .padding(24)
+        .background(Color.App.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 32))
+        .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
+        .padding(.horizontal, 24)
+    }
+    
+    private func calculateSpentForCategory(_ categoryName: String) -> Double {
+        let startDate = project.currentCycleStartDate
+        return (project.transactions ?? [])
+            .filter { $0.type == .expense && $0.categoryName == categoryName && $0.date >= startDate }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+    
+    private func generateAIBudgetForProject() {
+        Task {
+            do {
+                let items = try await LLMService.shared.generateBudgetBreakdown(
+                    name: project.name,
+                    desc: project.desc,
+                    supplement: "",
+                    totalBudget: project.budget,
+                    mode: projectModeEnum == .earning ? "搞钱" : "生活"
+                )
+                await MainActor.run {
+                    for (index, item) in items.enumerated() {
+                        store.addBudgetItem(
+                            to: project,
+                            categoryName: item.categoryName,
+                            categoryIcon: item.categoryIcon,
+                            categoryColorHex: item.categoryColorHex,
+                            amount: item.amount,
+                            sortOrder: index,
+                            alertThreshold: item.alertThreshold
+                        )
+                    }
+                }
+            } catch {
+                #if DEBUG
+                print("AI预算生成失败: \(error)")
+                #endif
+            }
+        }
+    }
+}
+
+// MARK: - ⑤ 看板入口卡片
+extension ProjectDetailView {
+    private var projectModeEnum: ProjectMode {
+        project.projectMode == "earning" ? .earning : .lifestyle
+    }
+    
+    @ViewBuilder
+    var dashboardEntryCard: some View {
+        if projectModeEnum == .earning {
+            earningEntryCard
+        } else {
+            lifestyleEntryCard
+        }
+    }
+
+    private var earningEntryCard: some View {
+        Group {
+            if storeManager.isPremium {
+                // Plus：显示核心指标预览，点击进全页
+                Button { showEarningDashboard = true } label: {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            HStack(spacing: 6) {
+                                Image(systemName: "briefcase.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(accentColor)
+                                Text("经营看板")
+                                    .font(.system(size: 20, weight: .heavy))
+                                    .foregroundColor(Color.App.textBlack)
+                            }
+                            Spacer()
+                            Text("查看 ›")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.gray)
+                        }
+                        HStack(spacing: 0) {
+                            earningMetricCell(title: "净利润",
+                                            value: "¥\(Int(project.netProfit))",
+                                            color: project.netProfit >= 0 ? Color.App.darkGreen : Color.App.redExpense)
+                            Divider().frame(height: 36)
+                            earningMetricCell(title: "日均收益",
+                                            value: "¥\(Int(project.dailyProfit))/天",
+                                            color: accentColor)
+                            Divider().frame(height: 36)
+                            earningMetricCell(title: "ROI",
+                                            value: "\(project.roi.formatted(.number.precision(.fractionLength(1))))%",
+                                            color: accentColor)
+                        }
+                        HStack(spacing: 8) {
+                            Text("已进行 \(project.effectiveWorkingDays) 天")
+                                .font(.system(size: 12)).foregroundColor(.gray)
+                            Text("|").foregroundColor(.gray)
+                            Text("目标进度")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.gray)
+                            let targetProg = project.targetIncome > 0 ? min(project.totalIncome / project.targetIncome, 1.0) : 0
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.App.progressTrack).frame(height: 5)
+                                Capsule().fill(accentColor).frame(width: 120 * CGFloat(targetProg), height: 5)
+                            }
+                            .frame(maxWidth: 120)
+                            Text("\(Int(targetProg * 100))%").font(.system(size: 12, weight: .bold)).foregroundColor(accentColor)
+                        }
+                    }
+                    .padding(24)
+                    .background(Color.App.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 32))
+                    .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
+                    .padding(.horizontal, 24)
+                }
+                .buttonStyle(.plain)
+            } else {
+                PlusLockedEntryCard(
+                    icon: "briefcase.fill",
+                    title: "经营看板",
+                    description: "追踪工时与真实时薪，看清这个项目到底值不值得做。",
+                    features: ["真实时薪 · 净利润 · ROI", "工时折线图 · 成本结构", "趋势月环比 · AI 洞察"],
+                    onUnlock: { showPaywall = true }
+                )
+            }
+        }
+    }
+
+    private var lifestyleEntryCard: some View {
+        Button { showLifestyleDashboard = true } label: {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "leaf.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(accentColor)
+                        Text("预算防线")
+                            .font(.system(size: 20, weight: .heavy))
+                            .foregroundColor(Color.App.textBlack)
+                    }
+                    Spacer()
+                    Text("查看 ›")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.gray)
+                }
+                if project.budget > 0 {
+                    let remaining = max(project.budget - _totalSpent, 0)
+                    let prog = min(_budgetProgress, 1.0)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("剩余预算")
+                                .font(.system(size: 11, weight: .bold)).foregroundColor(.gray)
+                            Text("¥\(Int(remaining))")
+                                .font(.system(size: 22, weight: .heavy))
+                                .foregroundColor(Color.App.textBlack)
+                        }
+                        Spacer()
+                        Text("已用 \(Int(_budgetProgress * 100))%")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(_budgetProgress >= 0.9 ? Color.App.redExpense
+                                : _budgetProgress >= 0.7 ? Color(hex: "#FFA500") : accentColor)
+                    }
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.App.progressTrack).frame(height: 8)
+                        Capsule()
+                            .fill(LinearGradient(
+                                colors: _budgetProgress >= 0.9
+                                    ? [Color.App.redExpense.opacity(0.7), Color.App.redExpense]
+                                    : [Color(hex: colorPair.start), Color(hex: colorPair.end)],
+                                startPoint: .leading, endPoint: .trailing))
+                            .scaleEffect(x: max(0.001, CGFloat(prog)), y: 1, anchor: .leading)
+                            .frame(height: 8)
+                    }
+                } else {
+                    Text("未设置预算，点击查看消费结构分析")
+                        .font(.system(size: 13)).foregroundColor(.gray)
+                }
+            }
+            .padding(24)
+            .background(Color.App.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 32))
+            .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
+            .padding(.horizontal, 24)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func earningMetricCell(title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.system(size: 11, weight: .bold)).foregroundColor(.gray)
+            Text(value)
+                .font(.system(size: 15, weight: .heavy)).foregroundColor(color)
+                .minimumScaleFactor(0.7).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

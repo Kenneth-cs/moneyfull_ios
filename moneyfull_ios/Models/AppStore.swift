@@ -49,6 +49,7 @@ class AppStore: ObservableObject {
         migrateV4Categories()
         migrateV5Categories()
         migrateDailyProjectUnpin()
+        migrateV6ProjectMode()
         
         refresh()
         startObservingDataChanges()
@@ -259,9 +260,13 @@ class AppStore: ObservableObject {
     /// 新建项目
     @discardableResult
     func addProject(name: String, icon: String, colorHex: String,
-                    desc: String, budget: Double, isPinned: Bool = false) -> Project {
+                    desc: String, budget: Double, isPinned: Bool = false,
+                    projectMode: String = "lifestyle", budgetCycle: String = "project",
+                    targetIncome: Double = 0, defaultRate: Double = 0) -> Project {
         let project = Project(name: name, icon: icon, colorHex: colorHex,
-                              desc: desc, budget: budget, isPinned: isPinned)
+                              desc: desc, budget: budget, isPinned: isPinned,
+                              projectMode: projectMode, budgetCycle: budgetCycle,
+                              targetIncome: targetIncome, defaultRate: defaultRate)
         modelContext.insert(project)
         save()
         refresh()
@@ -335,14 +340,25 @@ class AppStore: ObservableObject {
         save()
         refresh()
     }
+
+    func updateProjectWorkingDays(_ project: Project, days: Int) {
+        project.workingDays = max(0, days)
+        save()
+    }
     
     func updateProject(_ project: Project, name: String, icon: String,
-                       colorHex: String, desc: String, budget: Double) {
+                       colorHex: String, desc: String, budget: Double,
+                       projectMode: String? = nil, budgetCycle: String? = nil,
+                       targetIncome: Double? = nil, defaultRate: Double? = nil) {
         project.name = name
         project.icon = icon
         project.colorHex = colorHex
         project.desc = desc
         project.budget = budget
+        if let mode = projectMode { project.projectMode = mode }
+        if let cycle = budgetCycle { project.budgetCycle = cycle }
+        if let income = targetIncome { project.targetIncome = income }
+        if let rate = defaultRate { project.defaultRate = rate }
         save()
         refresh()
     }
@@ -377,6 +393,76 @@ class AppStore: ObservableObject {
         if let groupName = groupName {
             category.groupName = groupName
         }
+        save()
+        refresh()
+    }
+    
+    // MARK: - BudgetItem CRUD
+    
+    @discardableResult
+    func addBudgetItem(to project: Project, categoryName: String, categoryIcon: String,
+                       categoryColorHex: String, amount: Double, sortOrder: Int = 0,
+                       alertThreshold: Double = 0) -> BudgetItem {
+        let item = BudgetItem(categoryName: categoryName, categoryIcon: categoryIcon,
+                              categoryColorHex: categoryColorHex, amount: amount,
+                              sortOrder: sortOrder, alertThreshold: alertThreshold)
+        item.project = project
+        project.budgetItems = (project.budgetItems ?? []) + [item]
+        modelContext.insert(item)
+        save()
+        refresh()
+        return item
+    }
+    
+    func updateBudgetItem(_ item: BudgetItem, categoryName: String? = nil, categoryIcon: String? = nil,
+                          categoryColorHex: String? = nil, amount: Double? = nil,
+                          sortOrder: Int? = nil, alertThreshold: Double? = nil) {
+        if let name = categoryName { item.categoryName = name }
+        if let icon = categoryIcon { item.categoryIcon = icon }
+        if let color = categoryColorHex { item.categoryColorHex = color }
+        if let amt = amount { item.amount = amt }
+        if let order = sortOrder { item.sortOrder = order }
+        if let threshold = alertThreshold { item.alertThreshold = threshold }
+        save()
+        refresh()
+    }
+    
+    func deleteBudgetItem(_ item: BudgetItem) {
+        if let project = item.project {
+            project.budgetItems = (project.budgetItems ?? []).filter { $0.id != item.id }
+        }
+        modelContext.delete(item)
+        save()
+        refresh()
+    }
+    
+    func reorderBudgetItems(_ items: [BudgetItem]) {
+        for (index, item) in items.enumerated() {
+            item.sortOrder = index
+        }
+        save()
+    }
+    
+    // MARK: - TimeEntry CRUD
+    
+    @discardableResult
+    func addTimeEntry(to project: Project, duration: Double, granularity: String = "hour",
+                      rate: Double, note: String = "", date: Date = Date()) -> TimeEntry {
+        let entry = TimeEntry(duration: duration, granularity: granularity, rate: rate,
+                              note: note, date: date)
+        entry.project = project
+        project.timeEntries = (project.timeEntries ?? []) + [entry]
+        modelContext.insert(entry)
+        save()
+        refresh()
+        return entry
+    }
+    
+    func deleteTimeEntry(_ entry: TimeEntry) {
+        if let project = entry.project {
+            project.timeEntries = (project.timeEntries ?? []).filter { $0.id != entry.id }
+        }
+        modelContext.delete(entry)
         save()
         refresh()
     }
@@ -800,6 +886,25 @@ class AppStore: ObservableObject {
         save()
         refresh()
         UserDefaults.standard.set(true, forKey: "dailyProjectUnpinDone")
+    }
+    
+    /// 迁移：为旧项目设置默认 projectMode = "lifestyle"
+    private func migrateV6ProjectMode() {
+        guard !UserDefaults.standard.bool(forKey: "projectModeMigrationV6Done") else { return }
+        
+        let descriptor = FetchDescriptor<Project>()
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        
+        for project in all {
+            // 新字段都有默认值，这里主要确保 projectMode 不为空
+            if project.projectMode.isEmpty {
+                project.projectMode = "lifestyle"
+            }
+        }
+        
+        save()
+        refresh()
+        UserDefaults.standard.set(true, forKey: "projectModeMigrationV6Done")
     }
     
     // MARK: - 初始化检查

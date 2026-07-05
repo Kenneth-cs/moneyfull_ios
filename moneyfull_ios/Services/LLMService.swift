@@ -69,6 +69,13 @@ class LLMService {
            - 注意：reply 中不要编造具体金额，只写分析意图和引导语
         
         9. **富文本规则**：status 为 chat、need_clarification 时，reply 中可用 **双星号** 强调关键词。
+
+        10. **工时记录识别**：如果用户提到工时/工作时间（如"今天干了3小时"、"昨天工作8小时"），识别为 time_entry：
+           {"status": "success", "time_entry_hours": 数字, "time_entry_rate": 时薪数字或null, "time_entry_note": "任务描述", "project_name": "项目名或null", "reply": "已记录工时"}
+           - time_entry_hours：工时数量（小时）
+           - time_entry_rate：时薪（如果用户提到的话，否则为 null）
+           - time_entry_note：任务简述
+           - 注意：工时记录时 amount/type/categoryName 等字段都设为 null
         
         Context:
         \(context)
@@ -351,6 +358,282 @@ class LLMService {
         
         return content
     }
+    
+    // MARK: - 预算分类 AI 生成
+    
+    /// 生成预算分类明细
+    func generateBudgetBreakdown(name: String, desc: String, supplement: String,
+                                  totalBudget: Double, mode: String) async throws -> [BudgetItemUI] {
+        let systemPrompt = """
+        你是一个预算规划专家。用户正在创建一个「\(mode)」类项目，请根据信息生成合理的预算分类明细。
+
+        项目名称：\(name)
+        项目描述：\(desc.isEmpty ? "根据名字推断" : desc)
+        用户补充：\(supplement.isEmpty ? "无" : supplement)
+        总预算：¥\(Int(totalBudget))
+        项目模式：\(mode)
+
+        要求：
+        1. 生成 5-8 个分类，覆盖该类项目的主要花销场景
+        2. 所有分类金额之和 = 总预算（必须严格相等）
+        3. 比例合理，参考真实消费习惯；金额规模不同比例也不同
+        4. 使用合适的 SF Symbol 图标名（v5+）和莫兰迪色系 hex
+        5. 搞钱模式重点考虑：工具/软件、差旅、外包等成本项
+
+        返回严格 JSON，无其他内容：
+        {
+          "budget_items": [
+            {"name": "交通", "icon": "car.fill", "colorHex": "#A8E0C2", "amount": 800},
+            ...
+          ],
+          "reasoning": "一句话说明分配逻辑"
+        }
+        """
+        
+        let messages: [[String: String]] = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": "请为我生成预算分类"]
+        ]
+        
+        let requestBody: [String: Any] = [
+            "model": model,
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 800,
+            "stream": false
+        ]
+        
+        let url = URL(string: Config.chatCompletionsURL)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: config)
+        
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw LLMError.apiError
+        }
+        
+        let llmResponse = try JSONDecoder().decode(LLMResponse.self, from: data)
+        guard let content = llmResponse.choices.first?.message.content else {
+            throw LLMError.noContent
+        }
+        
+        // 记录Token使用量
+        if let usage = llmResponse.usage {
+            TokenMonitor.shared.record(tokens: usage.totalTokens)
+        }
+        
+        guard let jsonData = content.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let items = json["budget_items"] as? [[String: Any]] else {
+            throw LLMError.invalidJSON
+        }
+        
+        return items.compactMap { dict in
+            guard let name = dict["name"] as? String,
+                  let icon = dict["icon"] as? String,
+                  let colorHex = dict["colorHex"] as? String,
+                  let amount = dict["amount"] as? Double else { return nil }
+            return BudgetItemUI(categoryName: name, categoryIcon: icon,
+                               categoryColorHex: colorHex, amount: amount)
+        }
+    }
+    
+    // MARK: - 经营洞察（搞钱模式）
+    
+    /// 生成经营洞察
+    func generateEarningInsight(project: Project) async throws -> String {
+        let categorySpend = (project.transactions ?? [])
+            .filter { $0.type == .expense }
+            .reduce(into: [String: Double]()) { $0[$1.categoryName, default: 0] + abs($1.amount) }
+            .map { "\($0.key): ¥\(Int($0.value))" }
+            .joined(separator: ", ")
+        
+        let systemPrompt = """
+        你是项目财务顾问，分析以下接单项目数据，给出 2-3 条简洁洞察。
+
+        项目：\(project.name)
+        总收入：¥\(Int(project.totalIncome))（目标：¥\(Int(project.targetIncome))）
+        时间成本：¥\(Int(project.totalTimeCost))（\(project.totalHourEquivalent.formatted(.number.precision(.fractionLength(1))))h，平均时薪 ¥\(Int(project.defaultRate))/h）
+        其他支出：¥\(Int(project.totalSpent))（细目：\(categorySpend.isEmpty ? "暂无" : categorySpend)）
+        净利润：¥\(Int(project.netProfit))
+        实际时薪：¥\(project.effectiveHourlyRate.formatted(.number.precision(.fractionLength(1))))/h（目标：¥\(Int(project.defaultRate))/h）
+
+        请用中文给出洞察，语气鼓励，不用嘲讽，格式：
+        - 关键发现（一句话）
+        - 原因分析（一句话）
+        - 下次建议（一句话）
+        """
+        
+        let messages: [[String: String]] = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": "请分析我的项目经营状况"]
+        ]
+        
+        let requestBody: [String: Any] = [
+            "model": model,
+            "messages": messages,
+            "temperature": 0.5,
+            "max_tokens": 400,
+            "stream": false
+        ]
+        
+        let url = URL(string: Config.chatCompletionsURL)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: config)
+        
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw LLMError.apiError
+        }
+        
+        let llmResponse = try JSONDecoder().decode(LLMResponse.self, from: data)
+        guard let content = llmResponse.choices.first?.message.content else {
+            throw LLMError.noContent
+        }
+        
+        // 记录Token使用量
+        if let usage = llmResponse.usage {
+            TokenMonitor.shared.record(tokens: usage.totalTokens)
+        }
+        
+        return content
+    }
+    
+    // MARK: - 项目复盘
+    
+    /// 生成项目复盘总结
+    func generateProjectReview(project: Project, mode: String) async throws -> ProjectReviewResult {
+        let topExpenses = (project.transactions ?? [])
+            .filter { $0.type == .expense }
+            .sorted { abs($0.amount) > abs($1.amount) }
+            .prefix(3)
+            .map { "\($0.categoryName): ¥\(Int(abs($0.amount)))" }
+            .joined(separator: ", ")
+        
+        let systemPrompt: String
+        if mode == "earning" {
+            systemPrompt = """
+            你是项目复盘顾问，为搞钱模式项目生成复盘总结。
+
+            项目：\(project.name)
+            总收入：¥\(Int(project.totalIncome))
+            总成本：¥\(Int(project.totalCost))（时间成本 ¥\(Int(project.totalTimeCost)) + 支出 ¥\(Int(project.totalSpent))）
+            净利润：¥\(Int(project.netProfit))
+            ROI：\(project.roi.formatted(.number.precision(.fractionLength(1))))%
+            总工时：\(project.totalHourEquivalent.formatted(.number.precision(.fractionLength(1))))h
+            真实时薪：¥\(project.effectiveHourlyRate.formatted(.number.precision(.fractionLength(1))))/h
+            最大三笔支出：\(topExpenses.isEmpty ? "暂无" : topExpenses)
+
+            请返回 JSON：
+            {
+              "summary": "3-5条洞察，每条一行",
+              "next_budget": [
+                {"name": "建议项", "amount": 1000}
+              ]
+            }
+            """
+        } else {
+            systemPrompt = """
+            你是项目复盘顾问，为生活模式项目生成复盘总结。
+
+            项目：\(project.name)
+            总支出：¥\(Int(project.totalSpent))
+            预算：¥\(Int(project.budget))
+            持续天数：\(project.totalDays)天
+            日均花费：¥\(Int(project.dailyAvgSpend))
+            最大三笔支出：\(topExpenses.isEmpty ? "暂无" : topExpenses)
+
+            请返回 JSON：
+            {
+              "summary": "3-5条洞察，每条一行",
+              "next_budget": [
+                {"name": "建议项", "amount": 1000}
+              ]
+            }
+            """
+        }
+        
+        let messages: [[String: String]] = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": "请生成项目复盘总结"]
+        ]
+        
+        let requestBody: [String: Any] = [
+            "model": model,
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 600,
+            "stream": false
+        ]
+        
+        let url = URL(string: Config.chatCompletionsURL)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: config)
+        
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw LLMError.apiError
+        }
+        
+        let llmResponse = try JSONDecoder().decode(LLMResponse.self, from: data)
+        guard let content = llmResponse.choices.first?.message.content else {
+            throw LLMError.noContent
+        }
+        
+        // 记录Token使用量
+        if let usage = llmResponse.usage {
+            TokenMonitor.shared.record(tokens: usage.totalTokens)
+        }
+        
+        guard let jsonData = content.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            throw LLMError.invalidJSON
+        }
+        
+        let summary = json["summary"] as? String ?? "暂无总结"
+        let nextBudget = (json["next_budget"] as? [[String: Any]])?.compactMap { dict -> (String, Double)? in
+            guard let name = dict["name"] as? String, let amount = dict["amount"] as? Double else { return nil }
+            return (name, amount)
+        } ?? []
+        
+        return ProjectReviewResult(aiSummary: summary, nextBudgetSuggestions: nextBudget)
+    }
+}
+
+/// 项目复盘结果
+struct ProjectReviewResult {
+    let aiSummary: String
+    let nextBudgetSuggestions: [(name: String, amount: Double)]
 }
 
 enum LLMError: Error {
@@ -401,6 +684,10 @@ struct TransactionParseResult: Codable {
     var insightType: String? = nil  // "category_group" | "monthly_overview"
     var targetGroup: String? = nil  // 目标一级分类名，如 "餐饮"
     var period: String? = nil       // "last_month" | "this_month"
+    // 工时记录字段（可选）
+    var timeEntryHours: Double? = nil
+    var timeEntryRate: Double? = nil
+    var timeEntryNote: String? = nil
     
     enum CodingKeys: String, CodingKey {
         case status, amount, type, groupName, categoryName
@@ -411,5 +698,8 @@ struct TransactionParseResult: Codable {
         case insightType = "insight_type"
         case targetGroup = "target_group"
         case period
+        case timeEntryHours = "time_entry_hours"
+        case timeEntryRate = "time_entry_rate"
+        case timeEntryNote = "time_entry_note"
     }
 }

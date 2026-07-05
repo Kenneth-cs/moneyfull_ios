@@ -3,6 +3,8 @@ import SwiftUI
 // MARK: - 新手引导页（首次安装时展示，之后不再出现）
 struct OnboardingView: View {
     @Binding var isPresented: Bool
+    /// 引导页完成后的回调（用于衔接测评流程）
+    var onFinished: (() -> Void)? = nil
     @State private var currentPage = 0
     
     private let pages: [OnboardingPage] = [
@@ -168,6 +170,8 @@ struct OnboardingView: View {
         withAnimation(.easeInOut(duration: 0.4)) {
             isPresented = false
         }
+        // 引导页完成后通知父级展示测评
+        onFinished?()
     }
 }
 

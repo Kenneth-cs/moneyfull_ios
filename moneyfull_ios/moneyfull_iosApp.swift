@@ -21,7 +21,7 @@ struct moneyfull_iosApp: App {
         do {
             let config = ModelConfiguration(cloudKitDatabase: .automatic)
             let container = try ModelContainer(
-                for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self, RecurringBill.self,
+                for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self, RecurringBill.self, BudgetItem.self, TimeEntry.self,
                 configurations: config
             )
             #if DEBUG
@@ -36,7 +36,7 @@ struct moneyfull_iosApp: App {
         
         do {
             let container = try ModelContainer(
-                for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self, RecurringBill.self
+                for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self, RecurringBill.self, BudgetItem.self, TimeEntry.self
             )
             #if DEBUG
             print("✅ 本地存储已启用")
@@ -51,7 +51,7 @@ struct moneyfull_iosApp: App {
         do {
             let config = ModelConfiguration(isStoredInMemoryOnly: true)
             let container = try ModelContainer(
-                for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self, RecurringBill.self,
+                for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self, RecurringBill.self, BudgetItem.self, TimeEntry.self,
                 configurations: config
             )
             #if DEBUG

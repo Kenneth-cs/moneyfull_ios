@@ -54,9 +54,28 @@ final class Project {
     
     @Relationship(deleteRule: .nullify, inverse: \Transaction.project)
     var transactions: [Transaction]?
+
+    // MARK: - V6 新增字段（预算分类系统 + 经营看板）
+    var projectMode: String = "lifestyle"       // "earning" | "lifestyle"
+    var budgetCycle: String = "project"         // "project" | "monthly" | "custom"
+    var budgetCycleStartDate: Date? = nil
+    var budgetCycleDays: Int = 30
+    var budgetAlertThreshold: Double = 0        // 总预算预警线（Plus）
+    var defaultRate: Double = 0                 // 默认时薪（记工时时使用，可选功能）
+    var defaultRateGranularity: String = "hour" // "hour" | "day"
+    var targetIncome: Double = 0                // 目标收入 / 合同金额
+    var workingDays: Int = 0                    // 实际工作天数（0 = 自动用自然天数）
+
+    @Relationship(deleteRule: .cascade, inverse: \BudgetItem.project)
+    var budgetItems: [BudgetItem]?
+
+    @Relationship(deleteRule: .cascade, inverse: \TimeEntry.project)
+    var timeEntries: [TimeEntry]?
     
     init(name: String, icon: String = "folder.fill", colorHex: String = "#A8E6CF",
-         desc: String = "", budget: Double = 0, isPinned: Bool = false, isActiveProject: Bool = false) {
+         desc: String = "", budget: Double = 0, isPinned: Bool = false, isActiveProject: Bool = false,
+         projectMode: String = "lifestyle", budgetCycle: String = "project",
+         targetIncome: Double = 0, defaultRate: Double = 0) {
         self.id = UUID()
         self.name = name
         self.icon = icon
@@ -67,6 +86,10 @@ final class Project {
         self.isPinned = isPinned
         self.isActiveProject = isActiveProject
         self.createdAt = Date()
+        self.projectMode = projectMode
+        self.budgetCycle = budgetCycle
+        self.targetIncome = targetIncome
+        self.defaultRate = defaultRate
     }
     
     /// 计算已花费总额（支出之和）
@@ -83,6 +106,119 @@ final class Project {
     var budgetProgress: Double {
         guard budget > 0 else { return 0 }
         return totalSpent / budget
+    }
+
+    // MARK: - 预算分类相关计算属性
+
+    /// 已分配预算总额
+    var budgetItemsAllocated: Double {
+        (budgetItems ?? []).reduce(0) { $0 + $1.amount }
+    }
+
+    /// 未分配预算
+    var budgetUnallocated: Double {
+        budget - budgetItemsAllocated
+    }
+
+    /// 当前周期起始日期
+    var currentCycleStartDate: Date {
+        let calendar = Calendar.current
+        switch budgetCycle {
+        case "project":
+            return createdAt
+        case "monthly":
+            return calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) ?? createdAt
+        case "custom":
+            guard let startDate = budgetCycleStartDate else { return createdAt }
+            let days = calendar.dateComponents([.day], from: startDate, to: Date()).day ?? 0
+            let cycleLength = max(budgetCycleDays, 1)
+            let completedCycles = days / cycleLength
+            return calendar.date(byAdding: .day, value: completedCycles * cycleLength, to: startDate) ?? startDate
+        default:
+            return createdAt
+        }
+    }
+
+    /// 当前周期已花费
+    var currentCycleSpent: Double {
+        let startDate = currentCycleStartDate
+        return (transactions ?? [])
+            .filter { $0.type == .expense && $0.date >= startDate }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+
+    // MARK: - 搞钱模式核心计算属性（日均体系）
+
+    /// 净利润 = 总收入 - 总支出（不含时间成本，时间成本为可选增强）
+    var netProfit: Double {
+        totalIncome - totalSpent
+    }
+
+    /// ROI = 净利润 / 总支出（衡量资金回报，无支出时为 0）
+    var roi: Double {
+        guard totalSpent > 0 else { return 0 }
+        return (netProfit / totalSpent) * 100
+    }
+
+    /// 有效工作天数（0 = 使用自然天数）
+    var effectiveWorkingDays: Int {
+        if workingDays > 0 { return workingDays }
+        let days = Calendar.current.dateComponents([.day], from: createdAt, to: Date()).day ?? 0
+        return max(1, days)
+    }
+
+    /// 日均成本
+    var dailyCost: Double {
+        Double(totalSpent) / Double(effectiveWorkingDays)
+    }
+
+    /// 日均收益（有收入时才有意义）
+    var dailyProfit: Double {
+        Double(netProfit) / Double(effectiveWorkingDays)
+    }
+
+    // MARK: - 搞钱模式可选增强（需用户主动记工时）
+
+    /// 总时间成本（仅当有工时记录时有意义）
+    var totalTimeCost: Double {
+        (timeEntries ?? []).reduce(0) { $0 + $1.duration * $1.rate }
+    }
+
+    /// 总成本（含时间成本，用于精确 ROI 计算）
+    var totalCost: Double {
+        totalTimeCost + totalSpent
+    }
+
+    /// 总工时（统一折算为小时当量，工日 × 8）
+    var totalHourEquivalent: Double {
+        (timeEntries ?? []).reduce(0) {
+            $0 + ($1.granularity == "day" ? $1.duration * 8 : $1.duration)
+        }
+    }
+
+    /// 真实时薪 = (收入 - 支出) ÷ 工时（不含时间成本）
+    var effectiveHourlyRate: Double {
+        guard totalHourEquivalent > 0 else { return 0 }
+        return (totalIncome - totalSpent) / totalHourEquivalent
+    }
+
+    /// 是否有工时记录
+    var hasTimeEntries: Bool {
+        !(timeEntries ?? []).isEmpty
+    }
+
+    // MARK: - 生活模式计算属性
+
+    /// 项目持续天数（从创建到今天）
+    var totalDays: Int {
+        let days = Calendar.current.dateComponents([.day], from: createdAt, to: Date()).day ?? 0
+        return max(1, days)
+    }
+
+    /// 日均花费
+    var dailyAvgSpend: Double {
+        guard totalDays > 0 else { return 0 }
+        return totalSpent / Double(totalDays)
     }
 }
 
@@ -189,6 +325,61 @@ enum RecurringFrequency: String, Codable {
     case weekly = "weekly"
     case monthly = "monthly"
     case yearly = "yearly"
+}
+
+/// 预算分类模型
+@Model
+final class BudgetItem {
+    var id: UUID = UUID()
+    var categoryName: String = ""
+    var categoryIcon: String = ""
+    var categoryColorHex: String = ""
+    var amount: Double = 0
+    var sortOrder: Int = 0
+    var alertThreshold: Double = 0   // 0 = 不预警；0.8 = 80% 提醒（Plus）
+    var createdAt: Date = Date()
+
+    var project: Project?
+
+    init(categoryName: String, categoryIcon: String, categoryColorHex: String,
+         amount: Double, sortOrder: Int = 0, alertThreshold: Double = 0) {
+        self.id = UUID()
+        self.categoryName = categoryName
+        self.categoryIcon = categoryIcon
+        self.categoryColorHex = categoryColorHex
+        self.amount = amount
+        self.sortOrder = sortOrder
+        self.alertThreshold = alertThreshold
+        self.createdAt = Date()
+    }
+}
+
+/// 工时记录模型
+@Model
+final class TimeEntry {
+    var id: UUID = UUID()
+    var duration: Double = 0            // 工时数量（小时 or 天）
+    var granularity: String = "hour"    // "hour" | "day"
+    var rate: Double = 0                // 时薪（hour）或日薪（day）
+    var note: String = ""               // 任务描述
+    var date: Date = Date()
+    var createdAt: Date = Date()
+
+    var project: Project?
+
+    /// 时间成本
+    var cost: Double { duration * rate }
+
+    init(duration: Double, granularity: String = "hour", rate: Double,
+         note: String = "", date: Date = Date()) {
+        self.id = UUID()
+        self.duration = duration
+        self.granularity = granularity
+        self.rate = rate
+        self.note = note
+        self.date = date
+        self.createdAt = Date()
+    }
 }
 
 /// 周期账单模型

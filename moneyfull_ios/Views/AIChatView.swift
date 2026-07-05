@@ -951,23 +951,56 @@ struct AIChatView: View {
 
     private func handleParseResult(_ result: TransactionParseResult) {
         if result.status == "success" {
-            let card = ChatMessage(
-                role: .assistant,
-                content: "我帮你记录了这笔交易：",
-                timestamp: Date(),
-                transactionCard: TransactionCardData(
-                    amount: result.amount ?? 0,
-                    type: result.type ?? "expense",
-                    groupName: result.groupName ?? "",
-                    categoryName: result.categoryName ?? "",
-                    categoryIcon: result.categoryIcon ?? "tag.fill",
-                    categoryColorHex: result.categoryColorHex ?? "#A8E6CF",
-                    note: result.note ?? "",
-                    projectName: result.projectName
+            // 检查是否是工时记录
+            if let hours = result.timeEntryHours, hours > 0 {
+                // 查找活跃项目
+                let activeProject = store.activeProjects.first { $0.isActiveProject && $0.projectMode == "earning" }
+                if let project = activeProject {
+                    let rate = result.timeEntryRate ?? project.defaultRate
+                    store.addTimeEntry(
+                        to: project,
+                        duration: hours,
+                        granularity: "hour",
+                        rate: rate,
+                        note: result.timeEntryNote ?? ""
+                    )
+                    let msg = ChatMessage(
+                        role: .assistant,
+                        content: "已记录 **\(hours.formatted(.number.precision(.fractionLength(1))))** 小时工时到「\(project.name)」，时薪 ¥\(Int(rate))/h，时间成本 ¥\(Int(hours * rate))",
+                        timestamp: Date(),
+                        usesRichText: true
+                    )
+                    messages.append(msg)
+                    try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
+                } else {
+                    let msg = ChatMessage(
+                        role: .assistant,
+                        content: "没有找到活跃的搞钱模式项目，无法记录工时。请先设置一个活跃项目。",
+                        timestamp: Date()
+                    )
+                    messages.append(msg)
+                    try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
+                }
+            } else {
+                // 普通交易记录
+                let card = ChatMessage(
+                    role: .assistant,
+                    content: "我帮你记录了这笔交易：",
+                    timestamp: Date(),
+                    transactionCard: TransactionCardData(
+                        amount: result.amount ?? 0,
+                        type: result.type ?? "expense",
+                        groupName: result.groupName ?? "",
+                        categoryName: result.categoryName ?? "",
+                        categoryIcon: result.categoryIcon ?? "tag.fill",
+                        categoryColorHex: result.categoryColorHex ?? "#A8E6CF",
+                        note: result.note ?? "",
+                        projectName: result.projectName
+                    )
                 )
-            )
-            messages.append(card)
-            try? contextManager.saveChatHistory(role: "assistant", content: "交易确认卡片")
+                messages.append(card)
+                try? contextManager.saveChatHistory(role: "assistant", content: "交易确认卡片")
+            }
 
         } else if result.status == "suggest_new_category" {
             let card = ChatMessage(
