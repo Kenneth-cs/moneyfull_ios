@@ -23,8 +23,17 @@ struct PersonaResultView: View {
         healthScore > 0 ? healthScore : max(UserDefaults.standard.integer(forKey: "userHealthScore"), 0)
     }
 
+    /// 画像：优先用传入值，若为默认值且已完成测评则从 UserDefaults 读取（同上时序保护）
+    private var effectivePersona: PersonaType {
+        if persona != .steady { return persona }
+        guard UserDefaults.standard.bool(forKey: "hasCompletedAssessment"),
+              let saved = UserDefaults.standard.string(forKey: "userPersonaType"),
+              let type = PersonaType(rawValue: saved) else { return persona }
+        return type
+    }
+
     private var scoreLabel: HealthScoreLabel { HealthScoreLabel.from(score: effectiveScore) }
-    private var features: [FeatureRecommendation] { persona.featureRecommendations(method: method) }
+    private var features: [FeatureRecommendation] { effectivePersona.featureRecommendations(method: method) }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -72,14 +81,14 @@ struct PersonaResultView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // 字母标签条
                 HStack(spacing: 8) {
-                    Text(persona.letter)
+                    Text(effectivePersona.letter)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
                         .frame(width: 26, height: 26)
                         .background(green)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                    Text(persona.displayName)
+                    Text(effectivePersona.displayName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(green)
                 }
@@ -89,13 +98,13 @@ struct PersonaResultView: View {
                 // 内容行：文案 + 人物图
                 HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(persona.headline)
+                        Text(effectivePersona.headline)
                             .font(.system(size: 26, weight: .heavy))
                             .foregroundColor(Color(hex: "#1A3A2E"))
                             .lineLimit(2)
                             .minimumScaleFactor(0.85)
 
-                        Text(persona.description(income: income))
+                        Text(effectivePersona.description(income: income))
                             .font(.system(size: 14, weight: .regular))
                             .foregroundColor(Color(hex: "#1A3A2E").opacity(0.75))
                             .lineSpacing(4)
@@ -104,7 +113,7 @@ struct PersonaResultView: View {
                     .padding(.top, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Image(persona.personaImageName)
+                    Image(effectivePersona.personaImageName)
                         .resizable()
                         .scaledToFit()
                         .frame(width: 160)
@@ -162,7 +171,7 @@ struct PersonaResultView: View {
                 Text(scoreLabel.label)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(green)
-                Text(persona.healthScoreNote(income: income))
+                Text(effectivePersona.healthScoreNote(income: income))
                     .font(.system(size: 13))
                     .foregroundColor(Color(hex: "#1A3A2E").opacity(0.75))
                     .lineSpacing(4)
@@ -170,7 +179,7 @@ struct PersonaResultView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             // 卡皮图
-            Image(persona.capybaraImageName)
+            Image(effectivePersona.capybaraImageName)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 72)
@@ -205,7 +214,7 @@ struct PersonaResultView: View {
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(green)
 
-            Text(persona.painPoint)
+            Text(effectivePersona.painPoint)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(Color(hex: "#1A3A2E"))
 
@@ -340,7 +349,7 @@ struct PersonaResultView: View {
                 .font(.system(size: 16))
                 .foregroundColor(lightGreen)
 
-            Text(persona.bottomQuote)
+            Text(effectivePersona.bottomQuote)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(Color(hex: "#1A3A2E").opacity(0.6))
                 .italic()

@@ -6,15 +6,20 @@ struct ContentView: View {
     @State private var store: AppStore?
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
     @State private var showAssessment = false
-    @State private var showPersonaResult = false
+    @State private var assessmentStep: AssessmentStep = .quiz
     @State private var assessmentPersona: PersonaType = .steady
     @State private var assessmentScore: Int = 0
     @State private var assessmentHabit: HabitTag = .none
     @State private var assessmentMethod: MethodTag = .none
     @State private var assessmentIncome: IncomeTag = .salary
     @State private var assessmentJTBD: JTBDTag = .ease
+    @State private var loadingRotation: Double = 0
     @State private var deepLinkText: String?
     @State private var showRatingPrompt = false
+
+    private enum AssessmentStep {
+        case quiz, loading, result
+    }
 
     var body: some View {
         Group {
@@ -32,32 +37,49 @@ struct ContentView: View {
                         }
                     }
                     .fullScreenCover(isPresented: $showAssessment) {
-                        AssessmentView { persona, score, habit, method, income, jtbd in
-                            assessmentPersona = persona
-                            assessmentScore   = score
-                            assessmentHabit   = habit
-                            assessmentMethod  = method
-                            assessmentIncome  = income
-                            assessmentJTBD    = jtbd
-                            showAssessment    = false
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                showPersonaResult = true
+                        ZStack {
+                            Color(hex: "#EBF7F2").ignoresSafeArea()
+
+                            switch assessmentStep {
+                            case .quiz:
+                                AssessmentView { persona, score, habit, method, income, jtbd in
+                                    assessmentPersona = persona
+                                    assessmentScore   = score
+                                    assessmentHabit   = habit
+                                    assessmentMethod  = method
+                                    assessmentIncome  = income
+                                    assessmentJTBD    = jtbd
+                                    withAnimation(.easeInOut(duration: 0.35)) {
+                                        assessmentStep = .loading
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                                        withAnimation(.easeInOut(duration: 0.35)) {
+                                            assessmentStep = .result
+                                        }
+                                    }
+                                }
+                                .transition(.opacity)
+
+                            case .loading:
+                                personaLoadingView
+                                    .transition(.opacity)
+
+                            case .result:
+                                PersonaResultView(
+                                    persona:     assessmentPersona,
+                                    healthScore: assessmentScore,
+                                    habit:       assessmentHabit,
+                                    method:      assessmentMethod,
+                                    income:      assessmentIncome,
+                                    jtbd:        assessmentJTBD
+                                ) {
+                                    showAssessment = false
+                                    assessmentStep = .quiz
+                                }
+                                .transition(.opacity)
                             }
                         }
-                    }
-                    .fullScreenCover(isPresented: $showPersonaResult) {
-                        PersonaResultView(
-                            persona:     assessmentPersona,
-                            healthScore: assessmentScore,
-                            habit:       assessmentHabit,
-                            method:      assessmentMethod,
-                            income:      assessmentIncome,
-                            jtbd:        assessmentJTBD
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.4)) {
-                                showPersonaResult = false
-                            }
-                        }
+                        .animation(.easeInOut(duration: 0.35), value: assessmentStep)
                     }
             } else {
                 Color.App.backgroundGray.ignoresSafeArea()
@@ -95,6 +117,47 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - 画像生成加载动画
+    private var personaLoadingView: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .stroke(Color(hex: "#A8E6CF").opacity(0.3), lineWidth: 4)
+                    .frame(width: 80, height: 80)
+
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(Color(hex: "#2C6957"), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(loadingRotation))
+                    .onAppear {
+                        withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                            loadingRotation = 360
+                        }
+                    }
+
+                Image("capybara_a")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 48, height: 48)
+            }
+
+            VStack(spacing: 8) {
+                Text("小满正在分析你的财务画像...")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(Color(hex: "#1A3A2E"))
+
+                Text("基于你的回答，为你定制专属体验")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(hex: "#1A3A2E").opacity(0.6))
+            }
+
+            Spacer()
+        }
+    }
+
     private func handleDeepLink(_ url: URL) {
         #if DEBUG
         print("📱 Deep Link received: \(url)")
