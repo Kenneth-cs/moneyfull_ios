@@ -1,7 +1,8 @@
-# 钱小满 · 项目预算分类系统 & 经营看板完整设计方案
+# 钱小满 · 项目预算分类系统 PRD
 
-> 版本：V3.0（2026-07-03）
+> 版本：V3.1（2026-07-10）
 > 覆盖：数据模型 / UI 交互 / AI Prompt / UI结构规划 / Gate策略 / 商业化 / 用户动线
+> ⚠️ 经营看板（现金流/收入/成本/利润四维度）已独立至「经营看板PRD.md」
 
 ---
 
@@ -14,7 +15,7 @@
 ────────────         ────────────         ────────────
 AI 生成预算分类  →   实时感知记账进度  →   归档生成复盘报告
 设置预算周期         分类预警 + IP联动      可分享图片导出
-确定项目模式         记工时（搞钱模式）     AI 经营洞察
+确定项目模式         经营看板（搞钱模式）   AI 经营洞察
 ```
 
 ### 项目模式：搞钱 vs 生活（核心设计决策）
@@ -25,9 +26,9 @@ AI 生成预算分类  →   实时感知记账进度  →   归档生成复盘�
 | 维度   | 搞钱模式                  | 生活模式                |
 | ---- | --------------------- | ------------------- |
 | 典型场景 | 外包接单、副业、投资            | 旅行、装修、约会            |
-| 核心问题 | 这个项目赚了多少、时薪多少         | 钱花得值不值、有没有超预算       |
-| 看板形态 | 经营看板（净利润 / ROI / 日均收益，记工时可选追加真实时薪） | 预算防线看板（剩余预算 / 日均消费） |
-| 时间记录 | **设置工作天数（零门槛）**；记工时为可选增强 | 仅记项目持续天数（参考用）         |
+| 核心问题 | 这个项目赚了多少              | 钱花得值不值、有没有超预算       |
+| 看板形态 | 经营看板（详见「经营看板PRD.md」） | 预算防线看板（剩余预算 / 日均消费） |
+| 时间记录 | 详见「经营看板PRD.md」         | 仅记项目持续天数（参考用）         |
 
 
 **模式选择逻辑：**
@@ -68,7 +69,8 @@ final class BudgetItem {
 }
 ```
 
-### 新增 `TimeEntry` 模型
+<!--
+### 新增 `TimeEntry` 模型（已迁移至「经营看板PRD.md」）
 
 ```swift
 @Model
@@ -86,6 +88,7 @@ final class TimeEntry {
 ```
 
 > **为什么支持工日？** 部分场景只能估算天数（如：陪跑这个项目花了我 5 天），无法精确到小时。工时和工日都折算成「时间成本 = duration × rate」，统一计算。
+-->
 
 ### `Project` 新增字段
 
@@ -99,8 +102,8 @@ var budgetCycleStartDate: Date? = nil
 var budgetCycleDays: Int = 30
 var budgetAlertThreshold: Double = 0       // 总预算预警线（Plus）
 
-// 搞钱模式专用
-var defaultRate: Double = 0                // 默认时薪（记工时时使用，可选功能）
+// 搞钱模式专用（详见「经营看板PRD.md」）
+var defaultRate: Double = 0                // 默认时薪
 var defaultRateGranularity: String = "hour" // "hour" | "day"
 var targetIncome: Double = 0               // 目标收入 / 合同金额
 var workingDays: Int = 0                   // 实际工作天数（0 = 自动用自然天数）
@@ -109,8 +112,9 @@ var workingDays: Int = 0                   // 实际工作天数（0 = 自动用
 @Relationship(deleteRule: .cascade, inverse: \BudgetItem.project)
 var budgetItems: [BudgetItem]?
 
-@Relationship(deleteRule: .cascade, inverse: \TimeEntry.project)
-var timeEntries: [TimeEntry]?
+// TimeEntry 关系已迁移至「经营看板PRD.md」
+// @Relationship(deleteRule: .cascade, inverse: \TimeEntry.project)
+// var timeEntries: [TimeEntry]?
 ```
 
 ### `Project` 新增计算属性
@@ -123,6 +127,23 @@ var budgetItemsAllocated: Double {
 var budgetUnallocated: Double { budget - budgetItemsAllocated }
 var currentCycleSpent: Double { /* 按 budgetCycle 过滤 transactions */ }
 
+// 生活模式
+var totalDays: Int {                    // 项目持续天数
+    guard let start = createdAt as Date?,
+          let txDates = transactions?.map({ $0.date }),
+          let lastDate = txDates.max() else { return 1 }
+    return max(1, Calendar.current.dateComponents([.day], from: start, to: lastDate).day ?? 1)
+}
+var dailyAvgSpend: Double {             // 日均花费
+    guard totalDays > 0 else { return 0 }
+    return totalSpent / Double(totalDays)
+}
+```
+
+<!--
+### 搞钱模式计算属性（已迁移至「经营看板PRD.md」）
+
+```swift
 // 搞钱模式·基础层（零门槛）
 var netProfit: Double { totalIncome - totalSpent }   // 纯财务 P&L（不含时间成本）
 var roi: Double {
@@ -151,19 +172,8 @@ var effectiveHourlyRate: Double {        // 真实时薪（仅有工时记录时
     guard totalHourEquivalent > 0 else { return 0 }
     return netProfit / totalHourEquivalent
 }
-
-// 生活模式
-var totalDays: Int {                    // 项目持续天数
-    guard let start = createdAt as Date?,
-          let txDates = transactions?.map({ $0.date }),
-          let lastDate = txDates.max() else { return 1 }
-    return max(1, Calendar.current.dateComponents([.day], from: start, to: lastDate).day ?? 1)
-}
-var dailyAvgSpend: Double {             // 日均花费
-    guard totalDays > 0 else { return 0 }
-    return totalSpent / Double(totalDays)
-}
 ```
+-->
 
 ---
 
@@ -309,153 +319,11 @@ var dailyAvgSpend: Double {             // 日均花费
 
 ---
 
-## 四、功能二：项目经营看板（搞钱模式）
+## 四、功能二：经营看板（搞钱模式）
 
-> 版本：V3.1（2026-07-04）已根据用户反馈调整，将强制记工时改为「**日均体系（零门槛）+ 记工时可选增强**」分层设计。
-
-### 4.1 功能定位
-
-适用于外包接单、副业、投资类项目。核心价值：**最低门槛算清「这个项目赚了多少、日均值多少」。** 对有需要的用户提供「记工时→获取真实时薪」的进阶功能。
-
-### 4.2 设计思路转变（重点）
-
-**旧方案痛点：**
-- 强制记录工时，用户即使只做了几笔账也必须先记工时才能看时薪
-- 并非所有接单场景都能细分到小时，很多人只知道「这件事花了几天」
-- 强制记工时带来虚假数据：用户随意填写，结果反而不准
-
-**新分层设计：**
-
-| 层次 | 是否必须 | 指标 | 数据来源 |
-|------|---------|------|---------|
-| **基础层（零门槛）** | ✅ | 净利润、ROI、日均收益、日均成本 | `transactions` + `workingDays` |
-| **可选增强层** | ❌ | 真实时薪（精确到小时） | `timeEntries`（用户主动记录） |
-
-**核心逻辑：**
-- `workingDays`（实际工作天数）：用户可一次性在看板内设置，也可不设（默认用项目自然天数）
-- `netProfit = totalIncome - totalSpent`（不再将时间成本算入成本，避免需要强制记工时）
-- 只有当用户主动记录工时后，才在看板中展示「真实时薪」板块
-
-### 4.3 数据模型新增字段
-
-```swift
-// Project 新增
-var workingDays: Int = 0    // 实际工作天数（0 = 自动用自然天数）
-
-// 新增计算属性
-var effectiveWorkingDays: Int {
-    if workingDays > 0 { return workingDays }
-    let days = Calendar.current.dateComponents([.day], from: createdAt, to: Date()).day ?? 0
-    return max(1, days)
-}
-var netProfit: Double { totalIncome - totalSpent }   // 纯财务 P&L
-var roi: Double { (netProfit / totalSpent) * 100 }   // 资金回报率
-var dailyCost: Double { totalSpent / Double(effectiveWorkingDays) }
-var dailyProfit: Double { netProfit / Double(effectiveWorkingDays) }
-
-// 可选增强（需有 TimeEntry 记录）
-var hasTimeEntries: Bool { !(timeEntries ?? []).isEmpty }
-var effectiveHourlyRate: Double { netProfit / totalHourEquivalent }
-```
-
-### 4.4 经营看板 UI（`ProjectEarningView`，已实现）
-
-```
-┌──────────────────────────────────────────────┐
-│  💼 经营看板  ·  品牌设计外包                │
-├──────────────────────────────────────────────┤
-│  ① 核心指标（净利润为主角，最大字号）        │
-│                                              │
-│         ¥5,300                               │
-│         净利润                               │
-│                                              │
-│  目标 ¥8,000  ██████████░░░░░  66%          │
-│                                              │
-│  ROI  166%  │  日均收益  ¥176/天            │
-├──────────────────────────────────────────────┤
-│  ② 收支总览                                  │
-│  ┌──────────┬──────────┬──────────┐          │
-│  │ 总收入    │ 总支出    │ 净利润   │          │
-│  │ ¥8,500   │ ¥3,200   │ ¥5,300  │          │
-│  └──────────┴──────────┴──────────┘          │
-├──────────────────────────────────────────────┤
-│  ③ 工作周期（核心 · 零门槛）                  │
-│                                              │
-│  实际工作天数   [30天]  [修改]               │
-│                                              │
-│  自然天数 35天  │  计算天数 30天  │  日均成本 ¥107│
-│                                              │
-│  支出走势（近 7 天折线）                     │
-│                                              │
-│  ┌ 可选：记录工时获取真实时薪 →              │  ← 仅无工时时显示
-│  └ 记工时 clock                              │
-├──────────────────────────────────────────────┤
-│  ④ 支出结构  [甜甜圈图]                      │
-│  💻 软件工具  ¥800    25%                   │
-│  ✈️ 差旅      ¥1,200  38%                   │
-│  ...（按分类汇总，不含时间成本）             │
-├──────────────────────────────────────────────┤
-│  ⑤ 真实时薪（仅当有工时记录时出现）         │  ← 条件展示
-│                                              │
-│  ¥87.5/h  │  累计 40.5h  │  vs 目标 -¥12.5 │
-│  近期工时记录列表...                         │
-├──────────────────────────────────────────────┤
-│  趋势月环比  [Plus 遮罩]                     │
-├──────────────────────────────────────────────┤
-│  ✨ AI 洞察  [Plus 遮罩]                     │
-└──────────────────────────────────────────────┘
-```
-
-**设计亮点：**
-- 「工作天数」可在看板内一键修改，无需进入设置页
-- 无工时记录时，「记工时」以引导卡（非 FAB）形式出现在工作周期卡底部，降低进入门槛
-- 有工时记录后，「真实时薪」板块自动出现，无需用户手动开关
-- FAB 按钮改为更轻量的胶囊按钮（描边样式），强调「可选」属性
-
-### 4.5 记工时入口（可选增强）
-
-右下角胶囊按钮 + 工作周期卡引导，点击弹出 Sheet：
-
-```
-┌──────────────────────────────────────────────┐
-│  记工时                                      │
-│                                              │
-│  记录方式：  ● 按小时   ○ 按天              │
-│                                              │
-│  工时   [  2.5  ] 小时                       │
-│  时薪   [¥100/h]（默认，可修改）             │
-│  任务   [完成原型图第二版]                   │
-│  日期   [今天 ▾]                             │
-│                                              │
-│  时间成本预览  ¥250                          │
-│  [保存]                                      │
-└──────────────────────────────────────────────┘
-```
-
-**自然语言记工时（复用 AI 记账通道）：**
-在 AI 对话中直接说：「今天为品牌外包改图3小时，还打车花了25块」
-AI 拆解为：
-
-- `TimeEntry`：3h × ¥100 = ¥300 时间成本
-- `Transaction`：¥25 差旅支出
-
-### 4.6 AI 洞察 Prompt（搞钱模式）
-
-```
-你是项目财务顾问，分析以下接单项目数据，给出 2-3 条简洁洞察。
-
-项目：{name}
-总收入：¥{totalIncome}（目标：¥{targetIncome}）
-总支出：¥{totalSpent}（细目：{categorizedSpend}）
-净利润：¥{netProfit}，ROI {roi}%
-工作天数：{effectiveWorkingDays}天，日均收益 ¥{dailyProfit}/天
-{if hasTimeEntries}真实时薪：¥{effectiveHourlyRate}/h（目标：¥{defaultRate}/h，累计 {totalHours}h）{endif}
-
-请用中文给出洞察，语气鼓励，不用嘲讽，格式：
-- 关键发现（一句话）
-- 原因分析（一句话）
-- 下次建议（一句话）
-```
+> ⚠️ **已独立为「经营看板PRD.md」**
+>
+> 经营看板已重新设计为四维度分析（现金流/收入/成本/利润），详见独立文档。
 
 ---
 
@@ -527,7 +395,8 @@ AI 拆解为：
 
 ### 6.2 复盘报告内容
 
-**搞钱模式复盘（`ProjectEarningReview`）：**
+<!--
+**搞钱模式复盘（`ProjectEarningReview`）（已迁移至「经营看板PRD.md」）：**
 
 ```
 《品牌设计外包 · 经营复盘》
@@ -554,6 +423,7 @@ AI 拆解为：
   推荐预算：¥9,000（本次实际成本 × 1.05 缓冲）
   推荐报价：¥13,800（维持 60% 利润率）
 ```
+-->
 
 **生活模式复盘（`ProjectLifestyleReview`）：**
 
@@ -657,7 +527,8 @@ AI 拆解为：
 
 作为全功能看板的「入口钩子」，展示 2-3 个核心数字，点击整张卡片 `NavigationLink push` 到独立页面。
 
-**搞钱模式（`ProjectEarningView`）- 已有时间记录时：**
+<!--
+**搞钱模式（`ProjectEarningView`）- 已有时间记录时（已迁移至「经营看板PRD.md」）：**
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -682,6 +553,7 @@ AI 拆解为：
 │  [解锁经营看板]                              │
 └──────────────────────────────────────────────┘
 ```
+-->
 
 **生活模式（`ProjectLifestyleView`）- 免费用户基础版：**
 
@@ -748,22 +620,9 @@ Button { showArchiveAndReview = true } label: {
 
 ---
 
-### 8.2 经营看板（搞钱模式）→ 入口卡锁定 + 功能说明，点击触发付费墙
+### 8.2 经营看板（搞钱模式）
 
-经营看板需要用户先录入工时和收入才有真实数据，对免费用户没有任何真实内容可以遮罩。展示功能说明型卡片，整张卡点击跳转 `PaywallView`。
-
-```
-┌──────────────────────────────────────────────┐
-│  💼 经营看板                        Plus 🔒  │
-│                                              │
-│  追踪工时与真实时薪，看清这个项目             │
-│  到底值不值得做。                             │
-│                                              │
-│  真实时薪 · 净利润 · ROI · 趋势月环比         │
-│                                              │
-│  [解锁经营看板]                              │
-└──────────────────────────────────────────────┘
-```
+> ⚠️ **已迁移至「经营看板PRD.md」**
 
 ---
 
@@ -823,11 +682,9 @@ Button { showArchiveAndReview = true } label: {
 | AI 一键生成预算 | ❌（按钮锁定，点击触发付费墙） | ✅ |
 | 预算进度查看 | ✅ | ✅ |
 | 预算预警通知 + IP 情绪联动 | ❌ | ✅ |
-| 经营看板（搞钱模式） | ❌（入口卡锁定 + 功能说明） | ✅ |
+| 经营看板（搞钱模式） | 详见「经营看板PRD.md」 | 详见「经营看板PRD.md」 |
 | 预算防线看板基础版（生活模式） | ✅（总进度 + 分类占比） | ✅ |
 | 预算防线看板完整版（日均/大件分析/IP点评） | ❌（高级区块遮罩） | ✅ |
-| 记工时功能 | ❌ | ✅ |
-| 趋势月环比对比 | ❌ | ✅ |
 | 项目复盘基础数字（收支汇总） | ✅ | ✅ |
 | 复盘 AI 总结 + 下次预算建议 | ❌（内容遮罩） | ✅ |
 | 复盘导出精美长图 | ❌（按钮锁定） | ✅ |
@@ -850,12 +707,7 @@ Button { showArchiveAndReview = true } label: {
 
 ### 场景 B：外包项目（搞钱模式）
 
-1. 新建项目「品牌设计外包」，AI 建议「搞钱模式」→ 确认
-2. 设置默认时薪 ¥100/h，合同金额 ¥15,000
-3. 每次干完活，AI 对话：「今天改稿3小时，打车25块」→ 自动拆解记录
-4. 收款时记一笔收入 ¥6,000
-5. 进「经营看板」：真实时薪 ¥87.5/h，低于目标 ⚠️
-6. 项目完工，归档 → 复盘报告 + AI 建议「下次报价提高 15%」
+> ⚠️ **详见「经营看板PRD.md」**
 
 ---
 
@@ -864,7 +716,6 @@ Button { showArchiveAndReview = true } label: {
 ```
 Phase 1：基础模型层（无 UI）
 ├── 新增 BudgetItem @Model
-├── 新增 TimeEntry @Model
 ├── Project 新增字段（SwiftData Migration V6）
 ├── AppStore CRUD 方法扩展
 └── 计算属性实现
@@ -876,23 +727,20 @@ Phase 2：预算规划功能
 ├── 预算周期刷新逻辑
 └── 预算预警 + IP 情绪联动 + 本地通知（Plus）
 
-Phase 3：经营 / 防线看板
-├── ProjectEarningView（搞钱模式看板）
+Phase 3：防线看板（生活模式）
 ├── ProjectLifestyleView（生活模式看板）
-├── TimeEntrySheet + 工时列表
-├── 趋势月环比计算
-└── LLMService.generateEarningInsight()
+└── LLMService.generateLifestyleInsight()
 
 Phase 4：项目复盘
-├── ProjectReviewView（通用复盘报告）
+├── ProjectReviewView（生活模式复盘报告）
 ├── 归档流程改版（复盘 Sheet 拦截）
 ├── LLMService.generateProjectReview()
 └── ImageRenderer 导出精美长图（Plus）
 ```
 
+> ⚠️ **经营看板开发规划详见「经营看板PRD.md」**
+
 **关键技术注意事项：**
 
-- SwiftData + CloudKit Migration V6 需要谨慎处理 `BudgetItem` 和 `TimeEntry` 的 `deleteRule: .cascade` 方向
-- AI 预算生成、洞察、复盘均用**独立方法**，不污染现有记账解析管道（`parseTransaction` 不变）
-- `TimeEntry` 的工时/工日两种粒度在计算时统一折算为小时当量，避免混乱
-
+- SwiftData + CloudKit Migration V6 需要谨慎处理 `BudgetItem` 的 `deleteRule: .cascade` 方向
+- AI 预算生成、复盘均用**独立方法**，不污染现有记账解析管道（`parseTransaction` 不变）
