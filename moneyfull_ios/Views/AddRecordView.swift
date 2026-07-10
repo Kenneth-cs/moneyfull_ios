@@ -5,6 +5,12 @@ struct AddRecordView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var store: AppStore
     
+    // 预填参数
+    var project: Project? = nil
+    var prefilledAmount: String = ""
+    var prefilledNote: String = ""
+    var prefilledType: TransactionType? = nil
+    
     @State private var type: TransactionType = .expense
     @State private var amount: String = ""
     @State private var selectedCategory: Category? = nil
@@ -17,6 +23,10 @@ struct AddRecordView: View {
     @State private var showKeypad = true  // 控制数字键盘显示/收起
     @State private var selectedCategoryTab = "常用"  // 当前选中的分类 Tab
     @FocusState private var isNoteFocused: Bool
+    
+    // V7 新增：现金流类型覆盖
+    @State private var showMoreOptions = false
+    @State private var cashFlowType: String = "operating" // "operating" | "personal"
     
     // 触觉反馈生成器
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -148,6 +158,12 @@ struct AddRecordView: View {
                                     Button(action: {
                                         impactFeedback.impactOccurred()
                                         selectedProject = project
+                                        // 切换到搞钱模式项目时自动展开更多选项
+                                        if type == .expense && project.projectMode == "earning" {
+                                            showMoreOptions = true
+                                        } else {
+                                            showMoreOptions = false
+                                        }
                                     }) {
                                         HStack(spacing: 8) {
                                             Image(systemName: project.icon)
@@ -200,7 +216,52 @@ struct AddRecordView: View {
                     .background(Color.App.tabBackground)
                     .clipShape(Capsule())
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 8)
+                    
+                    // MARK: 更多选项（仅在搞钱模式项目下的支出录入中出现）
+                    if type == .expense && selectedProject?.projectMode == "earning" {
+                        VStack(spacing: 12) {
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showMoreOptions.toggle()
+                                }
+                            }) {
+                                HStack {
+                                    Text("更多选项")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.gray)
+                                    Spacer()
+                                    Image(systemName: showMoreOptions ? "chevron.up" : "chevron.down")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                }
+                                .padding(.horizontal, 24)
+                            }
+                            
+                            if showMoreOptions {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("成本性质")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.gray)
+                                    
+                                    HStack(spacing: 12) {
+                                        cashFlowTypeButton(label: "经营支出", type: "operating")
+                                        cashFlowTypeButton(label: "个人支出", type: "personal")
+                                    }
+                                    
+                                    Text("💡 已根据分类自动判断，通常无需修改")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.gray.opacity(0.7))
+                                }
+                                .padding(16)
+                                .background(Color.App.tabBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .padding(.horizontal, 24)
+                            }
+                        }
+                        .padding(.bottom, 8)
+                    } else {
+                        Spacer().frame(height: 8)
+                    }
                 }
             }
             .contentShape(Rectangle())
@@ -297,11 +358,29 @@ struct AddRecordView: View {
             }
         }
         .onAppear {
-            if selectedProject == nil {
+            // 使用预填参数
+            if let project = project {
+                selectedProject = project
+            } else if selectedProject == nil {
                 selectedProject = store.activeProjects.first
+            }
+            if !prefilledAmount.isEmpty {
+                amount = prefilledAmount
+            }
+            if !prefilledNote.isEmpty {
+                note = prefilledNote
+            }
+            if let prefilledType = prefilledType {
+                type = prefilledType
             }
             if selectedCategory == nil {
                 selectedCategory = store.categories.first
+            }
+        }
+        .onChange(of: selectedCategory) { _, newCat in
+            // 分类切换时自动更新现金流类型
+            if let cat = newCat, type == .expense && selectedProject?.projectMode == "earning" {
+                cashFlowType = cat.isDirectCost ? "operating" : "personal"
             }
         }
         .onChange(of: isNoteFocused) { _, newValue in
@@ -318,6 +397,10 @@ struct AddRecordView: View {
         Button(action: {
             impactFeedback.impactOccurred()
             type = t
+            // 切换到收入时隐藏更多选项
+            if t == .income { showMoreOptions = false }
+            // 切换到支出且是搞钱模式时自动展开
+            if t == .expense && selectedProject?.projectMode == "earning" { showMoreOptions = true }
         }) {
             Text(label)
                 .font(.system(size: 14, weight: .bold))
@@ -327,6 +410,27 @@ struct AddRecordView: View {
                 .background(type == t ? Color.App.cardBackground : Color.clear)
                 .clipShape(Capsule())
                 .shadow(color: type == t ? Color.black.opacity(0.05) : Color.clear, radius: 2, x: 0, y: 1)
+        }
+    }
+    
+    // MARK: - 现金流类型切换按钮
+    @ViewBuilder
+    private func cashFlowTypeButton(label: String, type: String) -> some View {
+        Button(action: {
+            impactFeedback.impactOccurred()
+            cashFlowType = type
+        }) {
+            Text(label)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(cashFlowType == type ? Color.App.darkGreen : Color.gray)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(cashFlowType == type ? Color.App.primaryGreen.opacity(0.3) : Color.clear)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(cashFlowType == type ? Color.App.darkGreen : Color.clear, lineWidth: 1)
+                )
         }
     }
     
@@ -359,6 +463,19 @@ struct AddRecordView: View {
             return
         }
         
+        // 根据分类自动判断现金流类型（如果用户没有手动覆盖）
+        let finalCashFlowType: String
+        if type == .expense && project.projectMode == "earning" {
+            // 如果用户没有展开更多选项，则根据分类自动判断
+            if !showMoreOptions {
+                finalCashFlowType = category.isDirectCost ? "operating" : "personal"
+            } else {
+                finalCashFlowType = cashFlowType
+            }
+        } else {
+            finalCashFlowType = "operating" // 非搞钱模式或收入默认为经营
+        }
+        
         store.addTransaction(
             to: project,
             amount: amountValue,
@@ -367,7 +484,8 @@ struct AddRecordView: View {
             categoryIcon: category.icon,
             categoryColorHex: category.colorHex,
             note: note,
-            date: date
+            date: date,
+            cashFlowType: finalCashFlowType
         )
         
         // 保存记忆规则

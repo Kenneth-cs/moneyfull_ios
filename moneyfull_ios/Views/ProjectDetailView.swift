@@ -345,62 +345,7 @@ struct ProjectDetailView: View {
                             StatCard(title: "净收益", value: netIncome, color: netIncome >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                         }
                         
-                        // 预算进度条（同色系渐变）
-                        if project.budget > 0 {
-                            let progress = min(_budgetProgress, 1.0)
-                            let pctColor: Color = _budgetProgress >= 1.0 ? Color.App.redExpense :
-                                _budgetProgress >= 0.8 ? Color(hex: "#FFA500") : accentColor
-                            
-                            VStack(spacing: 8) {
-                                HStack {
-                                    Text("预算进度")
-                                        .font(.system(size: 13, weight: .bold)).foregroundColor(.gray)
-                                    Spacer()
-                                    Text("\(Int(_budgetProgress * 100))%")
-                                        .font(.system(size: 13, weight: .bold)).foregroundColor(pctColor)
-                                }
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.App.progressTrack)
-                                    Capsule()
-                                        .fill(LinearGradient(
-                                            colors: [Color(hex: colorPair.start), Color(hex: colorPair.end)],
-                                            startPoint: .leading, endPoint: .trailing
-                                        ))
-                                        .frame(maxWidth: .infinity)
-                                        .scaleEffect(x: max(0.001, CGFloat(progress)), y: 1, anchor: .leading)
-                                }
-                                .frame(height: 10)
-                                HStack {
-                                    Text("已用 ¥\(_totalSpent.formatted(.number.precision(.fractionLength(0))))")
-                                    Spacer()
-                                    Text("预算 ¥\(project.budget.formatted(.number.precision(.fractionLength(0))))")
-                                }
-                                .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
-                                
-                                // 预算超80%预警提示
-                                if _budgetProgress >= 0.8 && !storeManager.isPremium {
-                                    Button(action: { showUpgradeAlert = true }) {
-                                        HStack(spacing: 8) {
-                                            Image(systemName: "exclamationmark.triangle.fill")
-                                                .foregroundColor(Color(hex: "#FFA500"))
-                                            Text("预算即将超标，升级专业版解锁动态趋势预测")
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(Color.App.textBlack)
-                                            Spacer()
-                                            Image(systemName: "chevron.right")
-                                                .font(.system(size: 12, weight: .bold))
-                                                .foregroundColor(.gray)
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 10)
-                                        .background(Color(hex: "#FFA500").opacity(0.1))
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.top, 8)
-                                }
-                            }
-                        }
+
                     }
                     .padding(24)
                     .background(Color.App.cardBackground)
@@ -408,7 +353,10 @@ struct ProjectDetailView: View {
                     .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
                     .padding(.horizontal, 24)
 
-                    // MARK: ② 预算分类卡片（新增）
+                    // MARK: ⑤ 看板入口卡片
+                    dashboardEntryCard
+
+                    // MARK: ② 预算分类卡片
                     budgetCategoryCard
 
                     // MARK: 项目内分类占比
@@ -416,9 +364,6 @@ struct ProjectDetailView: View {
 
                     // MARK: 项目收支趋势
                     projectTrendCard
-
-                    // MARK: ⑤ 看板入口卡片（新增）
-                    dashboardEntryCard
 
                     // MARK: 账单时间轴
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -749,7 +694,11 @@ extension ProjectDetailView {
         Group {
             if storeManager.isPremium {
                 // Plus：显示核心指标预览，点击进全页
-                Button { showEarningDashboard = true } label: {
+                NavigationLink {
+                    ProjectDashboardView(project: project)
+                        .environmentObject(store)
+                        .environmentObject(storeManager)
+                } label: {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             HStack(spacing: 6) {
@@ -765,33 +714,33 @@ extension ProjectDetailView {
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundColor(.gray)
                         }
+                        
+                        // 4个主指标
                         HStack(spacing: 0) {
-                            earningMetricCell(title: "净利润",
-                                            value: "¥\(Int(project.netProfit))",
-                                            color: project.netProfit >= 0 ? Color.App.darkGreen : Color.App.redExpense)
+                            earningMetricCell(title: "可用资金",
+                                            value: "¥\(Int(project.availableCash))",
+                                            color: project.availableCash >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                             Divider().frame(height: 36)
-                            earningMetricCell(title: "日均收益",
-                                            value: "¥\(Int(project.dailyProfit))/天",
-                                            color: accentColor)
+                            earningMetricCell(title: "本月净现金流",
+                                            value: "¥\(Int(project.monthlyNetCashFlow))",
+                                            color: project.monthlyNetCashFlow >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                             Divider().frame(height: 36)
-                            earningMetricCell(title: "ROI",
-                                            value: "\(project.roi.formatted(.number.precision(.fractionLength(1))))%",
-                                            color: accentColor)
+                            earningMetricCell(title: "毛利率",
+                                            value: "\(Int(project.grossMargin * 100))%",
+                                            color: project.grossMargin >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                         }
-                        HStack(spacing: 8) {
-                            Text("已进行 \(project.effectiveWorkingDays) 天")
-                                .font(.system(size: 12)).foregroundColor(.gray)
-                            Text("|").foregroundColor(.gray)
-                            Text("目标进度")
-                                .font(.system(size: 12, weight: .bold))
+                        
+                        // 2个辅助小字
+                        HStack(spacing: 16) {
+                            Text("可支配收入: ¥\(Int(project.disposableIncome))")
+                                .font(.system(size: 12))
                                 .foregroundColor(.gray)
-                            let targetProg = project.targetIncome > 0 ? min(project.totalIncome / project.targetIncome, 1.0) : 0
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.App.progressTrack).frame(height: 5)
-                                Capsule().fill(accentColor).frame(width: 120 * CGFloat(targetProg), height: 5)
+                            
+                            if project.totalReceivable > 0 {
+                                Text("待回款: ¥\(Int(project.totalReceivable))")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.orange)
                             }
-                            .frame(maxWidth: 120)
-                            Text("\(Int(targetProg * 100))%").font(.system(size: 12, weight: .bold)).foregroundColor(accentColor)
                         }
                     }
                     .padding(24)
@@ -805,8 +754,8 @@ extension ProjectDetailView {
                 PlusLockedEntryCard(
                     icon: "briefcase.fill",
                     title: "经营看板",
-                    description: "追踪工时与真实时薪，看清这个项目到底值不值得做。",
-                    features: ["真实时薪 · 净利润 · ROI", "工时折线图 · 成本结构", "趋势月环比 · AI 洞察"],
+                    description: "四维度经营分析，看清这个项目到底赚没赚、剩多少。",
+                    features: ["现金流 · 收入确认 · 成本拆分", "利润瀑布 · 毛利率 · 可支配收入", "应收账款 · 固定成本 · 趋势图表"],
                     onUnlock: { showPaywall = true }
                 )
             }

@@ -20,8 +20,12 @@ final class Category {
     var useCount: Int = 0 // 使用次数（用于常用列表）
     var lastUsedAt: Date? = nil // 最后使用时间
     
+    // V7 新增字段：是否为直接成本（用于经营看板成本分类）
+    var isDirectCost: Bool = true // true = 直接成本，false = 个人生活成本
+    
     init(name: String, icon: String, colorHex: String, isGlobal: Bool = true,
-         transactionType: String = "both", projectID: UUID? = nil, groupName: String = "", incomeGroupName: String = "") {
+         transactionType: String = "both", projectID: UUID? = nil, groupName: String = "", incomeGroupName: String = "",
+         isDirectCost: Bool = true) {
         self.id = UUID()
         self.name = name
         self.icon = icon
@@ -32,6 +36,7 @@ final class Category {
         self.groupName = groupName
         self.incomeGroupName = incomeGroupName
         self.createdAt = Date()
+        self.isDirectCost = isDirectCost
     }
 }
 
@@ -71,6 +76,15 @@ final class Project {
 
     @Relationship(deleteRule: .cascade, inverse: \TimeEntry.project)
     var timeEntries: [TimeEntry]?
+    
+    // V7 新增字段（经营看板完整版）
+    var taxRate: Double = 0                     // 税率（如 0.2 表示 20%）
+    
+    @Relationship(deleteRule: .cascade, inverse: \Receivable.project)
+    var receivables: [Receivable]?
+    
+    @Relationship(deleteRule: .cascade, inverse: \FixedCost.project)
+    var fixedCosts: [FixedCost]?
     
     init(name: String, icon: String = "folder.fill", colorHex: String = "#A8E6CF",
          desc: String = "", budget: Double = 0, isPinned: Bool = false, isActiveProject: Bool = false,
@@ -220,6 +234,159 @@ final class Project {
         guard totalDays > 0 else { return 0 }
         return totalSpent / Double(totalDays)
     }
+    
+    // MARK: - 经营看板计算属性（V7）
+    
+    // ============ 现金流维度 ============
+    
+    /// 累计可用资金 = 累计收入 - 累计支出
+    var availableCash: Double {
+        totalIncome - totalSpent
+    }
+    
+    /// 本月净现金流 = 当月收入 - 当月支出
+    var monthlyNetCashFlow: Double {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
+        let monthTransactions = (transactions ?? []).filter { $0.date >= startOfMonth }
+        let monthIncome = monthTransactions.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
+        let monthExpense = monthTransactions.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+        return monthIncome - monthExpense
+    }
+    
+    /// 经营现金流（本月经营支出）
+    var operatingCashFlow: Double {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
+        return (transactions ?? [])
+            .filter { $0.date >= startOfMonth && $0.type == .expense && $0.cashFlowType == "operating" }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+    
+    /// 个人现金流（本月个人支出）
+    var personalCashFlow: Double {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
+        return (transactions ?? [])
+            .filter { $0.date >= startOfMonth && $0.type == .expense && $0.cashFlowType == "personal" }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+    
+    /// 未来30天刚性支出（固定成本）
+    var upcomingFixedCosts: Double {
+        let now = Date()
+        let thirtyDaysLater = Calendar.current.date(byAdding: .day, value: 30, to: now) ?? now
+        return (fixedCosts ?? [])
+            .filter { $0.isActive }
+            .filter { cost in
+                guard let dueDate = cost.nextDueDate else { return false }
+                return dueDate >= now && dueDate <= thirtyDaysLater
+            }
+            .reduce(0) { $0 + $1.monthlyAmount }
+    }
+    
+    // ============ 收入维度 ============
+    
+    /// 待回款总额
+    var totalReceivable: Double {
+        (receivables ?? []).filter { $0.status == .pending }.reduce(0) { $0 + $1.amount }
+    }
+    
+    /// 逾期未回款金额
+    var overdueReceivable: Double {
+        (receivables ?? []).filter { $0.isOverdue }.reduce(0) { $0 + $1.amount }
+    }
+    
+    /// 逾期比例
+    var overdueRatio: Double {
+        guard totalReceivable > 0 else { return 0 }
+        return overdueReceivable / totalReceivable
+    }
+    
+    /// 按业务线（分类）聚合收入占比
+    var incomeByCategory: [(categoryName: String, amount: Double, percentage: Double)] {
+        let incomeTransactions = (transactions ?? []).filter { $0.type == .income }
+        let totalIncomeAmount = incomeTransactions.reduce(0) { $0 + abs($1.amount) }
+        guard totalIncomeAmount > 0 else { return [] }
+        
+        var categoryMap: [String: Double] = [:]
+        for t in incomeTransactions {
+            categoryMap[t.categoryName, default: 0] += abs(t.amount)
+        }
+        
+        return categoryMap.map { key, value in
+            (categoryName: key, amount: value, percentage: value / totalIncomeAmount)
+        }.sorted { $0.amount > $1.amount }
+    }
+    
+    // ============ 成本维度 ============
+    
+    /// 直接成本（本月，按分类的 isDirectCost 判断）
+    var directCost: Double {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
+        // 暂时按现金流量类型为经营支出来近似直接成本
+        return (transactions ?? [])
+            .filter { $0.date >= startOfMonth && $0.type == .expense && $0.cashFlowType == "operating" }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+    
+    /// 固定经营成本（月度，按频率折算）
+    var fixedCostMonthly: Double {
+        (fixedCosts ?? []).filter { $0.isActive }.reduce(0) { $0 + $1.monthlyAmount }
+    }
+    
+    /// 个人生活成本（本月）
+    var personalCost: Double {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
+        return (transactions ?? [])
+            .filter { $0.date >= startOfMonth && $0.type == .expense && $0.cashFlowType == "personal" }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+    
+    // ============ 利润维度 ============
+    
+    /// 本月已到账收入
+    var monthlyIncome: Double {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
+        return (transactions ?? [])
+            .filter { $0.date >= startOfMonth && $0.type == .income }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+    
+    /// 毛利 = 已到账收入 - 直接成本
+    var grossProfit: Double {
+        monthlyIncome - directCost
+    }
+    
+    /// 毛利率
+    var grossMargin: Double {
+        guard monthlyIncome > 0 else { return 0 }
+        return grossProfit / monthlyIncome
+    }
+    
+    /// 经营净利润 = 毛利 - 固定经营成本
+    var operatingNetProfit: Double {
+        grossProfit - fixedCostMonthly
+    }
+    
+    /// 税费预留
+    var taxReserve: Double {
+        operatingNetProfit * taxRate
+    }
+    
+    /// 可支配收入 = 经营净利润 - 个人生活成本 - 税费预留
+    var disposableIncome: Double {
+        operatingNetProfit - personalCost - taxReserve
+    }
 }
 
 /// 交易类型枚举
@@ -251,6 +418,9 @@ final class Transaction {
     var createdAt: Date = Date()
     var importBatchID: UUID? = nil // 导入批次标识，用于撤销整批导入
     
+    // V7 新增字段：现金流类型（经营支出/个人支出）
+    var cashFlowType: String = "operating" // "operating" | "personal"
+    
     var project: Project? = nil
     
     // 提供一个计算属性方便业务层使用枚举
@@ -269,7 +439,8 @@ final class Transaction {
     
     init(amount: Double, type: TransactionType, categoryName: String,
          categoryIcon: String, categoryColorHex: String,
-         note: String = "", date: Date = Date(), source: TransactionSource = .manual) {
+         note: String = "", date: Date = Date(), source: TransactionSource = .manual,
+         cashFlowType: String = "operating") {
         self.id = UUID()
         self.amount = amount
         self.rawType = type.rawValue
@@ -280,6 +451,7 @@ final class Transaction {
         self.note = note
         self.date = date
         self.createdAt = Date()
+        self.cashFlowType = cashFlowType
     }
 }
 
@@ -290,12 +462,14 @@ final class ChatHistory {
     var role: String = "user" // "user" 或 "assistant"
     var content: String = ""
     var timestamp: Date = Date()
+    var isPrescripted: Bool = false // true = 预制消息，不进入 API 上下文
     
-    init(role: String, content: String) {
+    init(role: String, content: String, isPrescripted: Bool = false) {
         self.id = UUID()
         self.role = role
         self.content = content
         self.timestamp = Date()
+        self.isPrescripted = isPrescripted
     }
 }
 
@@ -444,5 +618,104 @@ final class RecurringBill {
         case .yearly:
             return calendar.date(byAdding: .year, value: 1, to: nextDueDate) ?? nextDueDate
         }
+    }
+}
+
+/// 应收账款状态枚举
+enum ReceivableStatus: String, Codable {
+    case pending = "pending"     // 待回款
+    case overdue = "overdue"     // 逾期
+    case received = "received"   // 已到账
+}
+
+/// 应收账款模型
+@Model
+final class Receivable {
+    var id: UUID = UUID()
+    var clientName: String = ""
+    var projectName: String = ""
+    var amount: Double = 0
+    var expectedDate: Date? = nil
+    var rawStatus: String = ReceivableStatus.pending.rawValue
+    var receivedDate: Date? = nil
+    var note: String = ""
+    var createdAt: Date = Date()
+    
+    var project: Project? = nil
+    
+    @Transient
+    var status: ReceivableStatus {
+        get { ReceivableStatus(rawValue: rawStatus) ?? .pending }
+        set { rawStatus = newValue.rawValue }
+    }
+    
+    /// 是否逾期（系统自动判断）
+    var isOverdue: Bool {
+        guard let expected = expectedDate else { return false }
+        return expected < Date() && status == .pending
+    }
+    
+    init(clientName: String, projectName: String, amount: Double,
+         expectedDate: Date? = nil, note: String = "") {
+        self.id = UUID()
+        self.clientName = clientName
+        self.projectName = projectName
+        self.amount = amount
+        self.expectedDate = expectedDate
+        self.rawStatus = ReceivableStatus.pending.rawValue
+        self.note = note
+        self.createdAt = Date()
+    }
+}
+
+/// 固定成本频率枚举
+enum FixedCostFrequency: String, Codable {
+    case monthly = "monthly"
+    case quarterly = "quarterly"
+    case yearly = "yearly"
+}
+
+/// 固定成本模型
+@Model
+final class FixedCost {
+    var id: UUID = UUID()
+    var name: String = ""
+    var amount: Double = 0
+    var rawFrequency: String = FixedCostFrequency.monthly.rawValue
+    var category: String = ""
+    var nextDueDate: Date? = nil
+    var isActive: Bool = true
+    var createdAt: Date = Date()
+    
+    var project: Project? = nil
+    
+    @Transient
+    var frequency: FixedCostFrequency {
+        get { FixedCostFrequency(rawValue: rawFrequency) ?? .monthly }
+        set { rawFrequency = newValue.rawValue }
+    }
+    
+    /// 月度成本（按频率折算）
+    var monthlyAmount: Double {
+        switch frequency {
+        case .monthly:
+            return amount
+        case .quarterly:
+            return amount / 3.0
+        case .yearly:
+            return amount / 12.0
+        }
+    }
+    
+    init(name: String, amount: Double, frequency: FixedCostFrequency = .monthly,
+         category: String = "", nextDueDate: Date? = nil) {
+        self.id = UUID()
+        self.name = name
+        self.amount = amount
+        self.rawFrequency = frequency.rawValue
+        self.category = category
+        self.nextDueDate = nextDueDate
+        self.isActive = true
+        self.createdAt = Date()
     }
 }

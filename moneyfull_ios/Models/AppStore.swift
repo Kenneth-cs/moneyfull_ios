@@ -50,6 +50,7 @@ class AppStore: ObservableObject {
         migrateV5Categories()
         migrateDailyProjectUnpin()
         migrateV6ProjectMode()
+        migrateV7CostCategory()
         
         refresh()
         startObservingDataChanges()
@@ -245,10 +246,11 @@ class AppStore: ObservableObject {
     @discardableResult
     func addTransaction(to project: Project, amount: Double, type: TransactionType,
                         categoryName: String, categoryIcon: String, categoryColorHex: String,
-                        note: String = "", date: Date = Date()) -> Transaction {
+                        note: String = "", date: Date = Date(),
+                        cashFlowType: String = "operating") -> Transaction {
         let tx = Transaction(amount: amount, type: type, categoryName: categoryName,
                              categoryIcon: categoryIcon, categoryColorHex: categoryColorHex,
-                             note: note, date: date)
+                             note: note, date: date, cashFlowType: cashFlowType)
         tx.project = project
         project.transactions = (project.transactions ?? []) + [tx]
         modelContext.insert(tx)
@@ -278,7 +280,8 @@ class AppStore: ObservableObject {
     /// 更新交易记录
     func updateTransaction(_ tx: Transaction, amount: Double, type: TransactionType,
                            categoryName: String, categoryIcon: String, categoryColorHex: String,
-                           note: String, date: Date, project: Project? = nil) {
+                           note: String, date: Date, project: Project? = nil,
+                           cashFlowType: String? = nil) {
         tx.amount = amount
         tx.rawType = type.rawValue // 直接修改底层存储属性
         tx.categoryName = categoryName
@@ -288,6 +291,9 @@ class AppStore: ObservableObject {
         tx.date = date
         if let project = project {
             tx.project = project
+        }
+        if let cashFlowType = cashFlowType {
+            tx.cashFlowType = cashFlowType
         }
         save()
         refresh()
@@ -888,6 +894,29 @@ class AppStore: ObservableObject {
         UserDefaults.standard.set(true, forKey: "dailyProjectUnpinDone")
     }
     
+    /// 迁移：为个人生活成本分类设置 isDirectCost = false
+    private func migrateV7CostCategory() {
+        guard !UserDefaults.standard.bool(forKey: "costCategoryMigrationV7Done") else { return }
+
+        let personalCategories = ["餐饮", "外卖", "零食", "饮品", "水果", "蔬菜", "买菜",
+                                  "娱乐", "游戏", "追星", "电影票", "烟酒", "麻将",
+                                  "购物", "服饰", "美容", "数码",
+                                  "交通", "汽车", "摩托", "加油费", "租赁",
+                                  "旅行", "社交", "礼物", "红包", "礼金",
+                                  "医疗", "育儿", "长辈", "宠物"]
+
+        let allCats = (try? modelContext.fetch(FetchDescriptor<Category>())) ?? []
+        for cat in allCats {
+            if personalCategories.contains(cat.name) {
+                cat.isDirectCost = false
+            }
+        }
+
+        save()
+        fetchCategories()
+        UserDefaults.standard.set(true, forKey: "costCategoryMigrationV7Done")
+    }
+
     /// 迁移：为旧项目设置默认 projectMode = "lifestyle"
     private func migrateV6ProjectMode() {
         guard !UserDefaults.standard.bool(forKey: "projectModeMigrationV6Done") else { return }
@@ -983,5 +1012,96 @@ class AppStore: ObservableObject {
         
         try? modelContext.save()
         fetchCategories()
+    }
+    
+    // MARK: - Receivable CRUD（应收账款）
+    
+    @discardableResult
+    func addReceivable(to project: Project, clientName: String, projectName: String,
+                       amount: Double, expectedDate: Date? = nil, note: String = "") -> Receivable {
+        let receivable = Receivable(clientName: clientName, projectName: projectName,
+                                    amount: amount, expectedDate: expectedDate, note: note)
+        receivable.project = project
+        project.receivables = (project.receivables ?? []) + [receivable]
+        modelContext.insert(receivable)
+        save()
+        refresh()
+        return receivable
+    }
+    
+    func updateReceivable(_ receivable: Receivable, clientName: String? = nil,
+                          projectName: String? = nil, amount: Double? = nil,
+                          expectedDate: Date? = nil, note: String? = nil) {
+        if let name = clientName { receivable.clientName = name }
+        if let project = projectName { receivable.projectName = project }
+        if let amt = amount { receivable.amount = amt }
+        if let date = expectedDate { receivable.expectedDate = date }
+        if let n = note { receivable.note = n }
+        save()
+        refresh()
+    }
+    
+    func markReceivable(_ receivable: Receivable, received: Bool) {
+        if received {
+            receivable.rawStatus = ReceivableStatus.received.rawValue
+            receivable.receivedDate = Date()
+        } else {
+            receivable.rawStatus = ReceivableStatus.pending.rawValue
+            receivable.receivedDate = nil
+        }
+        save()
+        refresh()
+    }
+    
+    func deleteReceivable(_ receivable: Receivable) {
+        if let project = receivable.project {
+            project.receivables = (project.receivables ?? []).filter { $0.id != receivable.id }
+        }
+        modelContext.delete(receivable)
+        save()
+        refresh()
+    }
+    
+    // MARK: - FixedCost CRUD（固定成本）
+    
+    @discardableResult
+    func addFixedCost(to project: Project, name: String, amount: Double,
+                      frequency: FixedCostFrequency = .monthly, category: String = "",
+                      nextDueDate: Date? = nil) -> FixedCost {
+        let fixedCost = FixedCost(name: name, amount: amount, frequency: frequency,
+                                  category: category, nextDueDate: nextDueDate)
+        fixedCost.project = project
+        project.fixedCosts = (project.fixedCosts ?? []) + [fixedCost]
+        modelContext.insert(fixedCost)
+        save()
+        refresh()
+        return fixedCost
+    }
+    
+    func updateFixedCost(_ fixedCost: FixedCost, name: String? = nil, amount: Double? = nil,
+                         frequency: FixedCostFrequency? = nil, category: String? = nil,
+                         nextDueDate: Date? = nil) {
+        if let n = name { fixedCost.name = n }
+        if let amt = amount { fixedCost.amount = amt }
+        if let freq = frequency { fixedCost.rawFrequency = freq.rawValue }
+        if let cat = category { fixedCost.category = cat }
+        if let date = nextDueDate { fixedCost.nextDueDate = date }
+        save()
+        refresh()
+    }
+    
+    func toggleFixedCost(_ fixedCost: FixedCost) {
+        fixedCost.isActive.toggle()
+        save()
+        refresh()
+    }
+    
+    func deleteFixedCost(_ fixedCost: FixedCost) {
+        if let project = fixedCost.project {
+            project.fixedCosts = (project.fixedCosts ?? []).filter { $0.id != fixedCost.id }
+        }
+        modelContext.delete(fixedCost)
+        save()
+        refresh()
     }
 }
