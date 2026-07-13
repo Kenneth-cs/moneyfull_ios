@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import UserNotifications
 
 // MARK: - Design Tokens
 private enum ChatDesign {
@@ -308,7 +309,13 @@ struct AIChatView: View {
         .onAppear {
             storeManager.refreshDailyUsageIfNeeded()
             loadChatHistory()
-            if let text = initialText, !text.isEmpty {
+            // 首次画像引导检测
+            let assessed = UserDefaults.standard.bool(forKey: "hasCompletedAssessment")
+            let chatDone = UserDefaults.standard.bool(forKey: "hasCompletedOnboardingChat")
+            if assessed && !chatDone && messages.isEmpty {
+                showGuide = false
+                playOnboardingMessages()
+            } else if let text = initialText, !text.isEmpty {
                 if isFromShortcut {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { processOCRText(text) }
                 } else {
@@ -388,13 +395,25 @@ struct AIChatView: View {
 
             Spacer()
 
-            Button(action: { clearChatHistory() }) {
-                Image(systemName: "trash")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(ChatDesign.onPrimaryContainer.opacity(0.5))
-                    .frame(width: 42, height: 42)
-                    .background(ChatDesign.headerButtonBg)
-                    .clipShape(Circle())
+            if onboardingSkipVisible {
+                Button(action: { skipOnboarding() }) {
+                    Text("跳过")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(ChatDesign.onPrimaryContainer.opacity(0.7))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(ChatDesign.headerButtonBg)
+                        .clipShape(Capsule())
+                }
+            } else {
+                Button(action: { clearChatHistory() }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(ChatDesign.onPrimaryContainer.opacity(0.5))
+                        .frame(width: 42, height: 42)
+                        .background(ChatDesign.headerButtonBg)
+                        .clipShape(Circle())
+                }
             }
         }
         .padding(.horizontal, 20)
@@ -538,7 +557,7 @@ struct AIChatView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "bolt.fill")
                             .foregroundColor(Color.App.darkOrange)
-                        Text("今日 AI 次数已用完，点击补充燃料 ⚡️")
+                        Text("今日 AI 次数已用完，点击补充能量 ⚡️")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundColor(Color.App.textBlack)
                         Spacer()
@@ -784,12 +803,180 @@ struct AIChatView: View {
                 role: history.role == "user" ? .user : .assistant,
                 content: history.content,
                 timestamp: history.timestamp,
-                usesRichText: history.role == "assistant"
+                usesRichText: history.role == "assistant",
+                isPrescripted: history.isPrescripted
             )
         }
         #if DEBUG
         print("📋 loadChatHistory: 转换后 \(messages.count) 条消息")
         #endif
+    }
+
+    // MARK: - Onboarding 预制消息播放
+
+    @State private var isOnboardingPlaying = false
+    @State private var onboardingSkipVisible = false
+
+    private func playOnboardingMessages() {
+        guard let rawType = UserDefaults.standard.string(forKey: "userPersonaType"),
+              let persona = PersonaType(rawValue: rawType) else { return }
+
+        let scripts = PersonaOnboardingScript.messages(for: persona)
+        isOnboardingPlaying = true
+        onboardingSkipVisible = true
+
+        var cumulativeDelay: TimeInterval = 0
+
+        for (index, config) in scripts.enumerated() {
+            cumulativeDelay += config.delayBeforeShow
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + cumulativeDelay) {
+                // 显示 TypingIndicator（第一条不需要）
+                if index > 0 {
+                    let typingMsg = ChatMessage(
+                        role: .assistant, content: "", timestamp: Date(),
+                        isPrescripted: true
+                    )
+                    messages.append(typingMsg)
+                }
+
+                // 延迟后替换为真实消息
+                let typingDelay = index > 0 ? 0.8 : 0.0
+                DispatchQueue.main.asyncAfter(deadline: .now() + typingDelay) {
+                    // 移除 TypingIndicator
+                    if index > 0, let lastIdx = messages.indices.last,
+                       messages[lastIdx].content.isEmpty && messages[lastIdx].isPrescripted {
+                        messages.remove(at: lastIdx)
+                    }
+
+                    let msg = ChatMessage(
+                        role: .assistant,
+                        content: config.text,
+                        timestamp: Date(),
+                        isPrescripted: true,
+                        animationItems: config.animationItems,
+                        onboardingImageName: config.imageName,
+                        ctaAction: config.ctaAction
+                    )
+                    messages.append(msg)
+
+                    // 持久化预制消息
+                    try? contextManager.saveChatHistory(
+                        role: "assistant", content: config.text, isPrescripted: true
+                    )
+
+                    // 第一条消息动画完成后执行真实配置
+                    if index == 0 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            PersonaConfigExecutor.execute(for: persona, store: store)
+                        }
+                    }
+
+                    // C 画像第三条消息后触发通知权限
+                    if persona == .moonlight && index == 2 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            requestNotificationPermission()
+                        }
+                    }
+
+                    // 最后一条消息播完
+                    if index == scripts.count - 1 {
+                        finishOnboarding(persona: persona)
+                    }
+                }
+            }
+        }
+    }
+
+    private func finishOnboarding(persona: PersonaType) {
+        isOnboardingPlaying = false
+        onboardingSkipVisible = false
+
+        // 生成并保存画像系统 Prompt
+        let systemPrompt = generatePersonaSystemPrompt(persona: persona)
+        UserDefaults.standard.set(systemPrompt, forKey: "aiPersonaSystemPrompt")
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboardingChat")
+        UserDefaults.standard.set(true, forKey: "hasSeenAIChatGuide")
+    }
+
+    private func skipOnboarding() {
+        guard let rawType = UserDefaults.standard.string(forKey: "userPersonaType"),
+              let persona = PersonaType(rawValue: rawType) else { return }
+
+        // 执行配置操作
+        PersonaConfigExecutor.execute(for: persona, store: store)
+
+        // 快速写入所有预制消息（不逐条显示）
+        let scripts = PersonaOnboardingScript.messages(for: persona)
+        for config in scripts {
+            try? contextManager.saveChatHistory(
+                role: "assistant", content: config.text, isPrescripted: true
+            )
+        }
+
+        finishOnboarding(persona: persona)
+    }
+
+    private func generatePersonaSystemPrompt(persona: PersonaType) -> String {
+        let ud = UserDefaults.standard
+        let name = persona.displayName
+        let score = ud.integer(forKey: "userHealthScore")
+        let incomeRaw = ud.string(forKey: "userIncomeType") ?? ""
+        let habitRaw = ud.string(forKey: "userRecordMethod") ?? ""
+        let jtbdRaw = ud.string(forKey: "userJTBDChoice") ?? ""
+
+        let incomeDesc: String
+        switch incomeRaw {
+        case "income_freelance": incomeDesc = "自由职业 / 接单"
+        case "income_multi":     incomeDesc = "工资 + 副业 / 多种收入"
+        case "income_student":   incomeDesc = "学生 / 生活费固定"
+        default:                 incomeDesc = "固定工资"
+        }
+
+        let habitDesc: String
+        switch habitRaw {
+        case "method_none":       habitDesc = "从未记过账"
+        case "method_payment_app": habitDesc = "使用微信/支付宝账单"
+        case "method_excel":      habitDesc = "使用Excel记录"
+        case "method_other_app":  habitDesc = "使用其他记账App"
+        case "method_handwrite":  habitDesc = "手写记账"
+        default:                  habitDesc = "有记录习惯"
+        }
+
+        let jtbdDesc: String
+        switch jtbdRaw {
+        case "jtbd_ease":      jtbdDesc = "更省事地记账（少摩擦）"
+        case "jtbd_insight":   jtbdDesc = "看清钱都花去哪了"
+        case "jtbd_roi":       jtbdDesc = "管理多个项目ROI"
+        case "jtbd_budget":    jtbdDesc = "做预算，避免超支"
+        case "jtbd_import":    jtbdDesc = "导入已有账单统一管理"
+        default:               jtbdDesc = "管理财务"
+        }
+
+        let configItems = PersonaOnboardingScript.messages(for: persona)
+            .first?.animationItems ?? []
+
+        let configList = configItems.map { "✔ \($0)" }.joined(separator: "\n")
+
+        return """
+        你是「钱小满」App 内置的 AI 财务助手，名字叫小满。
+        你正在服务的用户画像是：\(name)
+        用户收入类型：\(incomeDesc)
+        用户当前记账习惯：\(habitDesc)
+        用户财务健康起点分：\(score)分
+        用户首要目标（JTBD）：\(jtbdDesc)
+
+        你已完成以下初始配置：
+        \(configList)
+
+        请始终以这个用户的画像和财务情况为背景回答问题。
+        在对话中不需要重复介绍自己，直接接续上下文。
+        回答风格：简洁、亲切、像一个懂财务的朋友，不用专业术语。
+        """
+    }
+
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     private func handleTransactionConfirmed(_ cardData: TransactionCardData) {
@@ -1117,6 +1304,11 @@ struct ChatMessage: Identifiable {
     var isDeleted: Bool = false
     var spendingInsight: SpendingInsightData?
     var usesRichText: Bool = false
+    // Onboarding 预制消息字段
+    var isPrescripted: Bool = false
+    var animationItems: [String]? = nil
+    var onboardingImageName: String? = nil
+    var ctaAction: OnboardingCTAAction? = nil
 
     init(role: ChatRole, content: String, timestamp: Date,
          transactionCard: TransactionCardData? = nil,
@@ -1125,7 +1317,11 @@ struct ChatMessage: Identifiable {
          confirmedTransaction: Transaction? = nil,
          isDeleted: Bool = false,
          spendingInsight: SpendingInsightData? = nil,
-         usesRichText: Bool = false) {
+         usesRichText: Bool = false,
+         isPrescripted: Bool = false,
+         animationItems: [String]? = nil,
+         onboardingImageName: String? = nil,
+         ctaAction: OnboardingCTAAction? = nil) {
         self.role = role
         self.content = content
         self.timestamp = timestamp
@@ -1136,6 +1332,10 @@ struct ChatMessage: Identifiable {
         self.isDeleted = isDeleted
         self.spendingInsight = spendingInsight
         self.usesRichText = usesRichText
+        self.isPrescripted = isPrescripted
+        self.animationItems = animationItems
+        self.onboardingImageName = onboardingImageName
+        self.ctaAction = ctaAction
     }
 }
 
@@ -1227,6 +1427,42 @@ struct ChatBubble: View {
                             UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18)
                                 .fill(ChatDesign.aiBubbleBg)
                         )
+                }
+                // Onboarding 预制消息（带配置动画）
+                else if let items = message.animationItems {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !message.content.isEmpty {
+                            bubbleContent
+                        }
+                        OnboardingChecklistView(items: items)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
+                    }
+                }
+                // Onboarding 预制消息（带效果图 + 可选 CTA）
+                else if let imageName = message.onboardingImageName {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !message.content.isEmpty {
+                            bubbleContent
+                        }
+                        OnboardingImageThumbnail(imageName: imageName)
+                        if let cta = message.ctaAction {
+                            OnboardingCTAButton(action: cta)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 8)
+                        }
+                    }
+                }
+                // Onboarding 预制消息（纯文本 + 可选 CTA）
+                else if message.isPrescripted && message.ctaAction != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !message.content.isEmpty {
+                            bubbleContent
+                        }
+                        OnboardingCTAButton(action: message.ctaAction!)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                    }
                 }
                 // 文本气泡（支持富文本）
                 else if !message.content.isEmpty {
@@ -1337,6 +1573,142 @@ struct ChatBubble: View {
             }
         }
         .padding(.top, 2)
+    }
+}
+
+// MARK: - Onboarding Checklist Animation
+
+struct OnboardingChecklistView: View {
+    let items: [String]
+    @State private var visibleCount: Int = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(items.indices, id: \.self) { index in
+                if index < visibleCount {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(ChatDesign.primary)
+                            .transition(.scale.combined(with: .opacity))
+                        Text(items[index])
+                            .font(.system(size: 14, design: .rounded))
+                            .foregroundColor(ChatDesign.onSurface)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                    .animation(.easeOut(duration: 0.3), value: visibleCount)
+                }
+            }
+        }
+        .onAppear { startAnimation() }
+    }
+
+    private func startAnimation() {
+        for i in 1...items.count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.3) {
+                visibleCount = i
+            }
+        }
+    }
+}
+
+// MARK: - Onboarding Image Thumbnail
+
+struct OnboardingImageThumbnail: View {
+    let imageName: String
+    @State private var showFullScreen = false
+
+    var body: some View {
+        Image(imageName)
+            .resizable()
+            .scaledToFill()
+            .frame(maxWidth: UIScreen.main.bounds.width - 120)
+            .frame(height: 180)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
+            .onTapGesture { showFullScreen = true }
+            .fullScreenCover(isPresented: $showFullScreen) {
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    Image(imageName)
+                        .resizable()
+                        .scaledToFit()
+                        .padding()
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Button {
+                                showFullScreen = false
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .padding()
+                            }
+                        }
+                        Spacer()
+                    }
+                }
+            }
+    }
+}
+
+// MARK: - Onboarding CTA Button
+
+struct OnboardingCTAButton: View {
+    let action: OnboardingCTAAction
+    @State private var showBackTapTutorial = false
+    @State private var showNotificationPermission = false
+
+    var body: some View {
+        Button {
+            switch action {
+            case .showBackTapSetup:
+                showBackTapTutorial = true
+            case .requestNotification:
+                showNotificationPermission = true
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: buttonIcon)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(buttonTitle)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(
+                LinearGradient(
+                    colors: [Color(hex: "#9EE0C8"), Color(hex: "#276956")],
+                    startPoint: .leading, endPoint: .trailing
+                )
+            )
+            .clipShape(Capsule())
+        }
+        .sheet(isPresented: $showBackTapTutorial) {
+            BackTapTutorialView()
+        }
+        .onChange(of: showNotificationPermission) { _, _ in
+            if showNotificationPermission {
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+                showNotificationPermission = false
+            }
+        }
+    }
+
+    private var buttonTitle: String {
+        switch action {
+        case .showBackTapSetup: return "授权无痛记账"
+        case .requestNotification: return "开启提醒通知"
+        }
+    }
+
+    private var buttonIcon: String {
+        switch action {
+        case .showBackTapSetup: return "hand.tap"
+        case .requestNotification: return "bell.fill"
+        }
     }
 }
 

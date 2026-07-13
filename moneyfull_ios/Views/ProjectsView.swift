@@ -4,7 +4,6 @@ import SwiftData
 struct ProjectsView: View {
     @EnvironmentObject var store: AppStore
     @State private var selectedTab = 0
-    @State private var showNewProject = false
     @State private var showManage = false
     
     var body: some View {
@@ -90,10 +89,7 @@ struct ProjectsView: View {
                     
                     // 新建项目按钮（仅进行中 tab 显示）
                     if selectedTab == 0 {
-                        Button(action: {
-                            AnalyticsManager.shared.trackEvent(eventId: "project_click_new", eventName: "点击新建项目")
-                            showNewProject = true
-                        }) {
+                        NavigationLink(destination: NewProjectView()) {
                             VStack(spacing: 14) {
                                 Circle()
                             .fill(Color.App.cardBackground)
@@ -130,9 +126,9 @@ struct ProjectsView: View {
             Color.clear.frame(height: 110)
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
-        .sheet(isPresented: $showNewProject) {
-            NewProjectView()
-        }
+        .navigationTitle("项目中心")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .sheet(isPresented: $showManage) {
             ProjectManageView()
                 .environmentObject(store)

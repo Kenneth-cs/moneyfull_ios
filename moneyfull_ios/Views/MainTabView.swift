@@ -73,6 +73,13 @@ struct MainTabView: View {
                 .environmentObject(store)
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToOnboardingChat)) { _ in
+            aiInitialText = nil
+            isFromShortcut = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isAIChatPresented = true
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .deepLinkReceived)) { notification in
             if let text = notification.object as? String {
                 let todayKey = "ai_chat_usage_" + { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date()) }()

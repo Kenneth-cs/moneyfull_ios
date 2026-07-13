@@ -744,3 +744,132 @@ Phase 4：项目复盘
 
 - SwiftData + CloudKit Migration V6 需要谨慎处理 `BudgetItem` 的 `deleteRule: .cascade` 方向
 - AI 预算生成、复盘均用**独立方法**，不污染现有记账解析管道（`parseTransaction` 不变）
+
+---
+
+## 十二、项目类型智能配置系统 (2026-07-13)
+
+### 12.1 背景与目标
+
+**问题**：生活模式下的"大件 vs 日常"分析功能存在硬编码问题：
+- 大件关键词只匹配旅行场景的交通/住宿（如机票、酒店）
+- 文案和对照标准写死为旅行场景（如"特种兵穷游"、"¥800/天 = 贵妇级别"）
+- 对于其他类型的项目（如新房装修、婚礼、买车等），分析结果不准确且文案不匹配
+
+**目标**：实现项目类型智能配置系统，根据项目名称/描述自动识别项目类型，动态返回对应的大件关键词、文案和对照标准，覆盖31个常见生活场景。
+
+### 12.2 项目类型覆盖（31个场景）
+
+| 类别 | 项目类型 | 识别关键词 | 大件分类 | 对照标准 |
+|------|---------|-----------|---------|---------|
+| **旅行出行** | 旅行/旅游 | 旅行、旅游、度假 | 交通+住宿 | ¥800/天 = 贵妇级别 |
+| | 出差 | 出差、公务、商务 | 交通+住宿 | ¥500/天 = 商务标准 |
+| | 自驾游 | 自驾、公路旅行 | 油费+住宿 | ¥600/天 = 豪华自驾 |
+| | 露营 | 露营、野营、户外 | 装备采购 | ¥500/次 = 豪华露营 |
+| | 滑雪 | 滑雪、冬运、雪场 | 雪票+装备 | ¥1000/天 = 高端滑雪 |
+| **家居装修** | 新房装修 | 装修、新房、毛坯 | 家具+家电 | ¥2000/㎡ = 豪装标准 |
+| | 旧房翻新 | 翻新、改造、老房 | 家具+建材 | ¥5000/项 = 全面翻新 |
+| | 搬家 | 搬家、乔迁 | 搬家费+新家具 | ¥3000/次 = 品质搬家 |
+| | 家具采购 | 家具、沙发、床 | 主要家具 | ¥2000/件 = 品质家居 |
+| | 家电采购 | 家电、电器、空调 | 主要家电 | ¥3000/件 = 智能家电 |
+| **婚礼庆典** | 婚礼 | 婚礼、结婚、婚庆 | 婚庆+酒店 | ¥100000/场 = 豪华婚礼 |
+| | 满月酒 | 满月、百日、周岁 | 酒席+布置 | ¥20000/场 = 隆重举办 |
+| | 生日派对 | 生日、派对 | 场地+蛋糕 | ¥5000/场 = 盛大派对 |
+| | 毕业典礼 | 毕业、毕业季 | 学士服+摄影 | ¥1000/人 = 精彩记录 |
+| **教育学习** | 留学 | 留学、出国、海外 | 学费+住宿 | ¥10000/月 = 品质留学 |
+| | 考试备考 | 考研、考公、考编 | 课程+教材 | ¥3000/月 = 高端辅导 |
+| | 培训学习 | 培训、课程、技能 | 学费+教材 | ¥5000/期 = 高端培训 |
+| | 驾照学习 | 驾照、驾校、学车 | 学费+考试费 | ¥8000/次 = VIP班 |
+| **健康医疗** | 体检医疗 | 体检、医疗、看病 | 检查+治疗 | ¥5000/次 = 高端医疗 |
+| | 牙齿矫正 | 牙齿、矫正、正畸 | 矫正+种植 | ¥30000/次 = 隐形矫正 |
+| | 医美 | 医美、美容、整形 | 手术+注射 | ¥10000/次 = 高端医美 |
+| | 健身 | 健身、运动、减肥 | 年卡+私教 | ¥2000/月 = 私教健身 |
+| **宠物** | 宠物 | 宠物、猫、狗 | 医疗+粮食 | ¥1000/月 = 品质养宠 |
+| **汽车** | 买车 | 买车、购车、提车 | 车款+税费 | ¥200000/辆 = 豪华座驾 |
+| | 汽车保养 | 保养、维修、修车 | 机油+轮胎 | ¥2000/次 = 深度保养 |
+| **数码电子** | 电脑组装 | 电脑、组装、装机 | 核心硬件 | ¥10000/台 = 旗舰配置 |
+| **投资理财** | 投资理财 | 投资、理财、股票 | 本金+大额 | ¥10000/笔 = 高端投资 |
+| **节日购物** | 年货采购 | 年货、春节、过年 | 礼品+食材 | ¥5000/户 = 丰盛年货 |
+| | 购物节 | 双十一、618、大促 | 数码+家电 | ¥500/件 = 疯狂购物 |
+| **社交** | 社交聚会 | 聚会、聚餐、团建 | 场地+餐饮 | ¥500/次 = 精致聚会 |
+| **默认** | 日常开销 | 日常、生活 | 交通+住宿 | ¥300/天 = 品质生活 |
+
+### 12.3 技术实现
+
+**核心文件**：`Models/ProjectTypeConfig.swift`
+
+```swift
+// 项目类型枚举
+enum ProjectType: String, CaseIterable, Identifiable {
+    case travel, businessTrip, roadTrip, camping, skiing
+    case renovation, remodeling, moving, furniture, appliance
+    case wedding, babyShower, birthday, graduation
+    case studyAbroad, examPrep, training, drivingSchool
+    case medical, dental, cosmetic, fitness, pet
+    case carPurchase, carMaintenance, computerBuild
+    case investment, newYearShopping, shoppingFestival
+    case social, daily
+}
+
+// 项目类型配置结构
+struct ProjectTypeConfig {
+    let type: ProjectType
+    let displayName: String        // 显示名称
+    let icon: String              // SF Symbol
+    let keywords: [String]        // 识别关键词
+    let bigItemKeywords: [String] // 大件分类关键词
+    let bigItemLabel: String      // 大件显示文案
+    let dailyLabel: String        // 日常显示文案
+    let description: String       // 功能描述
+    let referenceStandard: ReferenceStandard // 对照标准
+}
+
+// 对照标准
+struct ReferenceStandard {
+    let lowLabel: String          // 低端标签
+    let highLabel: String         // 高端标签
+    let unit: String              // 单位
+    let threshold: Double         // 高端阈值
+    let format: (Double) -> String // 格式化函数
+}
+```
+
+**智能识别逻辑**：
+```swift
+// 按优先级匹配（越具体的越靠前）
+let priorityOrder: [ProjectType] = [
+    .wedding, .babyShower, .graduation, .studyAbroad,
+    .renovation, .remodeling, .skiing, .camping,
+    .roadTrip, .businessTrip, .travel,
+    // ... 其他类型
+    .social, .daily  // 默认
+]
+
+// 遍历优先级列表，匹配关键词
+for type in priorityOrder {
+    let matched = config.keywords.filter { text.contains($0) }
+    if !matched.isEmpty { return type }
+}
+return .daily  // 默认返回日常开销
+```
+
+**使用方式**（在 `ProjectLifestyleView` 中）：
+```swift
+// 获取项目类型配置
+let config = ProjectTypeConfigManager.shared.getConfig(
+    name: project.name,
+    description: project.desc
+)
+
+// 使用动态配置
+Text(config.bigItemLabel)  // "大件（家具+家电）"
+Text(config.description)   // "剔除家具家电，看建材辅材和人工费花了多少"
+Text(config.referenceStandard.format(dailyFree))  // "¥2000/㎡ = 豪装标准"
+```
+
+### 12.4 涉及文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| `Models/ProjectTypeConfig.swift` | 新增项目类型智能配置系统，包含31个项目类型的完整配置（关键词、大件分类、文案、对照标准）|
+| `Views/ProjectLifestyleView.swift` | 集成智能配置系统，大件识别使用动态关键词，文案和对照标准根据项目类型动态显示 |

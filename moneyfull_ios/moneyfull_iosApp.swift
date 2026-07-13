@@ -11,10 +11,7 @@ struct moneyfull_iosApp: App {
     init() {
         modelContainer = Self.createModelContainer()
         ContextManager.shared.setModelContext(modelContainer.mainContext)
-        
-        Task {
-            _ = await NotificationManager.shared.requestPermission()
-        }
+        // 通知权限不在启动时请求，由用户在「提醒设置」页主动开启
     }
     
     private static func createModelContainer() -> ModelContainer {

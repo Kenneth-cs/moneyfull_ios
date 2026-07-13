@@ -45,6 +45,17 @@ struct AllTransactionsView: View {
     private var filteredTransactions: [Transaction] {
         var transactions = store.fetchAllTransactions()
         
+        #if DEBUG
+        print("📋 AllTransactionsView - fetchAllTransactions count: \(transactions.count)")
+        if let first = transactions.first {
+            print("📋 First transaction date: \(first.date), category: \(first.categoryName)")
+        }
+        if let last = transactions.last {
+            print("📋 Last transaction date: \(last.date), category: \(last.categoryName)")
+        }
+        print("📋 Selected period: \(selectedPeriod.rawValue)")
+        #endif
+        
         // 按项目筛选
         if let project = selectedProject {
             transactions = transactions.filter { $0.project?.id == project.id }
@@ -100,14 +111,22 @@ struct AllTransactionsView: View {
     // 按日期分组的交易记录
     private var groupedTransactions: [(key: String, value: [Transaction])] {
         let sorted = filteredTransactions.sorted { $0.date > $1.date }
-        var groups: [String: [Transaction]] = [:]
+        var groups: [Date: [Transaction]] = [:]
+        let calendar = Calendar.current
+        for tx in sorted {
+            let day = calendar.startOfDay(for: tx.date)
+            groups[day, default: []].append(tx)
+        }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy年M月d日"
-        for tx in sorted {
-            let key = formatter.string(from: tx.date)
-            groups[key, default: []].append(tx)
+        let result = groups.sorted { $0.key > $1.key }.map { (key: formatter.string(from: $0.key), value: $0.value) }
+        #if DEBUG
+        print("📋 groupedTransactions count: \(result.count)")
+        for group in result {
+            print("📋 Group: \(group.key) - \(group.value.count) items")
         }
-        return groups.sorted { $0.key > $1.key }
+        #endif
+        return result
     }
     
     // 获取所有分类名称

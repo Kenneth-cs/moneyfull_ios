@@ -29,13 +29,21 @@ class ContextManager {
         let memoryDescriptor = FetchDescriptor<MemoryRule>(sortBy: [SortDescriptor(\.weight, order: .reverse)])
         let memoryRules = try modelContext.fetch(memoryDescriptor)
         
-        // 获取最近5条聊天记录
-        let chatDescriptor = FetchDescriptor<ChatHistory>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        // 获取最近5条真实聊天记录（过滤预制消息）
+        let chatDescriptor = FetchDescriptor<ChatHistory>(
+            predicate: #Predicate { !$0.isPrescripted },
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+        )
         let allChats = try modelContext.fetch(chatDescriptor)
         let recentChats = Array(allChats.prefix(5))
         
         // 构建上下文字符串
         var context = ""
+
+        // 注入画像系统 Prompt（如有）
+        if let systemPrompt = UserDefaults.standard.string(forKey: "aiPersonaSystemPrompt") {
+            context += "System Context:\n\(systemPrompt)\n\n"
+        }
         
         // 分类列表（按一级分类分组）
         context += "Available Categories (grouped by groupName):\n"
@@ -99,16 +107,16 @@ class ContextManager {
         return context
     }
     
-    func saveChatHistory(role: String, content: String) throws {
+    func saveChatHistory(role: String, content: String, isPrescripted: Bool = false) throws {
         guard let modelContext = modelContext else {
             throw ContextError.noModelContext
         }
         
-        let chat = ChatHistory(role: role, content: content)
+        let chat = ChatHistory(role: role, content: content, isPrescripted: isPrescripted)
         modelContext.insert(chat)
         try modelContext.save()
         #if DEBUG
-        print("💾 saveChatHistory: 已保存 \(role) 消息: \(content.prefix(50))")
+        print("💾 saveChatHistory: 已保存 \(role) 消息: \(content.prefix(50))\(isPrescripted ? " [预制]" : "")")
         #endif
     }
     

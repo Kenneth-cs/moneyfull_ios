@@ -4,8 +4,14 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var store: AppStore?
-    @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+
+    // MARK: - 首次用户流程状态
+    /// true = 需要显示欢迎页（从未看过）
+    @State private var showWelcome = !UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+    /// true = 正在进行测评流程
     @State private var showAssessment = false
+
+    // MARK: - 测评内部步骤状态
     @State private var assessmentStep: AssessmentStep = .quiz
     @State private var assessmentPersona: PersonaType = .steady
     @State private var assessmentScore: Int = 0
@@ -14,6 +20,7 @@ struct ContentView: View {
     @State private var assessmentIncome: IncomeTag = .salary
     @State private var assessmentJTBD: JTBDTag = .ease
     @State private var loadingRotation: Double = 0
+
     @State private var deepLinkText: String?
     @State private var showRatingPrompt = false
 
@@ -23,74 +30,24 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if let store = store {
+            // 首次用户：欢迎页 → 测评，始终在最前，不在主页背后弹出
+            if showWelcome || showAssessment {
+                firstLaunchFlow
+            } else if let store = store {
                 MainTabView()
                     .environmentObject(store)
-                    .fullScreenCover(isPresented: $showOnboarding) {
-                        OnboardingView(isPresented: $showOnboarding) {
-                            // 引导页结束后，若未完成测评则展示测评
-                            if !UserDefaults.standard.bool(forKey: "hasCompletedAssessment") {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    showAssessment = true
-                                }
-                            }
-                        }
-                    }
-                    .fullScreenCover(isPresented: $showAssessment) {
-                        ZStack {
-                            Color(hex: "#EBF7F2").ignoresSafeArea()
-
-                            switch assessmentStep {
-                            case .quiz:
-                                AssessmentView { persona, score, habit, method, income, jtbd in
-                                    assessmentPersona = persona
-                                    assessmentScore   = score
-                                    assessmentHabit   = habit
-                                    assessmentMethod  = method
-                                    assessmentIncome  = income
-                                    assessmentJTBD    = jtbd
-                                    withAnimation(.easeInOut(duration: 0.35)) {
-                                        assessmentStep = .loading
-                                    }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                                        withAnimation(.easeInOut(duration: 0.35)) {
-                                            assessmentStep = .result
-                                        }
-                                    }
-                                }
-                                .transition(.opacity)
-
-                            case .loading:
-                                personaLoadingView
-                                    .transition(.opacity)
-
-                            case .result:
-                                PersonaResultView(
-                                    persona:     assessmentPersona,
-                                    healthScore: assessmentScore,
-                                    habit:       assessmentHabit,
-                                    method:      assessmentMethod,
-                                    income:      assessmentIncome,
-                                    jtbd:        assessmentJTBD
-                                ) {
-                                    showAssessment = false
-                                    assessmentStep = .quiz
-                                }
-                                .transition(.opacity)
-                            }
-                        }
-                        .animation(.easeInOut(duration: 0.35), value: assessmentStep)
-                    }
             } else {
+                // store 初始化中（通常极短暂）
                 Color.App.backgroundGray.ignoresSafeArea()
             }
         }
         .onAppear {
+            // store 在后台初始化，欢迎页显示时就开始，测评结束后必然就绪
             if store == nil {
                 store = AppStore(modelContext: modelContext)
                 store?.initialize()
             }
-            
+
             if let store = store, AppRatingManager.shared.shouldShowRating(transactionCount: store.recentTransactions.count) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     showRatingPrompt = true
@@ -117,6 +74,79 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - 首次启动流程：欢迎页 + 测评（整体替代主页，无 MainTabView 背景）
+    @ViewBuilder
+    private var firstLaunchFlow: some View {
+        ZStack {
+            if showWelcome {
+                WelcomeView {
+                    // 按钮点击：标记已看，直接进测评
+                    UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showWelcome = false
+                        showAssessment = true
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(0)
+            }
+
+            if showAssessment {
+                ZStack {
+                    Color(hex: "#EBF7F2").ignoresSafeArea()
+
+                    switch assessmentStep {
+                    case .quiz:
+                        AssessmentView { persona, score, habit, method, income, jtbd in
+                            assessmentPersona = persona
+                            assessmentScore   = score
+                            assessmentHabit   = habit
+                            assessmentMethod  = method
+                            assessmentIncome  = income
+                            assessmentJTBD    = jtbd
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                assessmentStep = .loading
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                                withAnimation(.easeInOut(duration: 0.35)) {
+                                    assessmentStep = .result
+                                }
+                            }
+                        }
+                        .transition(.opacity)
+
+                    case .loading:
+                        personaLoadingView
+                            .transition(.opacity)
+
+                    case .result:
+                        PersonaResultView(
+                            persona:     assessmentPersona,
+                            healthScore: assessmentScore,
+                            habit:       assessmentHabit,
+                            method:      assessmentMethod,
+                            income:      assessmentIncome,
+                            jtbd:        assessmentJTBD
+                        ) {
+                            // 测评完成 → 进入主页
+                            showAssessment = false
+                            assessmentStep = .quiz
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                NotificationCenter.default.post(name: .navigateToOnboardingChat, object: nil)
+                            }
+                        }
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.35), value: assessmentStep)
+                .transition(.opacity)
+                .zIndex(1)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: showWelcome)
+        .animation(.easeInOut(duration: 0.3), value: showAssessment)
+    }
+
     // MARK: - 画像生成加载动画
     private var personaLoadingView: some View {
         VStack(spacing: 32) {
@@ -244,6 +274,7 @@ extension Notification.Name {
     static let deepLinkReceived = Notification.Name("deepLinkReceived")
     static let showFeedback = Notification.Name("showFeedback")
     static let newShortcutText = Notification.Name("newShortcutText")
+    static let navigateToOnboardingChat = Notification.Name("navigateToOnboardingChat")
 }
 
 #Preview {

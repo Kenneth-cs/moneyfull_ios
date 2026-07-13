@@ -144,7 +144,11 @@ class AppStore: ObservableObject {
         let descriptor = FetchDescriptor<Transaction>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        return (try? modelContext.fetch(descriptor)) ?? []
+        let result = (try? modelContext.fetch(descriptor)) ?? []
+        #if DEBUG
+        print("📋 AppStore.fetchAllTransactions - count: \(result.count)")
+        #endif
+        return result
     }
     
     private func fetchCategories() {

@@ -51,27 +51,91 @@ messageText
 
 ### 3.3 Context 注入策略
 
-每次调用LLM时，注入以下上下文：
+每次调用LLM时，`ContextManager.buildContext()` 会动态组装以下上下文：
+
+#### 3.3.1 上下文结构
 
 ```
+┌─────────────────────────────────────────────┐
+│ 1. 画像系统 Prompt（如已配置）                 │
+│    用户画像、收入类型、记账习惯、健康分、JTBD    │
+├─────────────────────────────────────────────┤
+│ 2. 分类列表（动态读取数据库，按一级分类分组）     │
+│    【吃喝】咖啡、外卖 【出行】交通...           │
+├─────────────────────────────────────────────┤
+│ 3. 项目列表（动态读取，带活跃标记）              │
+│    日常收支、旅行基金(当前活跃项目⭐)            │
+├─────────────────────────────────────────────┤
+│ 4. 记忆规则（按权重排序）                      │
+│    keyword: 瑞幸, category: 咖啡              │
+├─────────────────────────────────────────────┤
+│ 5. 最近 5 条真实聊天记录（过滤预制消息）         │
+│    User: 买咖啡花了25元                       │
+│    Assistant: 交易确认卡片                     │
+└─────────────────────────────────────────────┘
+```
+
+#### 3.3.2 各模块数据来源
+
+| 模块 | 数据来源 | 说明 |
+|------|----------|------|
+| 画像系统 Prompt | `UserDefaults["aiPersonaSystemPrompt"]` | Onboarding 完成后生成，包含用户画像、收入类型、记账习惯、健康分、JTBD |
+| 分类列表 | SwiftData `Category` 表 | 动态读取所有分类，按 `groupName` 分组显示 |
+| 项目列表 | SwiftData `Project` 表 | 读取未归档项目，标记活跃项目（`isActiveProject`）和高频项目（最近5条交易中出现≥3次） |
+| 记忆规则 | SwiftData `MemoryRule` 表 | 按 `weight` 降序排列，用户纠正分类时自动学习 |
+| 聊天记录 | SwiftData `ChatHistory` 表 | 取最近5条**真实对话**，过滤 `isPrescripted=true` 的预制消息 |
+
+#### 3.3.3 示例输出
+
+```
+System Context:
+你是「钱小满」App 内置的 AI 财务助手，名字叫小满。
+你正在服务的用户画像是：效率优先者
+用户收入类型：固定工资
+用户当前记账习惯：曾经记过，后来放弃
+用户财务健康起点分：52分
+用户首要目标（JTBD）：更省事地记账（少摩擦）
+...
+
 Available Categories (grouped by groupName):
 【吃喝】
   - 咖啡 (icon: cup.and.saucer.fill, color: #A8E6CF)
   - 外卖 (icon: takeoutbag.and.cup.and.straw.fill, color: #A8E6CF)
 【出行】
   - 交通 (icon: car.fill, color: #B3D1E6)
+【自由职业】
+  - 项目收入 (icon: dollarsign.circle, color: #9EE0C8)
 
 Available Projects:
-- 日常收支
+- 日常收支 (当前活跃项目⭐)
 - 旅行基金
+- 摄影接单 (近期高频活跃)
 
 User Memory Rules:
 - keyword: 瑞幸, category: 咖啡
+- keyword: 星巴克, category: 咖啡, project: 旅行基金
 
 Recent Chat History:
 User: 买咖啡花了25元
-Assistant: 交易确认卡片
+Assistant: 已成功入账 -¥25.00（咖啡）
+User: 打车30
+Assistant: 已成功入账 -¥30.00（交通）
 ```
+
+#### 3.3.4 上下文窗口管理
+
+| 配置项 | 值 | 说明 |
+|--------|-----|------|
+| 聊天记录窗口 | 最近5条 | 只注入最近5条真实对话，预制消息不计入 |
+| 预制消息过滤 | `isPrescripted=true` | Onboarding 预制消息不进入 API 上下文，避免重复 |
+| 画像 Prompt | 约300 tokens | 始终保留，包含用户画像和已完成的配置信息 |
+| 记忆规则 | 全部注入 | 按权重排序，高权重规则优先被 AI 参考 |
+
+#### 3.3.5 持久化机制
+
+- **聊天记录**：使用 SwiftData 的 `ChatHistory` 模型，字段包括 `id`、`role`、`content`、`timestamp`、`isPrescripted`
+- **记忆规则**：使用 SwiftData 的 `MemoryRule` 模型，字段包括 `keyword`、`targetCategoryName`、`targetProjectName`、`weight`
+- **画像 Prompt**：存储在 `UserDefaults["aiPersonaSystemPrompt"]`，跨会话保留
 
 ---
 

@@ -18,10 +18,15 @@ struct ProjectLifestyleView: View {
     private var totalDays: Int { project.totalDays }
     private var remaining: Double { max(totalBudget - totalSpent, 0) }
     private var budgetProgress: Double { totalBudget > 0 ? min(totalSpent / totalBudget, 1) : 0 }
+    
+    // 项目类型智能配置
+    private var projectTypeConfig: ProjectTypeConfig {
+        ProjectTypeConfigManager.shared.getConfig(name: project.name, description: project.desc)
+    }
 
-    // 大件识别：按分类名匹配交通/住宿关键词
+    // 大件识别：按项目类型动态匹配关键词
     private var bigItemsAmount: Double {
-        let bigKeywords = ["交通", "行", "住", "住宿", "机票", "酒店", "火车", "高铁", "飞机"]
+        let bigKeywords = projectTypeConfig.bigItemKeywords
         return (project.transactions ?? [])
             .filter { tx in tx.type == .expense && bigKeywords.contains(where: { kw in tx.categoryName.contains(kw) }) }
             .reduce(0) { $0 + abs($1.amount) }
@@ -249,14 +254,17 @@ struct ProjectLifestyleView: View {
     }
 
     private var bigItemAnalysisCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let config = projectTypeConfig
+        let std = config.referenceStandard
+        
+        return VStack(alignment: .leading, spacing: 14) {
             Text("大件 vs 日常")
                 .font(.system(size: 20, weight: .heavy)).foregroundColor(Color.App.textBlack)
-            Text("剔除大交通和住宿，看日常吃喝玩乐实际花了多少")
+            Text(config.description)
                 .font(.system(size: 13)).foregroundColor(.gray)
             HStack(spacing: 0) {
                 VStack(spacing: 4) {
-                    Text("大件（交通+住宿）")
+                    Text(config.bigItemLabel)
                         .font(.system(size: 11, weight: .bold)).foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                     Text("¥\(Int(bigItemsAmount))")
@@ -267,26 +275,26 @@ struct ProjectLifestyleView: View {
                 .frame(maxWidth: .infinity)
                 Divider().frame(height: 50)
                 VStack(spacing: 4) {
-                    Text("日常均摊 / 天")
+                    Text(config.dailyLabel)
                         .font(.system(size: 11, weight: .bold)).foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                     Text("¥\(Int(dailyFree))")
                         .font(.system(size: 20, weight: .heavy)).foregroundColor(accentColor)
-                    Text("特种兵 / 普通游")
+                    Text("\(std.lowLabel.split(separator: " ").last ?? "") / \(std.highLabel.split(separator: " ").last ?? "")")
                         .font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
                 }
                 .frame(maxWidth: .infinity)
             }
-            // 特种兵指数条
+            // 指数条（根据项目类型动态显示）
             VStack(spacing: 6) {
                 HStack {
-                    Text("💤 极致穷游").font(.system(size: 11)).foregroundColor(.gray)
+                    Text(std.lowLabel).font(.system(size: 11)).foregroundColor(.gray)
                     Spacer()
-                    Text("👸 优质贵妇").font(.system(size: 11)).foregroundColor(.gray)
+                    Text(std.highLabel).font(.system(size: 11)).foregroundColor(.gray)
                 }
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.App.progressTrack).frame(height: 8)
-                    let indicator = min(dailyFree / 800, 1.0)
+                    let indicator = min(dailyFree / std.threshold, 1.0)
                     Capsule()
                         .fill(LinearGradient(
                             colors: [Color(hex: colorPair.start), accentColor],
@@ -294,7 +302,7 @@ struct ProjectLifestyleView: View {
                         .scaleEffect(x: CGFloat(max(0.02, indicator)), y: 1, anchor: .leading)
                         .frame(height: 8)
                 }
-                Text("日均自由消费 ¥\(Int(dailyFree))（对照：¥800/天 = 贵妇级别）")
+                Text("日均自由消费 ¥\(Int(dailyFree))（对照：\(std.format(std.threshold))）")
                     .font(.system(size: 11)).foregroundColor(.gray)
             }
         }

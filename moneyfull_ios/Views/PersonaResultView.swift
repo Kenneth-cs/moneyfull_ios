@@ -149,15 +149,10 @@ struct PersonaResultView: View {
                         .rotationEffect(.degrees(-90))
                         .animation(.easeOut(duration: 1.2), value: animateScore)
 
-                    VStack(spacing: 0) {
-                        Text("\(displayedScore)")
-                            .font(.system(size: 30, weight: .heavy))
-                            .foregroundColor(green)
-                            .monospacedDigit()
-                        Text("分")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(green.opacity(0.7))
-                    }
+                    Text("\(displayedScore)")
+                        .font(.system(size: 30, weight: .heavy))
+                        .foregroundColor(green)
+                        .monospacedDigit()
                 }
 
                 Image(systemName: "waveform.path.ecg")
@@ -213,17 +208,15 @@ struct PersonaResultView: View {
             Text("你的核心痛点")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(green)
+                .fixedSize()
 
             Text(effectivePersona.painPoint)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(Color(hex: "#1A3A2E"))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
             Spacer()
-
-            // 装饰问号图
-            Image(systemName: "questionmark.circle.dashed")
-                .font(.system(size: 22))
-                .foregroundColor(lightGreen.opacity(0.6))
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(Color.white)

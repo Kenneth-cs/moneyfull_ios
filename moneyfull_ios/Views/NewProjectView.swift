@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 struct NewProjectView: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var storeManager: StoreManager
     
@@ -16,7 +16,7 @@ struct NewProjectView: View {
     // MARK: 新增：项目模式 & 预算规划
     @State private var projectMode: ProjectMode = .lifestyle
     @State private var uiBudgetItems: [BudgetItemUI] = []
-    @State private var budgetSupplement: String = ""        // AI 生成前的补充说明
+    @State private var budgetSupplement: String = ""
     @State private var isGeneratingBudget: Bool = false
     @State private var showBudgetManagement: Bool = false
 
@@ -60,63 +60,85 @@ struct NewProjectView: View {
     }
     
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    projectNameSection
-                    projectDescSection
-                    projectModeSection
-                    budgetSection
-                    if totalBudget > 0 { budgetPlanningSection }
-                    previewSection
-                    iconSection
-                    colorSection
-                    Spacer().frame(height: 20)
-                }
-                .padding(24)
+        ScrollView {
+            VStack(spacing: 24) {
+                projectNameSection
+                projectDescSection
+                projectModeSection
+                budgetSection
+                if totalBudget > 0 { budgetPlanningSection }
+                previewSection
+                iconSection
+                colorSection
+                Spacer().frame(height: 20)
             }
-            .scrollDismissesKeyboard(.immediately)
-            .onTapGesture { isAnyFieldFocused = false }
-            .background(Color.App.backgroundGray.ignoresSafeArea())
-            .navigationTitle("新建项目")
-            .navigationBarTitleDisplayMode(.inline)
-            .alert("升级到专业版", isPresented: $showUpgradeAlert) {
-                Button("取消", role: .cancel) { }
-                Button("查看订阅方案") { showPaywall = true }
-            } message: {
-                Text("免费版最多可创建 3 个项目。升级到专业版即可解锁无限项目，还有更多高级功能等你探索！")
-            }
-            .fullScreenCover(isPresented: $showPaywall) {
-                PaywallView().environmentObject(storeManager)
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { presentationMode.wrappedValue.dismiss() }
-                        .font(.system(size: 16, weight: .medium))
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("创建") {
-                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        if canCreateProject {
-                            let budget = Double(budgetText) ?? 0
-                            let project = store.addProject(
-                                name: name, icon: selectedIcon, colorHex: selectedColor,
-                                desc: desc, budget: budget,
-                                projectMode: projectMode.rawValue,
-                                budgetCycle: budgetCycle.rawValue
-                            )
-                            for (index, item) in uiBudgetItems.enumerated() {
-                                store.addBudgetItem(to: project, categoryName: item.categoryName,
-                                                   categoryIcon: item.categoryIcon, categoryColorHex: item.categoryColorHex,
-                                                   amount: item.amount, sortOrder: index, alertThreshold: item.alertThreshold)
-                            }
-                            presentationMode.wrappedValue.dismiss()
-                        } else {
-                            showUpgradeAlert = true
-                        }
+            .padding(24)
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .onTapGesture { isAnyFieldFocused = false }
+        .background(Color.App.backgroundGray.ignoresSafeArea())
+        .navigationTitle("新建项目")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    dismiss()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("返回")
+                            .font(.system(size: 16))
                     }
-                    .font(.system(size: 16, weight: .bold))
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .foregroundColor(Color.App.darkGreen)
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("创建") {
+                    guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                    if canCreateProject {
+                        let budget = Double(budgetText) ?? 0
+                        let project = store.addProject(
+                            name: name, icon: selectedIcon, colorHex: selectedColor,
+                            desc: desc, budget: budget,
+                            projectMode: projectMode.rawValue,
+                            budgetCycle: budgetCycle.rawValue
+                        )
+                        for (index, item) in uiBudgetItems.enumerated() {
+                            store.addBudgetItem(to: project, categoryName: item.categoryName,
+                                               categoryIcon: item.categoryIcon, categoryColorHex: item.categoryColorHex,
+                                               amount: item.amount, sortOrder: index, alertThreshold: item.alertThreshold)
+                        }
+                        dismiss()
+                    } else {
+                        showUpgradeAlert = true
+                    }
+                }
+                .font(.system(size: 16, weight: .bold))
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .alert("升级到专业版", isPresented: $showUpgradeAlert) {
+            Button("取消", role: .cancel) { }
+            Button("查看订阅方案") { showPaywall = true }
+        } message: {
+            Text("免费版最多可创建 3 个项目。升级到专业版即可解锁无限项目，还有更多高级功能等你探索！")
+        }
+        .fullScreenCover(isPresented: $showPaywall) {
+            PaywallView().environmentObject(storeManager)
+        }
+        .sheet(isPresented: $showBudgetManagement) {
+            NavigationView {
+                BudgetItemAddSheet { newItem in
+                    uiBudgetItems.append(newItem)
+                    showBudgetManagement = false
+                }
+                .environmentObject(store)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("关闭") { showBudgetManagement = false }
+                    }
                 }
             }
         }
@@ -242,24 +264,11 @@ extension NewProjectView {
             HStack {
                 Text("预算规划").sectionTitle()
                 Spacer()
-                if !uiBudgetItems.isEmpty {
-                    Button("管理分类 ›") { showBudgetManagement = true }
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.gray)
-                }
             }
 
-            // 已有分类时显示列表预览
+            // 已有分类时显示完整可编辑列表
             if !uiBudgetItems.isEmpty {
-                VStack(spacing: 12) {
-                    ForEach(uiBudgetItems.prefix(4)) { item in
-                        BudgetProgressRow(item: item, showSpent: false)
-                    }
-                    if uiBudgetItems.count > 4 {
-                        Text("还有 \(uiBudgetItems.count - 4) 个分类...")
-                            .font(.system(size: 12)).foregroundColor(.gray)
-                    }
-                }
+                budgetItemsList
                 // 已分配 / 未分配提示
                 HStack {
                     Label("已分配 ¥\(Int(allocatedBudget))", systemImage: "checkmark.circle.fill")
@@ -279,64 +288,21 @@ extension NewProjectView {
                 .padding(.top, 4)
             }
 
+            // 补充说明（可选，让 AI 生成更准确）
+            VStack(alignment: .leading, spacing: 6) {
+                Text("补充说明（可选，让 AI 生成更准确）")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.gray)
+                TextField("例如：两人同行，7天，自驾为主...", text: $budgetSupplement)
+                    .font(.system(size: 14))
+                    .padding(12)
+                    .background(Color.App.tabBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .focused($isAnyFieldFocused)
+            }
+
             // 操作按钮
-            HStack(spacing: 12) {
-                // AI 生成（Plus 锁定）
-                Button {
-                    if storeManager.isPremium {
-                        generateAIBudget()
-                    } else {
-                        showPaywall = true
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        if isGeneratingBudget {
-                            ProgressView().tint(.white).scaleEffect(0.8)
-                        } else {
-                            Image(systemName: storeManager.isPremium ? "sparkles" : "lock.fill")
-                                .font(.system(size: 13, weight: .bold))
-                        }
-                        Text(storeManager.isPremium ? "AI 一键生成" : "AI 生成  Plus")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(storeManager.isPremium ? Color.App.darkGreen : Color.gray.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-                .disabled(isGeneratingBudget)
-
-                // 手动添加
-                Button { showBudgetManagement = true } label: {
-                    Text("手动添加")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(Color.App.darkGreen)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.App.primaryGreen.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.App.primaryGreen.opacity(0.4), lineWidth: 1)
-                        )
-                }
-            }
-
-            // AI 生成前补充（可选）
-            if uiBudgetItems.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("补充说明（可选，让 AI 生成更准确）")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.gray)
-                    TextField("例如：两人同行，7天，自驾为主...", text: $budgetSupplement)
-                        .font(.system(size: 14))
-                        .padding(12)
-                        .background(Color.App.tabBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .focused($isAnyFieldFocused)
-                }
-            }
+            budgetActionButtons
 
             Divider()
 
@@ -384,34 +350,99 @@ extension NewProjectView {
             Divider()
 
             // 预算预警（Plus）
-            PlusLockedSection(
-                isLocked: !storeManager.isPremium,
-                title: "解锁预算预警",
-                onUnlock: { showPaywall = true }
-            ) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "bell.badge.fill")
-                            .foregroundColor(Color(hex: "#FFA500"))
-                        Text("预算预警").sectionTitle()
-                        Spacer()
-                        Toggle("", isOn: $budgetAlertEnabled).labelsHidden()
-                    }
-                    if budgetAlertEnabled {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("总预算超过 \(Int(budgetAlertThreshold * 100))% 时提醒")
-                                .font(.system(size: 13)).foregroundColor(.gray)
-                            Slider(value: $budgetAlertThreshold, in: 0.5...1.0, step: 0.05)
-                                .tint(Color.App.darkGreen)
-                        }
-                    }
-                }
-            }
+            budgetAlertSection
         }
         .padding(20)
         .background(Color.App.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 4)
+    }
+
+    private var budgetItemsList: some View {
+        VStack(spacing: 10) {
+            ForEach(Array(uiBudgetItems.enumerated()), id: \.element.id) { pair in
+                let idx = pair.offset
+                BudgetItemEditableRow(
+                    item: $uiBudgetItems[idx],
+                    onDelete: { removeBudgetItem(at: idx) }
+                )
+            }
+        }
+    }
+
+    private func removeBudgetItem(at index: Int) {
+        uiBudgetItems.remove(at: index)
+    }
+
+    private var budgetActionButtons: some View {
+        HStack(spacing: 12) {
+            // 小满帮你规划（Plus 锁定）
+            Button {
+                if storeManager.isPremium {
+                    generateAIBudget()
+                } else {
+                    showPaywall = true
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    if isGeneratingBudget {
+                        ProgressView().tint(.white).scaleEffect(0.8)
+                    } else {
+                        Image(systemName: storeManager.isPremium ? "sparkles" : "lock.fill")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    Text(storeManager.isPremium ? "小满帮你规划" : "小满帮你规划  Plus")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(storeManager.isPremium ? Color.App.darkGreen : Color.gray.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .disabled(isGeneratingBudget)
+
+            // 手动添加
+            Button { showBudgetManagement = true } label: {
+                Text("手动添加")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(Color.App.darkGreen)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.App.primaryGreen.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.App.primaryGreen.opacity(0.4), lineWidth: 1)
+                    )
+            }
+        }
+    }
+
+    private var budgetAlertSection: some View {
+        PlusLockedSection(
+            isLocked: !storeManager.isPremium,
+            title: "解锁预算预警",
+            onUnlock: { showPaywall = true }
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "bell.badge.fill")
+                        .foregroundColor(Color(hex: "#FFA500"))
+                    Text("预算预警").sectionTitle()
+                    Spacer()
+                    Toggle("", isOn: $budgetAlertEnabled).labelsHidden()
+                }
+                if budgetAlertEnabled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("总预算超过 \(Int(budgetAlertThreshold * 100))% 时提醒")
+                            .font(.system(size: 13)).foregroundColor(.gray)
+                        Slider(value: $budgetAlertThreshold, in: 0.5...1.0, step: 0.05)
+                            .tint(Color.App.darkGreen)
+                    }
+                }
+            }
+        }
     }
 
     private func generateAIBudget() {
@@ -438,6 +469,167 @@ extension NewProjectView {
                 await MainActor.run {
                     isGeneratingBudget = false
                 }
+            }
+        }
+    }
+}
+
+// MARK: - 预算分类可编辑行
+private struct BudgetItemEditableRow: View {
+    @Binding var item: BudgetItemUI
+    var onDelete: () -> Void
+
+    @State private var nameText: String = ""
+    @State private var amountText: String = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // 图标
+            Circle()
+                .fill(Color(hex: item.categoryColorHex).opacity(0.25))
+                .frame(width: 32, height: 32)
+                .overlay(
+                    Image(systemName: item.categoryIcon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color(hex: item.categoryColorHex))
+                )
+
+            // 分类名称（可编辑）
+            TextField("分类", text: $nameText)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Color.App.textBlack)
+                .focused($isFocused)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onChange(of: nameText) { _, newValue in
+                    item.categoryName = newValue
+                }
+
+            // 金额（可编辑）
+            HStack(spacing: 2) {
+                Text("¥").font(.system(size: 13)).foregroundColor(.gray)
+                TextField("0", text: $amountText)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .font(.system(size: 14, weight: .bold))
+                    .frame(width: 70)
+                    .focused($isFocused)
+                    .onChange(of: amountText) { _, newValue in
+                        if let val = Double(newValue), val >= 0 {
+                            item.amount = val
+                        }
+                    }
+            }
+
+            // 删除按钮
+            Button {
+                isFocused = false
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 13))
+                    .foregroundColor(.red.opacity(0.7))
+                    .frame(width: 28, height: 28)
+                    .background(Color.red.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 4)
+        .onAppear {
+            nameText = item.categoryName
+            amountText = "\(Int(item.amount))"
+        }
+    }
+}
+
+// MARK: - 手动添加分类 Sheet
+private struct BudgetItemAddSheet: View {
+    var onAdd: (BudgetItemUI) -> Void
+
+    @State private var newName = ""
+    @State private var newAmountText = ""
+    @State private var newIcon = "tag.fill"
+    @State private var newColorHex = "#A8E0C2"
+    @FocusState private var isInputFocused: Bool
+
+    private let budgetIcons = [
+        "tag.fill", "car.fill", "fork.knife", "house.fill",
+        "bag.fill", "ticket.fill", "airplane", "desktopcomputer",
+        "cart.fill", "tshirt.fill", "sofa.fill", "tv.fill",
+        "bolt.fill", "hammer.fill", "gamecontroller.fill", "film.fill",
+        "figure.run", "cross.case.fill", "book.fill", "person.3.fill",
+        "gift.fill", "chart.line.uptrend.xyaxis", "phone.fill", "pawprint.fill"
+    ]
+
+    var body: some View {
+        List {
+            Section("分类信息") {
+                TextField("分类名称（如：交通）", text: $newName)
+                    .font(.system(size: 15))
+                    .focused($isInputFocused)
+                    .onChange(of: newName) { _, newValue in
+                        let suggestedIcon = suggestCategoryIcon(for: newValue)
+                        let suggestedColor = suggestCategoryColor(for: newValue)
+                        if suggestedIcon != "tag.fill" { newIcon = suggestedIcon }
+                        if suggestedColor != "#A8E0C2" { newColorHex = suggestedColor }
+                    }
+                HStack {
+                    Text("¥").foregroundColor(Color.App.darkGreen)
+                    TextField("预算金额", text: $newAmountText)
+                        .keyboardType(.decimalPad)
+                        .focused($isInputFocused)
+                }
+            }
+
+            Section("选择图标") {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 8), spacing: 10) {
+                    ForEach(budgetIcons, id: \.self) { icon in
+                        Button {
+                            newIcon = icon
+                        } label: {
+                            Image(systemName: icon)
+                                .font(.system(size: 18))
+                                .frame(width: 44, height: 44)
+                                .background(newIcon == icon
+                                            ? Color.App.primaryGreen.opacity(0.3)
+                                            : Color.App.tabBackground)
+                                .clipShape(Circle())
+                                .foregroundColor(newIcon == icon ? Color.App.darkGreen : .gray)
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Circle())
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+
+            Section {
+                Button("添加分类") {
+                    guard !newName.isEmpty, let amt = Double(newAmountText), amt > 0 else { return }
+                    let newItem = BudgetItemUI(
+                        categoryName: newName,
+                        categoryIcon: newIcon,
+                        categoryColorHex: newColorHex,
+                        amount: amt
+                    )
+                    onAdd(newItem)
+                }
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(Color.App.darkGreen)
+                .frame(maxWidth: .infinity)
+                .disabled(newName.isEmpty || Double(newAmountText) == nil)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("添加分类")
+        .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") { isInputFocused = false }
+                    .font(.system(size: 14, weight: .bold))
             }
         }
     }
@@ -514,6 +706,8 @@ extension Text {
 }
 
 #Preview {
-    NewProjectView()
-        .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
+    NavigationView {
+        NewProjectView()
+            .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
+    }
 }

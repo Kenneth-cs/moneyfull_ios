@@ -119,8 +119,23 @@ class NotificationManager {
     func generateWorkdayTriggers(hour: Int, minute: Int, daysAhead: Int) -> [UNCalendarNotificationTrigger] {
         var triggers: [UNCalendarNotificationTrigger] = []
         let calendar = Calendar.current
-        var date = Date()
+        let now = Date()
         
+        // 检查今天的提醒时间是否还没到
+        var todayComponents = calendar.dateComponents([.year, .month, .day], from: now)
+        todayComponents.hour = hour
+        todayComponents.minute = minute
+        
+        if let todayTarget = calendar.date(from: todayComponents), todayTarget > now {
+            // 今天还没到提醒时间，添加今天的触发器
+            if !(isWeekendDND && Self.isWeekend(date: now)) {
+                let trigger = UNCalendarNotificationTrigger(dateMatching: todayComponents, repeats: false)
+                triggers.append(trigger)
+            }
+        }
+        
+        // 从明天开始生成剩余天数的触发器
+        var date = now
         for _ in 0..<daysAhead {
             date = calendar.date(byAdding: .day, value: 1, to: date) ?? date
             

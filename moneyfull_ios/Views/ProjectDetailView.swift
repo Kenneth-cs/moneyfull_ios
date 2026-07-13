@@ -419,6 +419,10 @@ struct ProjectDetailView: View {
             }
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        .sheet(isPresented: $showEditProject) {
+            EditProjectView(project: project)
+                .environmentObject(store)
+        }
         .sheet(item: $editingTransaction) { tx in
             EditTransactionView(transaction: tx)
                 .environmentObject(store)
@@ -429,10 +433,6 @@ struct ProjectDetailView: View {
         }
         .sheet(isPresented: $showColorPicker) {
             EditProjectColorSheet(project: project, store: store)
-        }
-        .sheet(isPresented: $showEditProject) {
-            EditProjectView(project: project)
-                .environmentObject(store)
         }
         .confirmationDialog("确认删除该项目？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("删除", role: .destructive) {

@@ -1,7 +1,6 @@
 {
   "images" : [
     {
-      "filename" : "feat_back_tap双击背面快捷记账.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
@@ -10,6 +9,7 @@
       "scale" : "2x"
     },
     {
+      "filename" : "welcome_bg.png",
       "idiom" : "universal",
       "scale" : "3x"
     }
