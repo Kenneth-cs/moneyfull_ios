@@ -3,8 +3,10 @@ import SwiftData
 
 struct ProjectsView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var storeManager: StoreManager
     @State private var selectedTab = 0
     @State private var showManage = false
+    @State private var selectedProjectForDetail: Project?
     
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -78,9 +80,10 @@ struct ProjectsView: View {
                         .padding(.horizontal, 32)
                     } else {
                         ForEach(projects) { project in
-                            NavigationLink(destination: ProjectDetailView(project: project).onAppear {
+                            Button {
                                 AnalyticsManager.shared.trackEvent(eventId: "project_view_detail", eventName: "查看项目详情", params: ["project_status": selectedTab == 0 ? "active" : "archived", "source": "project_center"])
-                            }) {
+                                selectedProjectForDetail = project
+                            } label: {
                                 ProjectDetailCard(project: project, onToggleActive: { store.toggleActiveProject(project) })
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -132,6 +135,11 @@ struct ProjectsView: View {
         .sheet(isPresented: $showManage) {
             ProjectManageView()
                 .environmentObject(store)
+        }
+        .navigationDestination(item: $selectedProjectForDetail) { project in
+            ProjectDetailView(project: project)
+                .environmentObject(store)
+                .environmentObject(storeManager)
         }
     }
     

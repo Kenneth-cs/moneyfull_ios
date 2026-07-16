@@ -28,12 +28,24 @@ struct AddRecordView: View {
     @State private var showMoreOptions = false
     @State private var cashFlowType: String = "operating" // "operating" | "personal"
     
+    // 表达式计算状态
+    @State private var expression: String = ""  // 完整表达式，如 "100+50"
+    @State private var hasOperator: Bool = false  // 是否已输入运算符
+    @State private var calculatedResult: String = ""  // 计算结果
+    @State private var showEquals: Bool = false  // 是否显示等号按钮
+    
     // 触觉反馈生成器
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
     private let successFeedback = UINotificationFeedbackGenerator()
     
     // 显示金额（有值则显示，否则显示"0"）
-    private var displayAmount: String { amount.isEmpty ? "0" : amount }
+    private var displayAmount: String {
+        if hasOperator && !expression.isEmpty {
+            // 显示表达式 + 当前输入
+            return expression + (amount.isEmpty ? "" : amount)
+        }
+        return amount.isEmpty ? "0" : amount
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -308,19 +320,29 @@ struct AddRecordView: View {
                             KeyButton(label: "7") { handleKey("7") }
                             KeyButton(label: "8") { handleKey("8") }
                             KeyButton(label: "9") { handleKey("9") }
-                            KeyButton(label: ".") { handleKey(".") }
+                            KeyButton(label: "×") { handleKey("×") }
                         }
                         HStack(spacing: 12) {
-                            KeyButton(icon: "delete.left.fill") { handleKey("del") }
+                            KeyButton(label: ".") { handleKey(".") }
                             KeyButton(label: "0") { handleKey("0") }
-                            Button(action: { showKeypad = false }) {
-                                Text("确认")
-                                    .font(.system(size: 18, weight: .heavy))
-                                    .foregroundColor(Color.App.darkGreen)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .background(Color.App.primaryGreen)
-                                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                            KeyButton(label: "÷") { handleKey("÷") }
+                            KeyButton(icon: "delete.left.fill") { handleKey("del") }
+                        }
+                        // 确认/等号按钮
+                        Button(action: {
+                            if showEquals {
+                                calculateResult()
+                            } else {
+                                showKeypad = false
                             }
+                        }) {
+                            Text(showEquals ? "=" : "确认")
+                                .font(.system(size: 18, weight: .heavy))
+                                .foregroundColor(Color.App.darkGreen)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(Color.App.primaryGreen)
+                                .clipShape(RoundedRectangle(cornerRadius: 24))
                         }
                     }
                     .padding(.horizontal, 20)
@@ -437,11 +459,53 @@ struct AddRecordView: View {
     // MARK: - 键盘处理
     private func handleKey(_ key: String) {
         impactFeedback.impactOccurred()
+        
+        // 如果已有计算结果，按数字键重新开始
+        if !calculatedResult.isEmpty && !showEquals {
+            if "0123456789".contains(key) {
+                amount = ""
+                expression = ""
+                calculatedResult = ""
+                hasOperator = false
+            }
+        }
+        
         switch key {
         case "del":
-            if !amount.isEmpty { amount.removeLast() }
+            if !amount.isEmpty {
+                amount.removeLast()
+                // 如果删除后没有数字了，清除运算符状态
+                if amount.isEmpty {
+                    hasOperator = false
+                    showEquals = false
+                    expression = ""
+                }
+            } else if hasOperator && !expression.isEmpty {
+                // 如果没有数字但有运算符，删除运算符回到第一个数字
+                amount = String(expression.dropLast())  // 移除运算符
+                hasOperator = false
+                showEquals = false
+                expression = ""
+            }
         case ".":
             if !amount.contains(".") { amount += key }
+        case "+", "-", "×", "÷":
+            // 如果已有运算符，先计算之前的结果
+            if hasOperator && !amount.isEmpty {
+                calculateResult()
+            }
+            // 如果已有运算符但没有新数字，只更新运算符
+            if hasOperator && amount.isEmpty && !expression.isEmpty {
+                expression = String(expression.dropLast()) + key
+                return
+            }
+            // 设置运算符
+            if !amount.isEmpty {
+                expression = amount + key
+                hasOperator = true
+                showEquals = true
+                amount = ""
+            }
         default:
             if let dotIndex = amount.firstIndex(of: ".") {
                 let decimals = amount.distance(from: amount.index(after: dotIndex), to: amount.endIndex)
@@ -452,6 +516,77 @@ struct AddRecordView: View {
         if let val = Double(amount), val > 1000 {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
+    }
+    
+    // MARK: - 计算结果
+    private func calculateResult() {
+        guard !expression.isEmpty, !amount.isEmpty else { return }
+        
+        // 提取运算符和第一个数字
+        let operatorChar: String
+        let firstNumberStr: String
+        
+        if expression.hasSuffix("+") {
+            operatorChar = "+"
+            firstNumberStr = String(expression.dropLast())
+        } else if expression.hasSuffix("-") {
+            operatorChar = "-"
+            firstNumberStr = String(expression.dropLast())
+        } else if expression.hasSuffix("×") {
+            operatorChar = "×"
+            firstNumberStr = String(expression.dropLast())
+        } else if expression.hasSuffix("÷") {
+            operatorChar = "÷"
+            firstNumberStr = String(expression.dropLast())
+        } else {
+            return
+        }
+        
+        guard let firstNumber = Double(firstNumberStr),
+              let secondNumber = Double(amount) else { return }
+        
+        var result: Double
+        
+        switch operatorChar {
+        case "+":
+            result = firstNumber + secondNumber
+        case "-":
+            result = firstNumber - secondNumber
+        case "×":
+            result = firstNumber * secondNumber
+        case "÷":
+            guard secondNumber != 0 else {
+                // 除以0的错误处理
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                return
+            }
+            result = firstNumber / secondNumber
+        default:
+            return
+        }
+        
+        // 格式化结果（保留最多2位小数）
+        if result == result.rounded() {
+            amount = String(Int(result))
+        } else {
+            amount = String(format: "%.2f", result)
+            // 去除末尾的0
+            while amount.hasSuffix("0") {
+                amount = String(amount.dropLast())
+            }
+            if amount.hasSuffix(".") {
+                amount = String(amount.dropLast())
+            }
+        }
+        
+        // 重置状态
+        expression = ""
+        hasOperator = false
+        showEquals = false
+        calculatedResult = amount
+        
+        // 成功反馈
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
     
     // MARK: - 保存账单

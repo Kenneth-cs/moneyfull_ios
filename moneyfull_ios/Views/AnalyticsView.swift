@@ -404,12 +404,10 @@ struct AnalyticsView: View {
         .sheet(isPresented: $showCustomRangeSheet) {
             CustomDateRangeSheet(startDate: $customStartDate, endDate: $customEndDate)
         }
-        .background(
-            NavigationLink(isActive: $showTrendDetail) {
-                TrendDetailView(transactions: filteredTransactions, periodLabel: periodDisplayText)
-                    .environmentObject(store)
-            } label: { EmptyView() }.hidden()
-        )
+        .navigationDestination(isPresented: $showTrendDetail) {
+            TrendDetailView(transactions: filteredTransactions, periodLabel: periodDisplayText)
+                .environmentObject(store)
+        }
     }
 
     // MARK: - 时间维度选择器

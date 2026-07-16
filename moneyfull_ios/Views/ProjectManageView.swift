@@ -3,6 +3,7 @@ import SwiftData
 
 struct ProjectManageView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var storeManager: StoreManager
     @Environment(\.presentationMode) var presentationMode
     
     @State private var editingProject: Project? = nil
@@ -81,6 +82,7 @@ struct ProjectManageView: View {
             .sheet(item: $editingProject) { project in
                 EditProjectView(project: project)
                     .environmentObject(store)
+                    .environmentObject(storeManager)
             }
         }
     }

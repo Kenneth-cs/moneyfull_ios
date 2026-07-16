@@ -340,6 +340,11 @@ struct AIChatView: View {
         .sheet(isPresented: $showBackTapTutorial) {
             BackTapTutorialView()
         }
+        .onChange(of: messages.count) { _, _ in
+            if showBackTapTutorial {
+                showBackTapTutorial = false
+            }
+        }
         .sheet(isPresented: $showActiveProjectSheet) {
             ActiveProjectSheetView(store: store)
         }
@@ -347,12 +352,10 @@ struct AIChatView: View {
             FuelPackSheet()
                 .environmentObject(storeManager)
         }
-        .background(
-            NavigationLink(isActive: $showFinancialAcademy) {
-                FinancialAcademyView()
-                    .environmentObject(store)
-            } label: { EmptyView() }.hidden()
-        )
+        .navigationDestination(isPresented: $showFinancialAcademy) {
+            FinancialAcademyView()
+                .environmentObject(store)
+        }
     }
 
     // MARK: - Header
@@ -701,7 +704,7 @@ struct AIChatView: View {
                                 .shadow(color: ChatDesign.primaryContainer.opacity(0.4), radius: 12, x: 0, y: 4)
                         )
                 }
-                .disabled((messageText.isEmpty && !showVoiceInput) || !storeManager.canSendMessage)
+                .disabled((messageText.isEmpty && !showVoiceInput) || !storeManager.canSendMessage || isLoading)
                 .scaleEffect(messageText.isEmpty ? 0.93 : 1.0)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6), value: messageText.isEmpty)
             }
@@ -784,6 +787,11 @@ struct AIChatView: View {
         #endif
         guard !histories.isEmpty else { return }
 
+        // 获取当前画像的预制消息配置（用于恢复附加信息）
+        let personaType = UserDefaults.standard.string(forKey: "userPersonaType")
+            .flatMap { PersonaType(rawValue: $0) }
+        let scriptConfigs = personaType.map { PersonaOnboardingScript.messages(for: $0) } ?? []
+
         messages = histories.compactMap { history in
             // 尝试还原消费洞察卡片
             if history.content.hasPrefix("__INSIGHT__:"),
@@ -796,6 +804,19 @@ struct AIChatView: View {
                     timestamp: history.timestamp,
                     spendingInsight: insight,
                     usesRichText: false
+                )
+            }
+            // 预制消息：从脚本配置中恢复附加信息（历史消息不恢复动画动效）
+            if history.isPrescripted, let config = scriptConfigs.first(where: { $0.text == history.content }) {
+                return ChatMessage(
+                    role: .assistant,
+                    content: history.content,
+                    timestamp: history.timestamp,
+                    usesRichText: true,
+                    isPrescripted: true,
+                    animationItems: nil,
+                    onboardingImageName: config.imageName,
+                    ctaAction: config.ctaAction
                 )
             }
             // 普通文本消息
@@ -853,6 +874,7 @@ struct AIChatView: View {
                         role: .assistant,
                         content: config.text,
                         timestamp: Date(),
+                        usesRichText: true,
                         isPrescripted: true,
                         animationItems: config.animationItems,
                         onboardingImageName: config.imageName,
@@ -945,7 +967,7 @@ struct AIChatView: View {
 
         let jtbdDesc: String
         switch jtbdRaw {
-        case "jtbd_ease":      jtbdDesc = "更省事地记账（少摩擦）"
+        case "jtbd_ease":      jtbdDesc = "更方便快捷地记账（无痛记账）"
         case "jtbd_insight":   jtbdDesc = "看清钱都花去哪了"
         case "jtbd_roi":       jtbdDesc = "管理多个项目ROI"
         case "jtbd_budget":    jtbdDesc = "做预算，避免超支"
@@ -1041,7 +1063,7 @@ struct AIChatView: View {
     }
 
     private func sendMessage() {
-        guard !messageText.isEmpty, storeManager.canSendMessage else { return }
+        guard !messageText.isEmpty, storeManager.canSendMessage, !isLoading else { return }
         let text = messageText
         messages.append(ChatMessage(role: .user, content: text, timestamp: Date()))
         messageText = ""
@@ -1063,7 +1085,8 @@ struct AIChatView: View {
             await MainActor.run {
                 messages.removeAll { $0.id == processingMsg.id }
                 handleParseResult(result)
-                _ = storeManager.consumeOneCall()
+                let aiReply = messages.last(where: { $0.role == .assistant })?.content
+                _ = storeManager.consumeOneCall(userMessage: "📷 [图片] " + ocrText, aiReply: aiReply)
                 isLoading = false
             }
         } catch {
@@ -1099,7 +1122,8 @@ struct AIChatView: View {
             let result = try await llmService.parseTransaction(from: text, context: context)
             await MainActor.run {
                 handleParseResult(result)
-                _ = storeManager.consumeOneCall()
+                let aiReply = messages.last(where: { $0.role == .assistant })?.content
+                _ = storeManager.consumeOneCall(userMessage: text, aiReply: aiReply)
                 isLoading = false
             }
         } catch {
@@ -1123,7 +1147,8 @@ struct AIChatView: View {
                 await MainActor.run {
                     messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
                     handleParseResult(result)
-                    _ = storeManager.consumeOneCall()
+                    let aiReply = messages.last(where: { $0.role == .assistant })?.content
+                    _ = storeManager.consumeOneCall(userMessage: ocrText, aiReply: aiReply)
                     isLoading = false
                 }
             } catch {
@@ -1434,10 +1459,30 @@ struct ChatBubble: View {
                         if !message.content.isEmpty {
                             bubbleContent
                         }
+                        // 清单区域：与气泡视觉统一，浅绿色容器
                         OnboardingChecklistView(items: items)
                             .padding(.horizontal, 16)
-                            .padding(.bottom, 12)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                ChatDesign.aiBubbleBg
+                                    .clipShape(UnevenRoundedRectangle(
+                                        topLeadingRadius: 0, bottomLeadingRadius: 16,
+                                        bottomTrailingRadius: 16, topTrailingRadius: 0
+                                    ))
+                                    .overlay(
+                                        UnevenRoundedRectangle(
+                                            topLeadingRadius: 0, bottomLeadingRadius: 16,
+                                            bottomTrailingRadius: 16, topTrailingRadius: 0
+                                        ).stroke(ChatDesign.aiBubbleBorder, lineWidth: 1)
+                                    )
+                            )
                     }
+                    .clipShape(UnevenRoundedRectangle(
+                        topLeadingRadius: 6, bottomLeadingRadius: 16,
+                        bottomTrailingRadius: 16, topTrailingRadius: 16
+                    ))
+                    .shadow(color: ChatDesign.primaryContainer.opacity(0.12), radius: 10, x: 0, y: 3)
                 }
                 // Onboarding 预制消息（带效果图 + 可选 CTA）
                 else if let imageName = message.onboardingImageName {
@@ -1659,6 +1704,8 @@ struct OnboardingCTAButton: View {
     let action: OnboardingCTAAction
     @State private var showBackTapTutorial = false
     @State private var showNotificationPermission = false
+    @State private var showAlreadyAuthorized = false
+    @State private var showDeniedGuide = false
 
     var body: some View {
         Button {
@@ -1666,7 +1713,7 @@ struct OnboardingCTAButton: View {
             case .showBackTapSetup:
                 showBackTapTutorial = true
             case .requestNotification:
-                showNotificationPermission = true
+                checkNotificationPermission()
             }
         } label: {
             HStack(spacing: 6) {
@@ -1689,17 +1736,62 @@ struct OnboardingCTAButton: View {
         .sheet(isPresented: $showBackTapTutorial) {
             BackTapTutorialView()
         }
+        .alert("需要开启通知权限", isPresented: $showDeniedGuide) {
+            Button("去设置") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("操作步骤：设置 → 通知 → 找到「钱小满」→ 开启「允许通知」即可")
+        }
         .onChange(of: showNotificationPermission) { _, _ in
             if showNotificationPermission {
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
                 showNotificationPermission = false
             }
         }
+        .overlay(alignment: .top) {
+            if showAlreadyAuthorized {
+                Text("您已经开通～")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.App.darkGreen)
+                    .clipShape(Capsule())
+                    .offset(y: -35)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func checkNotificationPermission() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .authorized:
+                    withAnimation {
+                        showAlreadyAuthorized = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        withAnimation {
+                            showAlreadyAuthorized = false
+                        }
+                    }
+                case .denied:
+                    showDeniedGuide = true
+                default:
+                    showNotificationPermission = true
+                }
+            }
+        }
     }
 
     private var buttonTitle: String {
         switch action {
-        case .showBackTapSetup: return "授权无痛记账"
+        case .showBackTapSetup: return "立刻设置无痛记账"
         case .requestNotification: return "开启提醒通知"
         }
     }

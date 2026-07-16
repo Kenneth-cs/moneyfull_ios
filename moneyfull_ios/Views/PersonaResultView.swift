@@ -36,40 +36,47 @@ struct PersonaResultView: View {
     private var features: [FeatureRecommendation] { effectivePersona.featureRecommendations(method: method) }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    heroSection
-                    healthScoreSection
-                    painPointSection
-                    featureSection
-                    quoteSection
-                    Color.clear.frame(height: 120)
-                }
-            }
-            .ignoresSafeArea()
+        GeometryReader { geo in
+            let topInset    = geo.safeAreaInsets.top
+            let bottomInset = geo.safeAreaInsets.bottom
+            let imageWidth  = min(geo.size.width * 0.38, 148.0)
 
-            // 固定底部按钮
-            startButton
-                .padding(.horizontal, 24)
-                .padding(.bottom, 40)
-                .background(
-                    LinearGradient(colors: [bgGreen.opacity(0), bgGreen],
-                                   startPoint: .top, endPoint: .bottom)
-                    .frame(height: 120)
-                    .ignoresSafeArea()
-                )
+            ZStack(alignment: .bottom) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        heroSection(topInset: topInset, imageWidth: imageWidth)
+                        healthScoreSection
+                        painPointSection
+                        featureSection
+                        quoteSection
+                        Color.clear.frame(height: 148)
+                    }
+                }
+                .ignoresSafeArea()
+
+                // 固定底部按钮
+                startButton
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, max(bottomInset + 8, 28))
+                    .background(
+                        LinearGradient(colors: [bgGreen.opacity(0), bgGreen],
+                                       startPoint: .top, endPoint: .bottom)
+                        .frame(height: 120)
+                        .ignoresSafeArea()
+                    )
+            }
         }
+        // GeometryReader 本身不 ignoresSafeArea，这样 safeAreaInsets 才能正确读取
+        // 背景色在这里单独延伸到屏幕边缘
         .background(bgGreen.ignoresSafeArea())
         .onAppear { startAnimations() }
     }
 
     // MARK: - Hero 区（人物插画 + 标题 + 描述）
-    private var heroSection: some View {
+    private func heroSection(topInset: CGFloat, imageWidth: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             // 白色背景卡
             Color.white
-                .clipShape(RoundedRectangle(cornerRadius: 0))
 
             // 淡叶子背景装饰
             Image(systemName: "leaf.fill")
@@ -79,7 +86,7 @@ struct PersonaResultView: View {
                 .offset(x: -20, y: 60)
 
             VStack(alignment: .leading, spacing: 0) {
-                // 字母标签条
+                // 字母标签条：顶部 padding 根据安全区动态计算
                 HStack(spacing: 8) {
                     Text(effectivePersona.letter)
                         .font(.system(size: 13, weight: .bold))
@@ -93,21 +100,22 @@ struct PersonaResultView: View {
                         .foregroundColor(green)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 56)
+                .padding(.top, topInset + 16)
 
-                // 内容行：文案 + 人物图
+                // 内容行：文案 + 人物图（imageWidth 由外层 GeometryReader 计算传入）
                 HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(effectivePersona.headline)
                             .font(.system(size: 26, weight: .heavy))
                             .foregroundColor(Color(hex: "#1A3A2E"))
                             .lineLimit(2)
-                            .minimumScaleFactor(0.85)
+                            .minimumScaleFactor(0.8)
 
                         Text(effectivePersona.description(income: income))
                             .font(.system(size: 14, weight: .regular))
                             .foregroundColor(Color(hex: "#1A3A2E").opacity(0.75))
                             .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, 20)
                     .padding(.top, 12)
@@ -116,7 +124,7 @@ struct PersonaResultView: View {
                     Image(effectivePersona.personaImageName)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 160)
+                        .frame(width: imageWidth)
                         .offset(y: -10)
                 }
 
@@ -132,7 +140,7 @@ struct PersonaResultView: View {
     private var healthScoreSection: some View {
         HStack(spacing: 16) {
             // 圆形分数
-            VStack(spacing: 4) {
+            VStack(spacing: 12) {
                 Text("财务健康分")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(green.opacity(0.8))
@@ -213,8 +221,8 @@ struct PersonaResultView: View {
             Text(effectivePersona.painPoint)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(Color(hex: "#1A3A2E"))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             Spacer()
         }

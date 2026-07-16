@@ -5,7 +5,9 @@ import SwiftData
 // MARK: - 页面顶部标题栏（标题绝对居中，logo 在左，铃铛在右）
 struct PageHeader: View {
     let title: String
-    
+    @EnvironmentObject var store: AppStore
+    @State private var showNoticeCenter = false
+
     var body: some View {
         ZStack {
             // 标题绝对居中
@@ -19,16 +21,32 @@ struct PageHeader: View {
                 Spacer()
             }
             
-            // 右侧铃铛
+            // 右侧铃铛（消息中心入口）
             HStack {
                 Spacer()
-                Image(systemName: "bell")
-                    .font(.system(size: 22))
-                    .foregroundColor(.gray)
+                Button(action: { showNoticeCenter = true }) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "bell")
+                            .font(.system(size: 22))
+                            .foregroundColor(.gray)
+
+                        if store.unreadNoticeCount > 0 {
+                            Circle()
+                                .fill(Color.App.redExpense)
+                                .frame(width: 8, height: 8)
+                                .offset(x: 3, y: -2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
+        .sheet(isPresented: $showNoticeCenter) {
+            NoticeCenterView()
+                .environmentObject(store)
+        }
     }
 }
 

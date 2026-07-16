@@ -4,18 +4,19 @@ struct ProjectDetailView: View {
     let project: Project
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var storeManager: StoreManager
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var editingTransaction: Transaction?
     @State private var viewingTransaction: Transaction?
     @State private var showColorPicker = false
     @State private var showEditProject = false
     @State private var showDeleteConfirm = false
+    @State private var showArchiveConfirm = false
     @State private var showUpgradeAlert = false
 
     // MARK: 新增状态
     @State private var showPaywall = false
     @State private var showBudgetManagement = false
-    @State private var showArchiveReview = false
     @State private var showEarningDashboard = false
     @State private var showLifestyleDashboard = false
     
@@ -30,7 +31,14 @@ struct ProjectDetailView: View {
     @State private var _budgetProgress: Double = 0
     
     // MARK: - 静态 DateFormatter（避免 body 每次重渲时重复创建）
-    private static let dayFormatter: DateFormatter = {
+    /// 排序用 key：yyyy-MM-dd，保证字符串排序 == 日期排序
+    private static let dayKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    /// 显示用：2026年7月15日
+    private static let dayDisplayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy年M月d日"
         return f
@@ -62,8 +70,19 @@ struct ProjectDetailView: View {
         Task { @MainActor in updateCacheData() }
     }
 
+    /// 将 "yyyy-MM-dd" key 转为 "2026年7月15日" 显示格式
+    private func displayDate(from key: String) -> String {
+        guard let date = Self.dayKeyFormatter.date(from: key) else { return key }
+        return Self.dayDisplayFormatter.string(from: date)
+    }
+
     private func updateCacheData() {
-        let txs = project.transactions ?? []
+        // 直接从 modelContext 查询，避免 SwiftData 懒加载关系返回不完整数据
+        let pid = project.id
+        let descriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate<Transaction> { $0.project?.id == pid }
+        )
+        let txs = (try? modelContext.fetch(descriptor)) ?? project.transactions ?? []
         
         // 0. 概览汇总（一次遍历算出总支出/总收入）
         var totalExp: Double = 0
@@ -76,11 +95,11 @@ struct ProjectDetailView: View {
         _totalIncome = totalInc
         _budgetProgress = project.budget > 0 ? totalExp / project.budget : 0
         
-        // 1. 分组交易记录
+        // 1. 分组交易记录（用 yyyy-MM-dd 做 key 保证排序正确）
         let sorted = txs.sorted { $0.date > $1.date }
         var groups: [String: [Transaction]] = [:]
         for tx in sorted {
-            let key = Self.dayFormatter.string(from: tx.date)
+            let key = Self.dayKeyFormatter.string(from: tx.date)
             groups[key, default: []].append(tx)
         }
         _groupedTransactions = groups.sorted { $0.key > $1.key }
@@ -238,7 +257,7 @@ struct ProjectDetailView: View {
                 
                 // 左侧返回按钮 + 右侧菜单
                 HStack {
-                    Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                    Button(action: { dismiss() }) {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 14, weight: .bold))
@@ -252,13 +271,25 @@ struct ProjectDetailView: View {
                         Button { showEditProject = true } label: {
                             Label("编辑项目", systemImage: "pencil")
                         }
+                        NavigationLink {
+                            ProjectReviewView(
+                                project: project,
+                                projectMode: project.projectMode == "earning" ? .earning : .lifestyle,
+                                onArchive: { store.toggleArchive(project: project) },
+                                onShowPaywall: { showPaywall = true }
+                            )
+                            .environmentObject(store)
+                            .environmentObject(storeManager)
+                        } label: {
+                            Label("复盘分析", systemImage: "chart.bar.doc.horizontal")
+                        }
                         if project.isArchived {
                             Button { store.toggleArchive(project: project) } label: {
                                 Label("取消归档", systemImage: "archivebox")
                             }
                         } else {
-                            Button { showArchiveReview = true } label: {
-                                Label("归档并复盘", systemImage: "archivebox.fill")
+                            Button { showArchiveConfirm = true } label: {
+                                Label("归档", systemImage: "archivebox")
                             }
                         }
                         Divider()
@@ -308,18 +339,21 @@ struct ProjectDetailView: View {
                                     Text(project.name)
                                         .font(.system(size: 20, weight: .heavy))
                                         .foregroundColor(Color.App.textBlack)
-                                    // 模式切换标签
+                                    // 模式切换按钮
                                     Button {
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                         let newMode = projectModeEnum == .earning ? "lifestyle" : "earning"
                                         store.updateProject(project, name: project.name, icon: project.icon,
                                                            colorHex: project.colorHex, desc: project.desc,
                                                            budget: project.budget, projectMode: newMode)
                                     } label: {
-                                        HStack(spacing: 4) {
+                                        HStack(spacing: 3) {
                                             Image(systemName: projectModeEnum == .earning ? "briefcase.fill" : "heart.fill")
                                                 .font(.system(size: 10, weight: .bold))
                                             Text(projectModeEnum == .earning ? "搞钱" : "生活")
                                                 .font(.system(size: 11, weight: .bold))
+                                            Image(systemName: "arrow.triangle.2.circlepath")
+                                                .font(.system(size: 9, weight: .bold))
                                         }
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 8)
@@ -385,7 +419,7 @@ struct ProjectDetailView: View {
                                         Circle()
                                             .fill(Color(hex: project.colorHex))
                                             .frame(width: 10, height: 10)
-                                        Text(group.key)
+                                        Text(displayDate(from: group.key))
                                             .font(.system(size: 13, weight: .bold))
                                             .foregroundColor(.gray)
                                     }
@@ -422,6 +456,7 @@ struct ProjectDetailView: View {
         .sheet(isPresented: $showEditProject) {
             EditProjectView(project: project)
                 .environmentObject(store)
+                .environmentObject(storeManager)
         }
         .sheet(item: $editingTransaction) { tx in
             EditTransactionView(transaction: tx)
@@ -437,11 +472,20 @@ struct ProjectDetailView: View {
         .confirmationDialog("确认删除该项目？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("删除", role: .destructive) {
                 store.deleteProject(project)
-                presentationMode.wrappedValue.dismiss()
+                dismiss()
             }
             Button("取消", role: .cancel) {}
         } message: {
             Text("删除后项目内所有账单将被一并清除，且无法恢复。")
+        }
+        .alert("确认归档", isPresented: $showArchiveConfirm) {
+            Button("取消", role: .cancel) { }
+            Button("确认归档") {
+                store.toggleArchive(project: project)
+                dismiss()
+            }
+        } message: {
+            Text("归档后项目将移至「已归档」列表，不再显示在首页，你可以随时取消归档恢复")
         }
         .alert("升级到专业版", isPresented: $showUpgradeAlert) {
             Button("取消", role: .cancel) { }
@@ -450,7 +494,7 @@ struct ProjectDetailView: View {
             Text("专业版用户可以解锁预算预警、经营看板、ROI 分析等高级功能！")
         }
         .fullScreenCover(isPresented: $showBudgetManagement) {
-            NavigationView {
+            NavigationStack {
                 BudgetManagementSheet(
                     project: project,
                     onShowPaywall: { showPaywall = true }
@@ -463,19 +507,6 @@ struct ProjectDetailView: View {
                     }
                 }
             }
-        }
-        .sheet(isPresented: $showArchiveReview) {
-            ProjectReviewSheet(
-                project: project,
-                projectMode: projectModeEnum,
-                onArchive: {
-                    store.toggleArchive(project: project)
-                    showArchiveReview = false
-                    presentationMode.wrappedValue.dismiss()
-                },
-                onShowPaywall: { showPaywall = true }
-            )
-            .environmentObject(storeManager)
         }
         .fullScreenCover(isPresented: $showEarningDashboard) {
             ProjectEarningView(
@@ -500,14 +531,22 @@ struct ProjectDetailView: View {
         .onAppear {
             updateCacheData()
         }
+        .task {
+            // 确保视图加载时从数据库获取最新数据
+            updateCacheData()
+        }
         // 增删：count 变化
         .onChange(of: project.transactions?.count) { _, _ in reloadCache() }
-        // 编辑金额（count 不变，但弹窗关闭时数据已写入 CoreData）
+        // 编辑金额（count 不变，但弹窗关闭时数据已写入 SwiftData）
         .onChange(of: editingTransaction != nil) { _, isPresented in
             if !isPresented { reloadCache() }
         }
         // CloudKit 同步兜底：月度汇总变化时也刷新
         .onChange(of: store.monthlyExpense) { _, _ in reloadCache() }
+        // 从其他页面添加记录后返回时刷新
+        .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
+            reloadCache()
+        }
     }
 }
 
@@ -517,23 +556,30 @@ extension ProjectDetailView {
         let budgetItems = project.budgetItems ?? []
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("预算分类")
+                Text("预算管理")
                     .font(.system(size: 20, weight: .heavy))
                     .foregroundColor(Color.App.textBlack)
                 Spacer()
-                if !budgetItems.isEmpty {
-                    Button("管理分类 ›") { showBudgetManagement = true }
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.gray)
+                Button(action: { showBudgetManagement = true }) {
+                    HStack(spacing: 2) {
+                        Text("管理")
+                            .font(.system(size: 13, weight: .bold))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundColor(Color.App.darkGreen)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.App.primaryGreen.opacity(0.15))
+                    .clipShape(Capsule())
                 }
             }
 
-            if budgetItems.isEmpty {
-                // 空状态
+            if budgetItems.isEmpty && project.budget <= 0 {
+                // 空状态：没有预算分类且没有总预算
                 VStack(spacing: 14) {
                     HStack(spacing: 10) {
                         Text("🦫").font(.system(size: 20))
-                        Text("还没有设置预算分类")
+                        Text("还没有设置预算")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.gray)
                     }
@@ -541,7 +587,7 @@ extension ProjectDetailView {
                         // AI 生成（检查付费状态）
                         Button {
                             if storeManager.isPremium {
-                                // Plus 用户：调用 AI 生成
+                                // Pro 用户：调用 AI 生成
                                 generateAIBudgetForProject()
                             } else {
                                 showPaywall = true
@@ -550,7 +596,7 @@ extension ProjectDetailView {
                             HStack(spacing: 5) {
                                 Image(systemName: storeManager.isPremium ? "sparkles" : "lock.fill")
                                     .font(.system(size: 12, weight: .bold))
-                                Text(storeManager.isPremium ? "AI 生成" : "AI 生成  Plus")
+                                Text(storeManager.isPremium ? "小满帮你规划" : "小满帮你规划  Pro")
                                     .font(.system(size: 13, weight: .bold))
                             }
                             .foregroundColor(.white)
@@ -571,15 +617,14 @@ extension ProjectDetailView {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             } else {
-                // 总进度条
-                let totalAllocated = budgetItems.reduce(0) { $0 + $1.amount }
-                let totalProg      = totalAllocated > 0 ? min(project.currentCycleSpent / totalAllocated, 1.0) : 0
+                // 总预算进度条（有总预算时显示）
+                let totalProg = project.budget > 0 ? min(project.currentCycleSpent / project.budget, 1.0) : 0
                 let progColor: Color = totalProg >= 1.0 ? Color.App.redExpense
                     : totalProg >= 0.8 ? Color(hex: "#FFA500") : accentColor
 
                 VStack(spacing: 6) {
                     HStack {
-                        Text("总进度").font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
+                        Text("总预算").font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
                         Spacer()
                         Text("\(Int(totalProg * 100))%")
                             .font(.system(size: 12, weight: .bold))
@@ -693,7 +738,7 @@ extension ProjectDetailView {
     private var earningEntryCard: some View {
         Group {
             if storeManager.isPremium {
-                // Plus：显示核心指标预览，点击进全页
+                // Pro：显示核心指标预览，点击进全页
                 NavigationLink {
                     ProjectDashboardView(project: project)
                         .environmentObject(store)
@@ -751,7 +796,7 @@ extension ProjectDetailView {
                 }
                 .buttonStyle(.plain)
             } else {
-                PlusLockedEntryCard(
+                ProLockedEntryCard(
                     icon: "briefcase.fill",
                     title: "经营看板",
                     description: "四维度经营分析，看清这个项目到底赚没赚、剩多少。",

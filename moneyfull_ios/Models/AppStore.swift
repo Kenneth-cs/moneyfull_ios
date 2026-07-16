@@ -15,6 +15,8 @@ class AppStore: ObservableObject {
     @Published var recentTransactions: [Transaction] = []
     /// 所有分类（系统预设 + 自定义）
     @Published var categories: [Category] = []
+    /// 消息中心通知列表（按时间倒序）
+    @Published var appNotices: [AppNotice] = []
     
     // 本月汇总数据
     @Published var monthlyExpense: Double = 0
@@ -114,7 +116,36 @@ class AppStore: ObservableObject {
         fetchProjects()
         fetchRecentTransactions()
         fetchCategories()
+        fetchAppNotices()
         calcMonthlyStats()
+    }
+
+    /// 消息中心未读数量，用于首页铃铛角标
+    var unreadNoticeCount: Int {
+        appNotices.filter { !$0.isRead }.count
+    }
+
+    private func fetchAppNotices() {
+        let descriptor = FetchDescriptor<AppNotice>(
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+        )
+        appNotices = (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    /// 将某条消息标记为已读（点开详情时调用）
+    func markNoticeAsRead(_ notice: AppNotice) {
+        guard !notice.isRead else { return }
+        notice.isRead = true
+        save()
+        fetchAppNotices()
+    }
+
+    /// 关闭自动弹出的"给陪伴的你"感谢信时调用，把消息中心对应那条也标记为已读
+    func markLegacyGiftNoticeAsRead() {
+        let noticeID = AppNoticeData.legacyGiftLetter.id
+        if let notice = appNotices.first(where: { $0.noticeID == noticeID }) {
+            markNoticeAsRead(notice)
+        }
     }
     
     private func fetchProjects() {
@@ -149,6 +180,11 @@ class AppStore: ObservableObject {
         print("📋 AppStore.fetchAllTransactions - count: \(result.count)")
         #endif
         return result
+    }
+    
+    func fetchTotalTransactionCount() -> Int {
+        let descriptor = FetchDescriptor<Transaction>()
+        return (try? modelContext.fetchCount(descriptor)) ?? 0
     }
     
     private func fetchCategories() {
@@ -305,9 +341,20 @@ class AppStore: ObservableObject {
     
     /// 归档 / 取消归档项目
     func toggleArchive(project: Project) {
+        let wasArchived = project.isArchived
         project.isArchived.toggle()
         save()
         refresh()
+        
+        if !wasArchived {
+            AnalyticsManager.shared.trackEvent(
+                eventId: "project_archive",
+                eventName: "归档项目",
+                params: [
+                    "project_name": project.name
+                ]
+            )
+        }
     }
     
     /// 设置/取消活跃项目（全局唯一）
@@ -388,6 +435,16 @@ class AppStore: ObservableObject {
         modelContext.insert(category)
         save()
         refresh()
+        
+        AnalyticsManager.shared.trackEvent(
+            eventId: "category_created",
+            eventName: "添加分类",
+            params: [
+                "category_name": name,
+                "group_name": groupName,
+                "transaction_type": transactionType
+            ]
+        )
     }
     
     func deleteCategory(_ category: Category) {
@@ -955,6 +1012,95 @@ class AppStore: ObservableObject {
             }
             UserDefaults.standard.set(true, forKey: "grandfatheringChecked")
         }
+
+        checkAndGrantLegacyGiftIfNeeded()
+    }
+
+    // MARK: - 老用户会员福利（Legacy Gift）
+
+    /// 老用户判定截止日期：此日期之前有记账记录的用户才算"老用户"
+    private static let legacyUserCutoffDate: Date = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        return calendar.date(from: DateComponents(year: 2026, month: 7, day: 18)) ?? .distantPast
+    }()
+
+    /// 福利领取截止日期：此日期之后不再发放福利（2 个月窗口期）
+    private static let legacyGiftClaimDeadline: Date = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        return calendar.date(from: DateComponents(year: 2026, month: 9, day: 18)) ?? .distantFuture
+    }()
+
+    /// 一次性检测：是否为老用户，若是则发放 6 个月会员体验期 + 插入消息中心通知
+    /// 触发一次后（无论结果如何）不再重复检测，避免每次启动都查一次数据库
+    private func checkAndGrantLegacyGiftIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: "legacyGiftChecked") else { return }
+        defer { UserDefaults.standard.set(true, forKey: "legacyGiftChecked") }
+
+        // 已经领取过（可能是从其他设备通过 CloudKit 同步过来的记录），不重复发放
+        let grantDescriptor = FetchDescriptor<LegacyGiftGrant>()
+        let existingGrants = (try? modelContext.fetch(grantDescriptor)) ?? []
+        if existingGrants.contains(where: { $0.isGranted }) {
+            #if DEBUG
+            print("ℹ️ 老用户福利: 已在其他设备领取过，跳过")
+            #endif
+            return
+        }
+
+        // 超过领取截止时间，不再发放
+        guard Date() < Self.legacyGiftClaimDeadline else {
+            #if DEBUG
+            print("ℹ️ 老用户福利: 已超过领取截止时间（\(Self.legacyGiftClaimDeadline)），跳过")
+            #endif
+            return
+        }
+
+        // 判断是否存在早于截止日期的记账记录
+        let cutoffDate = Self.legacyUserCutoffDate
+        var txDescriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate<Transaction> { $0.date < cutoffDate }
+        )
+        txDescriptor.fetchLimit = 1
+        let hasLegacyTransaction = !((try? modelContext.fetch(txDescriptor)) ?? []).isEmpty
+
+        guard hasLegacyTransaction else {
+            #if DEBUG
+            print("ℹ️ 老用户福利: 无早于截止日期的记账记录，判定为新用户，不发放")
+            #endif
+            return
+        }
+
+        // 发放福利
+        let now = Date()
+        let grant = existingGrants.first ?? LegacyGiftGrant()
+        grant.isGranted = true
+        grant.grantedAt = now
+        grant.expiresAt = Calendar.current.date(byAdding: .month, value: 6, to: now)
+        if existingGrants.isEmpty {
+            modelContext.insert(grant)
+        }
+
+        // 插入消息中心通知（若已存在同 ID 通知则不重复插入）
+        let noticeID = AppNoticeData.legacyGiftLetter.id
+        let noticeDescriptor = FetchDescriptor<AppNotice>(predicate: #Predicate<AppNotice> { $0.noticeID == noticeID })
+        let existingNotices = (try? modelContext.fetch(noticeDescriptor)) ?? []
+        if existingNotices.isEmpty {
+            let notice = AppNotice(noticeID: noticeID, title: AppNoticeData.legacyGiftLetter.title, receivedAt: now, isRead: false)
+            modelContext.insert(notice)
+        }
+
+        save()
+        fetchAppNotices()
+
+        // 通知 UI 层：本次需要自动弹出一次感谢信
+        UserDefaults.standard.set(true, forKey: "legacyGiftShouldAutoPresent")
+        // 通知 StoreManager 重新计算会员状态
+        NotificationCenter.default.post(name: .legacyGiftGranted, object: nil)
+
+        #if DEBUG
+        print("✅ 老用户福利: 发放成功，体验期至 \(grant.expiresAt?.description ?? "-")")
+        #endif
     }
     
     // MARK: - 去重逻辑

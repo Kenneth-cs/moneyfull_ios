@@ -141,32 +141,32 @@ enum PersonaType: String, CaseIterable {
         switch self {
         case .earner:
             if income == .multi {
-                return "工资是底，副业是变量——\n但每个月算下来，副业到底赚了多少？\n\n小满帮你把两本账分开管，\n看清每一块收入的真实价值。"
+                return "工资是底，副业是变量——\n但每个月算下来，副业到底赚了多少？\n\n小满帮你把两本账分开管，\n看清每一块收入的真实价值"
             }
-            return "收入靠接单，钱不固定，项目多了\n很难说清楚哪个赚了、哪个在亏。\n\n你需要的不是记流水，\n而是看清每个项目的真实回报。"
+            return "收入靠接单，钱不固定，项目多了\n很难说清楚哪个赚了、哪个在亏\n\n你需要的不是记流水，\n而是看清每个项目的真实回报"
         case .efficiency:
-            return "你知道记账有用，你试过，\n但每次打开 App 的那一秒，你放弃了。\n不是你不行——是工具不对。\n\n小满有一个功能是专门为你设计的。"
+            return "你知道记账有用，你试过，\n但每次打开 App 的那一秒，你放弃了\n不是你不行——是工具不对\n\n小满有一个功能是专门为你设计的"
         case .moonlight:
-            return "不是不想存钱，是每次看到余额\n都比预想的少。\n不是记账记漏了，是没人提醒你快超了。\n\n小满会在你还来得及的时候告诉你。"
+            return "不是不想存钱，是每次看到余额\n都比预想的少\n不是记账记漏了，是没人提醒你快超了\n\n小满会在你还来得及的时候告诉你"
         case .dataDriven:
-            return "你已经在认真记账了，\n但你知道光有数据还不够。\n数字背后是什么模式？哪里可以优化？\n\n小满帮你从「记下来」跨越到「看出来」。"
+            return "你已经在认真记账了，\n但你知道光有数据还不够\n数字背后是什么模式？哪里可以优化？\n\n小满帮你从「记下来」跨越到「看出来」"
         case .steady:
-            return "收入稳定，但总是「钱没了，\n也不知道花在哪」。\n你不需要多复杂的功能，\n你需要的是一套真正坚持得下去的记账方式。\n\n小满帮你做到这件事：简单，但每天都能用。"
+            return "收入稳定，但总是「钱没了，\n也不知道花在哪」\n你不需要多复杂的功能，\n你需要的是一套真正坚持得下去的记账方式\n\n小满帮你做到这件事：简单，但每天都能用"
         }
     }
 
     func healthScoreNote(income: IncomeTag) -> String {
         switch self {
         case .earner:
-            return "你的分数主要受收入不规律影响，这不是你的问题，而是这类收入结构的特点。\n\nROI 分析能帮你把不确定性变成可量化的数据。"
+            return "你的分数主要受收入不规律影响，这不是你的问题，而是这类收入结构的特点\n\nROI 分析能帮你把不确定性变成可量化的数据"
         case .efficiency:
-            return "你曾经认真记过账，这说明你真正理解它的价值——这是最难的一步。\n\n现在只差一个不需要「打开 App」的工具。"
+            return "你曾经认真记过账，这说明你真正理解它的价值——这是最难的一步\n\n现在只差一个不需要「打开 App」的工具"
         case .moonlight:
-            return "收入稳定是很大的优势，你已经赢在了起点。\n\n建立预警系统之后，这个分数会明显提升。"
+            return "收入稳定是很大的优势，你已经赢在了起点\n\n建立预警系统之后，这个分数会明显提升"
         case .dataDriven:
-            return "你的习惯分很高，这是最难养成的部分你已经做到了。\n\n现在是时候让这些数据为你工作了。"
+            return "你的习惯分很高，这是最难养成的部分你已经做到了\n\n现在是时候让这些数据为你工作了"
         case .steady:
-            return "收入稳定本身就是一个很大的优势。\n\n建立记录习惯之后，你会比大多数人更快看到财务改善。"
+            return "收入稳定本身就是一个很大的优势\n\n建立记录习惯之后，你会比大多数人更快看到财务改善"
         }
     }
 
@@ -182,11 +182,11 @@ enum PersonaType: String, CaseIterable {
 
     var bottomQuote: String {
         switch self {
-        case .earner:     return "看清每个项目的真实回报，才能让每一次接单都更有价值。"
-        case .efficiency: return "记账不应该打断生活，而应该融入生活。"
-        case .moonlight:  return "每一次及时提醒，都是你离存下钱更近一步。"
-        case .dataDriven: return "数据不只是记录过去，更用来指导更好的未来。"
-        case .steady:     return "坚持记账，不是为了记住每一笔钱，而是为了过上自己想要的生活。"
+        case .earner:     return "看清每个项目的真实回报，才能让每一次接单都更有价"
+        case .efficiency: return "记账不应该打断生活，而应该融入生活"
+        case .moonlight:  return "每一次及时提醒，都是你离存下钱更近一步"
+        case .dataDriven: return "数据不只是记录过去，更用来指导更好的未来"
+        case .steady:     return "坚持记账，不是为了记住每一笔钱，而是为了过上自己想要的生活"
         }
     }
 
@@ -312,18 +312,32 @@ struct AssessmentEngine {
     }
 
     static func determinePersona(habit: HabitTag, method: MethodTag, income: IncomeTag) -> PersonaType {
+        // Rule 1: 收入不固定 → 项目创收者
         if income == .freelance || income == .multi {
             return .earner
         }
+        
+        // Rule 2: 试过但放弃 → 效率优先者（任何收入）
         if habit == .lapsed {
             return .efficiency
         }
-        if (habit == .none || habit == .sometimes) && (income == .salary || income == .student) {
+        
+        // Rule 3: 从未记过账 → 月光规划师（需要预算守护）
+        if habit == .none && (income == .salary || income == .student) {
             return .moonlight
         }
+        // Rule 3b: 偶尔记账 + 学生（预算敏感，同样需要预警）→ 月光规划师
+        if habit == .sometimes && income == .student {
+            return .moonlight
+        }
+        
+        // Rule 4: 已有习惯 + 稳定收入 → 数据控进阶者
         if (habit == .daily || habit == .consistent) && (income == .salary || income == .student) {
             return .dataDriven
         }
+        
+        // Rule 5: 兜底 → 稳健积累者
+        // 到这里只剩：habit_sometimes + income_salary
         return .steady
     }
 
@@ -336,6 +350,46 @@ struct AssessmentEngine {
         ud.set(income.rawValue,          forKey: "userIncomeType")
         ud.set(method.rawValue,          forKey: "userRecordMethod")
         ud.set(Date(),                   forKey: "userPersonaSetDate")
+        ud.set(true,                     forKey: "hasCompletedAssessment")
+
+        // 同步到 iCloud 键值存储，跨设备共享画像数据
+        let kv = NSUbiquitousKeyValueStore.default
+        kv.set(persona.rawValue,         forKey: "userPersonaType")
+        kv.set(persona.displayName,      forKey: "userPersonaName")
+        kv.set(healthScore,              forKey: "userHealthScore")
+        kv.set(jtbd.rawValue,            forKey: "userJTBDChoice")
+        kv.set(income.rawValue,          forKey: "userIncomeType")
+        kv.set(method.rawValue,          forKey: "userRecordMethod")
+        kv.synchronize()
+    }
+
+    /// 从 iCloud 键值存储恢复画像数据到本地 UserDefaults（用于跨设备首次启动）
+    static func restoreFromiCloudIfNeeded() {
+        let kv = NSUbiquitousKeyValueStore.default
+        let ud = UserDefaults.standard
+
+        // 本地已有数据则跳过
+        guard !ud.bool(forKey: "hasCompletedAssessment") else { return }
+
+        // iCloud 有画像数据则同步到本地
+        guard let personaRaw = kv.string(forKey: "userPersonaType"),
+              PersonaType(rawValue: personaRaw) != nil else { return }
+
+        ud.set(personaRaw,               forKey: "userPersonaType")
+        if let name = kv.string(forKey: "userPersonaName") {
+            ud.set(name,                 forKey: "userPersonaName")
+        }
+        let score = kv.longLong(forKey: "userHealthScore")
+        ud.set(Int(score),               forKey: "userHealthScore")
+        if let jtbd = kv.string(forKey: "userJTBDChoice") {
+            ud.set(jtbd,                 forKey: "userJTBDChoice")
+        }
+        if let income = kv.string(forKey: "userIncomeType") {
+            ud.set(income,               forKey: "userIncomeType")
+        }
+        if let method = kv.string(forKey: "userRecordMethod") {
+            ud.set(method,               forKey: "userRecordMethod")
+        }
         ud.set(true,                     forKey: "hasCompletedAssessment")
     }
 }

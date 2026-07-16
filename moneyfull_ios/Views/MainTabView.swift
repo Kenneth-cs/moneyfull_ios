@@ -11,7 +11,7 @@ struct MainTabView: View {
     @State private var isFromShortcut: Bool = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack(alignment: .bottom) {
                 Color.App.backgroundGray.ignoresSafeArea()
                 
@@ -47,22 +47,17 @@ struct MainTabView: View {
                     isAIChatPresented: $isAIChatPresented,
                     aiInitialText: $aiInitialText
                 )
-                
-                NavigationLink(isActive: $isAIChatPresented) {
-                    AIChatView(initialText: aiInitialText, isFromShortcut: isFromShortcut)
-                        .environmentObject(store)
-                        .onDisappear {
-                            aiInitialText = nil
-                            isFromShortcut = false
-                        }
-                } label: {
-                    EmptyView()
-                }
-                .hidden()
             }
             .navigationBarHidden(true)
+            .navigationDestination(isPresented: $isAIChatPresented) {
+                AIChatView(initialText: aiInitialText, isFromShortcut: isFromShortcut)
+                    .environmentObject(store)
+                    .onDisappear {
+                        aiInitialText = nil
+                        isFromShortcut = false
+                    }
+            }
         }
-        .navigationViewStyle(.stack)
         .onChange(of: selectedTab) {
             if selectedTab == 3 {
                 AnalyticsManager.shared.trackEvent(eventId: "analytics_view_page", eventName: "浏览统计页")

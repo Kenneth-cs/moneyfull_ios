@@ -37,7 +37,6 @@ struct ProjectEarningView: View {
     // 每日支出走势（按天分组）
     private var dailyData: [(label: String, expense: Double, income: Double, saving: Double)] {
         let txs = (project.transactions ?? []).sorted { $0.date < $1.date }
-        let calendar = Calendar.current
         var grouped: [String: Double] = [:]
         let fmt = DateFormatter()
         fmt.dateFormat = "M/d"
@@ -74,8 +73,8 @@ struct ProjectEarningView: View {
                         hourlyRateCard
                     }
 
-                    // MARK: ⑥ 趋势月环比（Plus）
-                    PlusLockedSection(
+                    // MARK: ⑥ 趋势月环比（Pro）
+                    ProLockedSection(
                         isLocked: !storeManager.isPremium,
                         title: "解锁趋势月环比",
                         onUnlock: onShowPaywall
@@ -84,8 +83,8 @@ struct ProjectEarningView: View {
                     }
                     .padding(.horizontal, 24)
 
-                    // MARK: ⑦ AI 洞察（Plus）
-                    PlusLockedSection(
+                    // MARK: ⑦ AI 洞察（Pro）
+                    ProLockedSection(
                         isLocked: !storeManager.isPremium,
                         title: "解锁 AI 经营洞察",
                         onUnlock: onShowPaywall
@@ -470,7 +469,7 @@ struct ProjectEarningView: View {
         .padding(.horizontal, 24)
     }
 
-    // MARK: - ⑥ 趋势月环比（Plus）
+    // MARK: - ⑥ 趋势月环比（Pro）
 
     private var trendCard: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -490,7 +489,7 @@ struct ProjectEarningView: View {
         .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
     }
 
-    // MARK: - ⑦ AI 洞察（Plus）
+    // MARK: - ⑦ AI 洞察（Pro）
 
     @State private var aiInsightText: String = ""
     @State private var isLoadingInsight: Bool = false

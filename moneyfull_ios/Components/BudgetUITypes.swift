@@ -74,6 +74,36 @@ enum BudgetCycle: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - 项目模式卡片
+
+struct ProjectModeCard: View {
+    let mode: ProjectMode
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 14, weight: .bold))
+                Text(mode.title)
+                    .font(.system(size: 15, weight: .heavy))
+            }
+            Text(mode.subtitle)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.gray)
+            Text(mode.description)
+                .font(.system(size: 11))
+                .foregroundColor(.gray)
+        }
+        .foregroundColor(isSelected ? Color.App.darkGreen : Color.App.textBlack)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(isSelected ? Color.App.primaryGreen.opacity(0.18) : Color.App.tabBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(isSelected ? Color.App.darkGreen : Color.clear, lineWidth: 1.5))
+    }
+}
+
 // MARK: - Mock 工厂
 
 extension BudgetItemUI {

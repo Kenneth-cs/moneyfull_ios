@@ -22,7 +22,7 @@ struct MemoryManagementView: View {
                             .frame(width: 40, height: 40)
                     }
                     Spacer()
-                    Text("AI 记忆管理")
+                    Text("小满记忆管理")
                         .font(.system(size: 20, weight: .heavy))
                         .foregroundColor(Color.App.textBlack)
                     Spacer()

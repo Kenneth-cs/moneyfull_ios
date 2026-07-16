@@ -519,73 +519,152 @@ class LLMService {
         return content
     }
     
-    // MARK: - 项目复盘
+    // MARK: - 项目复盘（结构化版本）
     
-    /// 生成项目复盘总结
-    func generateProjectReview(project: Project, mode: String) async throws -> ProjectReviewResult {
-        let topExpenses = (project.transactions ?? [])
-            .filter { $0.type == .expense }
-            .sorted { abs($0.amount) > abs($1.amount) }
-            .prefix(3)
-            .map { "\($0.categoryName): ¥\(Int(abs($0.amount)))" }
-            .joined(separator: ", ")
-        
+    /// 生成项目复盘总结（接收预计算统计数据）
+    func generateProjectReview(
+        projectName: String,
+        mode: String,
+        lifestyleStats: LifestyleProjectStats? = nil,
+        earningStats: EarningProjectStats? = nil
+    ) async throws -> ProjectReviewResult {
         let systemPrompt: String
-        if mode == "earning" {
+        if mode == "earning", let s = earningStats {
+            let achievementText = s.targetAchievement.map { "\(Int($0 * 100))%" } ?? "未设目标"
             systemPrompt = """
-            你是项目复盘顾问，为搞钱模式项目生成复盘总结。
+            你是「\(projectName)」项目的经营复盘顾问。请基于以下数据生成复盘报告。
 
-            项目：\(project.name)
-            总收入：¥\(Int(project.totalIncome))
-            总成本：¥\(Int(project.totalCost))（时间成本 ¥\(Int(project.totalTimeCost)) + 支出 ¥\(Int(project.totalSpent))）
-            净利润：¥\(Int(project.netProfit))
-            ROI：\(project.roi.formatted(.number.precision(.fractionLength(1))))%
-            总工时：\(project.totalHourEquivalent.formatted(.number.precision(.fractionLength(1))))h
-            真实时薪：¥\(project.effectiveHourlyRate.formatted(.number.precision(.fractionLength(1))))/h
-            最大三笔支出：\(topExpenses.isEmpty ? "暂无" : topExpenses)
+            ## 项目基础信息
+            - 项目名称：\(projectName)
+            - 项目类型：搞钱模式
 
-            请返回 JSON：
+            ## 盈利能力
+            - 总收入：¥\(Int(s.totalIncome))
+            - 总支出（物质成本）：¥\(Int(s.totalExpense))
+            - 时间成本：¥\(Int(s.timeCost))
+            - 总成本：¥\(Int(s.totalCost))
+            - 净利润：¥\(Int(s.netProfit))
+            - 利润率：\(Int(s.profitMargin * 100))%（\(s.profitMarginLabel)）
+            - ROI：\(s.roi.formatted(.number.precision(.fractionLength(1))))%（\(s.roiRating)）
+            - 目标收入：¥\(Int(s.targetIncome))
+            - 目标达成率：\(achievementText)
+
+            ## 时间价值
+            - 总工时：\(s.totalHours.formatted(.number.precision(.fractionLength(1))))h
+            - 真实时薪：¥\(s.effectiveHourlyRate.formatted(.number.precision(.fractionLength(1))))/h（\(s.hourlyRateLabel)）
+            - 日均投入：\(s.dailyHours.formatted(.number.precision(.fractionLength(1))))h（\(s.dailyHoursLabel)）
+            - 工时分布：前半段 \(s.firstHalfHours.formatted(.number.precision(.fractionLength(1))))h / 后半段 \(s.secondHalfHours.formatted(.number.precision(.fractionLength(1))))h
+
+            ## 成本结构
+            - 时间成本占比：\(Int(s.timeCostRatio * 100))%
+            - 物质成本占比：\(Int(s.materialCostRatio * 100))%
+            - 最大支出项：\(s.topExpenseName) ¥\(Int(s.topExpenseAmount))（占比 \(Int(s.topExpenseContribution * 100))%）
+            - 固定成本：¥\(Int(s.fixedMonthlyCost))/月
+
+            ## 经营效率
+            - 收入节奏：前半段 \(Int(s.incomeFirstHalfRatio * 100))% / 后半段 \(Int(s.incomeSecondHalfRatio * 100))%（\(s.incomeTimingLabel)）
+            - 支出节奏：前半段 \(Int(s.expenseFirstHalfRatio * 100))% / 后半段 \(Int(s.expenseSecondHalfRatio * 100))%（\(s.expenseTimingLabel)）
+            - 本月净现金流：¥\(Int(s.monthlyNetCashFlow))（\(s.cashFlowStatus)）
+
+            ## 要求
+            1. 生成 4 个维度的洞察（盈利能力、时间价值、成本结构、经营效率）
+            2. 每条洞察必须引用 ≥1 个具体数字
+            3. 给出利润率/时薪的行业基准线对比
+            4. 不要做主观推测（如"你可能…"）
+            5. 给出下次接单的具体报价和预算建议
+            6. 返回严格 JSON 格式，不要添加其他文字
+
+            ## 输出格式
             {
-              "summary": "3-5条洞察，每条一行",
+              "highlights": [
+                {"icon": "💰", "label": "盈利能力", "text": "..."},
+                {"icon": "⏱️", "label": "时间价值", "text": "..."},
+                {"icon": "📦", "label": "成本结构", "text": "..."},
+                {"icon": "📈", "label": "经营效率", "text": "..."}
+              ],
+              "one_liner": "一句话总结（15字以内）",
+              "next_quote": {
+                "suggested_amount": 11900,
+                "reason": "计算逻辑"
+              },
               "next_budget": [
-                {"name": "建议项", "amount": 1000}
+                {"name": "成本项", "amount": 1000, "reason": "计算逻辑"}
+              ]
+            }
+            """
+        } else if let s = lifestyleStats {
+            // 分类明细文本
+            let catText = s.categoryBreakdown.map { c in
+                let deltaText = c.delta >= 0 ? "超支 ¥\(Int(c.delta))" : "节省 ¥\(Int(abs(c.delta)))"
+                return "- \(c.name)：预算 ¥\(Int(c.budgeted))，实际 ¥\(Int(c.actual))，执行率 \(Int(c.ratio * 100))%，\(deltaText)"
+            }.joined(separator: "\n")
+
+            systemPrompt = """
+            你是「\(projectName)」项目的财务复盘顾问。请基于以下数据生成复盘报告。
+
+            ## 项目基础信息
+            - 项目名称：\(projectName)
+            - 项目类型：生活模式
+            - 持续天数：\(s.totalDays) 天
+
+            ## 预算执行
+            - 总预算：¥\(Int(s.budget))
+            - 总支出：¥\(Int(s.totalSpent))
+            - 预算执行率：\(Int(s.budgetProgress * 100))%
+            - 节省/超支：¥\(Int(abs(s.budget - s.totalSpent)))
+
+            ## 分类预算明细
+            \(catText.isEmpty ? "暂无分类预算" : catText)
+
+            ## 消费结构
+            - 消费集中度（HHI）：\(String(format: "%.2f", s.hhiIndex))（\(s.hhiLabel)）
+            - 大件消费：¥\(Int(s.bigItemAmount))（\(Int(s.bigItemRatio * 100))%）
+            - 日常自由消费：¥\(Int(s.dailyFreeAmount))/天
+            - 最大单笔：¥\(Int(s.maxSingleAmount))（\(s.maxSingleCategory)）
+            - 平均单笔：¥\(Int(s.avgSingleAmount))
+            - 中位数单笔：¥\(Int(s.medianSingleAmount))
+            - 波动系数：\(String(format: "%.1f", s.volatility))x
+
+            ## 时间分布
+            - 前半段消费：¥\(Int(s.firstHalfSpent))（\(Int(s.firstHalfRatio * 100))%）
+            - 后半段消费：¥\(Int(s.secondHalfSpent))（\(Int(s.secondHalfRatio * 100))%）
+            - 消费高峰日：第 \(s.peakDayNumber) 天，¥\(Int(s.peakDayAmount))
+            - 日均记账笔数：\(String(format: "%.1f", s.avgDailyTransactions))
+
+            ## 要求
+            1. 生成 4 个维度的洞察（预算执行、消费结构、时间分析、最佳表现）
+            2. 每条洞察必须引用 ≥1 个具体数字
+            3. 不要做主观推测（如"你可能…"）
+            4. 给出下次同类项目的具体预算建议（分类级别）
+            5. 返回严格 JSON 格式，不要添加其他文字
+
+            ## 输出格式
+            {
+              "highlights": [
+                {"icon": "🎯", "label": "预算控制", "text": "..."},
+                {"icon": "📊", "label": "消费结构", "text": "..."},
+                {"icon": "⏱️", "label": "消费节奏", "text": "..."},
+                {"icon": "🏆", "label": "最佳表现", "text": "..."}
+              ],
+              "one_liner": "一句话总结（15字以内）",
+              "next_budget": [
+                {"name": "分类名", "amount": 1000, "reason": "计算逻辑"}
               ]
             }
             """
         } else {
-            systemPrompt = """
-            你是项目复盘顾问，为生活模式项目生成复盘总结。
-
-            项目：\(project.name)
-            总支出：¥\(Int(project.totalSpent))
-            预算：¥\(Int(project.budget))
-            持续天数：\(project.totalDays)天
-            日均花费：¥\(Int(project.dailyAvgSpend))
-            最大三笔支出：\(topExpenses.isEmpty ? "暂无" : topExpenses)
-
-            请返回 JSON：
-            {
-              "summary": "3-5条洞察，每条一行",
-              "next_budget": [
-                {"name": "建议项", "amount": 1000}
-              ]
-            }
-            """
+            return .fallback(message: "数据不足，无法生成复盘")
         }
-        
+
         let messages: [[String: String]] = [
             ["role": "system", "content": systemPrompt],
             ["role": "user", "content": "请生成项目复盘总结"]
         ]
-        
         let requestBody: [String: Any] = [
-            "model": model,
-            "messages": messages,
-            "temperature": 0.3,
-            "max_tokens": 600,
-            "stream": false
+            "model": model, "messages": messages,
+            "temperature": 0.3, "max_tokens": 900, "stream": false
         ]
-        
+
         let url = URL(string: Config.chatCompletionsURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -593,47 +672,33 @@ class LLMService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        let session = URLSession(configuration: config)
-        
+
+        let sessionConfig = URLSessionConfiguration.default
+        sessionConfig.timeoutIntervalForRequest = 30
+        sessionConfig.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: sessionConfig)
+
         let (data, response) = try await session.data(for: request)
-        
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw LLMError.apiError
         }
-        
+
         let llmResponse = try JSONDecoder().decode(LLMResponse.self, from: data)
         guard let content = llmResponse.choices.first?.message.content else {
             throw LLMError.noContent
         }
-        
-        // 记录Token使用量
+
         if let usage = llmResponse.usage {
             TokenMonitor.shared.record(tokens: usage.totalTokens)
         }
-        
-        guard let jsonData = content.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-            throw LLMError.invalidJSON
-        }
-        
-        let summary = json["summary"] as? String ?? "暂无总结"
-        let nextBudget = (json["next_budget"] as? [[String: Any]])?.compactMap { dict -> (String, Double)? in
-            guard let name = dict["name"] as? String, let amount = dict["amount"] as? Double else { return nil }
-            return (name, amount)
-        } ?? []
-        
-        return ProjectReviewResult(aiSummary: summary, nextBudgetSuggestions: nextBudget)
-    }
-}
 
-/// 项目复盘结果
-struct ProjectReviewResult {
-    let aiSummary: String
-    let nextBudgetSuggestions: [(name: String, amount: Double)]
+        // 使用加固解析器
+        if let result = ProjectReviewJSONParser.parse(content: content) {
+            return result
+        }
+        // 解析失败降级，而非抛错
+        return .fallback(message: "AI 暂时无法生成分析，请稍后重试")
+    }
 }
 
 enum LLMError: Error {

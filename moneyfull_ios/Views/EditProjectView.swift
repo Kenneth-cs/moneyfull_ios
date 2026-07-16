@@ -2,19 +2,24 @@ import SwiftUI
 import SwiftData
 struct EditProjectView: View {
     let project: Project
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var store: AppStore
-    
+    @EnvironmentObject var storeManager: StoreManager
+
     @State private var name: String
     @State private var desc: String
     @State private var budgetText: String
     @State private var selectedIcon: String
     @State private var selectedColor: String
-    
+    @State private var projectMode: String
+    @State private var budgetCycle: String
+    @State private var customCycleDays: Int
+
     @State private var showDeleteConfirm = false
-    
+    @State private var showBudgetManagement = false
+
     private let iconOptions = CategoryIconLibrary.project
-    
+
     init(project: Project) {
         self.project = project
         _name = State(initialValue: project.name)
@@ -22,10 +27,13 @@ struct EditProjectView: View {
         _budgetText = State(initialValue: project.budget > 0 ? String(format: "%.0f", project.budget) : "")
         _selectedIcon = State(initialValue: project.icon)
         _selectedColor = State(initialValue: project.colorHex)
+        _projectMode = State(initialValue: project.projectMode)
+        _budgetCycle = State(initialValue: project.budgetCycle)
+        _customCycleDays = State(initialValue: project.budgetCycleDays > 0 ? project.budgetCycleDays : 30)
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // MARK: 项目名称
@@ -57,7 +65,79 @@ struct EditProjectView: View {
                         .background(Color.App.tabBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                     }
-                    
+
+                    // MARK: 项目模式
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("项目模式").sectionTitle()
+                        HStack(spacing: 12) {
+                            ForEach(ProjectMode.allCases) { mode in
+                                ProjectModeCard(mode: mode, isSelected: projectMode == mode.rawValue)
+                                    .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { projectMode = mode.rawValue } }
+                            }
+                        }
+                    }
+
+                    // MARK: 预算分类管理
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("预算分类").sectionTitle()
+                        Button { showBudgetManagement = true } label: {
+                            HStack {
+                                Image(systemName: "slider.horizontal.3")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("管理预算分类")
+                                    .font(.system(size: 14, weight: .bold))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundColor(Color.App.darkGreen)
+                            .padding(16)
+                            .background(Color.App.tabBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                    }
+
+                    // MARK: 预算周期
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("预算周期").sectionTitle()
+                        ForEach(BudgetCycle.allCases) { cycle in
+                            Button { budgetCycle = cycle.rawValue } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: budgetCycle == cycle.rawValue ? "largecircle.fill.circle" : "circle")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(budgetCycle == cycle.rawValue ? Color.App.darkGreen : .gray)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(cycle.label)
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text(cycle.hint)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            if cycle == .custom && budgetCycle == "custom" {
+                                HStack {
+                                    Spacer().frame(width: 28)
+                                    Text("每")
+                                        .font(.system(size: 14)).foregroundColor(.gray)
+                                    TextField("30", value: $customCycleDays, format: .number)
+                                        .keyboardType(.numberPad)
+                                        .font(.system(size: 14, weight: .bold))
+                                        .frame(width: 50)
+                                        .padding(.horizontal, 8).padding(.vertical, 6)
+                                        .background(Color.App.tabBackground)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    Text("天自动刷新")
+                                        .font(.system(size: 14)).foregroundColor(.gray)
+                                }
+                                .padding(.top, 4)
+                            }
+                        }
+                    }
+
                     // MARK: 图标选择
                     VStack(alignment: .leading, spacing: 12) {
                         Text("选择图标").sectionTitle()
@@ -171,15 +251,20 @@ struct EditProjectView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { presentationMode.wrappedValue.dismiss() }
+                    Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                         let budget = Double(budgetText) ?? 0
+                        let cycleValue = budgetCycle
+                        if budgetCycle == "custom" {
+                            project.budgetCycleDays = customCycleDays
+                        }
                         store.updateProject(project, name: name, icon: selectedIcon,
-                                            colorHex: selectedColor, desc: desc, budget: budget)
-                        presentationMode.wrappedValue.dismiss()
+                                            colorHex: selectedColor, desc: desc, budget: budget,
+                                            projectMode: projectMode, budgetCycle: cycleValue)
+                        dismiss()
                     }
                     .font(.system(size: 16, weight: .bold))
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -188,11 +273,23 @@ struct EditProjectView: View {
             .confirmationDialog("确认删除该项目？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("删除", role: .destructive) {
                     store.deleteProject(project)
-                    presentationMode.wrappedValue.dismiss()
+                    dismiss()
                 }
                 Button("取消", role: .cancel) {}
             } message: {
                 Text("删除后项目内所有账单将被一并清除，且无法恢复。")
+            }
+            .sheet(isPresented: $showBudgetManagement) {
+                NavigationStack {
+                    BudgetManagementSheet(project: project)
+                        .environmentObject(store)
+                        .environmentObject(storeManager)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("关闭") { showBudgetManagement = false }
+                            }
+                        }
+                }
             }
         }
     }

@@ -65,7 +65,7 @@ final class Project {
     var budgetCycle: String = "project"         // "project" | "monthly" | "custom"
     var budgetCycleStartDate: Date? = nil
     var budgetCycleDays: Int = 30
-    var budgetAlertThreshold: Double = 0        // 总预算预警线（Plus）
+    var budgetAlertThreshold: Double = 0        // 总预算预警线（Pro）
     var defaultRate: Double = 0                 // 默认时薪（记工时时使用，可选功能）
     var defaultRateGranularity: String = "hour" // "hour" | "day"
     var targetIncome: Double = 0                // 目标收入 / 合同金额
@@ -510,7 +510,7 @@ final class BudgetItem {
     var categoryColorHex: String = ""
     var amount: Double = 0
     var sortOrder: Int = 0
-    var alertThreshold: Double = 0   // 0 = 不预警；0.8 = 80% 提醒（Plus）
+    var alertThreshold: Double = 0   // 0 = 不预警；0.8 = 80% 提醒（Pro）
     var createdAt: Date = Date()
 
     var project: Project?
@@ -717,5 +717,25 @@ final class FixedCost {
         self.nextDueDate = nextDueDate
         self.isActive = true
         self.createdAt = Date()
+    }
+}
+
+/// 复盘缓存模型：持久化 AI 复盘结果，避免重复调用 LLM
+@Model
+final class ProjectReviewCache {
+    var id: UUID = UUID()
+    var projectID: UUID = UUID()
+    var resultJSON: String = ""
+    var createdAt: Date = Date()
+    var dataHash: String = ""
+    var dailyUsageDate: Date = Date()
+
+    init(projectID: UUID, resultJSON: String, dataHash: String) {
+        self.id = UUID()
+        self.projectID = projectID
+        self.resultJSON = resultJSON
+        self.createdAt = Date()
+        self.dataHash = dataHash
+        self.dailyUsageDate = Date()
     }
 }

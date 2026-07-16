@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - 有内容时的遮罩型锁定（内容真实可见但模糊）
 
-struct PlusLockedSection<Content: View>: View {
+struct ProLockedSection<Content: View>: View {
     let isLocked: Bool
     let title: String
     var onUnlock: () -> Void = {}
@@ -55,7 +55,7 @@ struct PlusLockedSection<Content: View>: View {
 
 // MARK: - 无内容时的入口锁定卡（功能说明型）
 
-struct PlusLockedEntryCard: View {
+struct ProLockedEntryCard: View {
     let icon: String
     let title: String
     let description: String
@@ -111,12 +111,12 @@ struct PlusLockedEntryCard: View {
     }
 }
 
-// MARK: - Plus 角标（共用）
+// MARK: - Pro 角标（共用）
 
 private var plusBadge: some View {
     HStack(spacing: 4) {
         Image(systemName: "lock.fill").font(.system(size: 11, weight: .bold))
-        Text("Plus").font(.system(size: 12, weight: .heavy))
+        Text("Pro").font(.system(size: 12, weight: .heavy))
     }
     .foregroundColor(Color.App.darkGreen)
     .padding(.horizontal, 10).padding(.vertical, 4)

@@ -23,6 +23,8 @@ struct ContentView: View {
 
     @State private var deepLinkText: String?
     @State private var showRatingPrompt = false
+    @State private var showLegacyGiftLetter = false
+    @State private var pendingLegacyGiftLetter = false
 
     private enum AssessmentStep {
         case quiz, loading, result
@@ -46,6 +48,12 @@ struct ContentView: View {
             if store == nil {
                 store = AppStore(modelContext: modelContext)
                 store?.initialize()
+
+                // 老用户会员福利：标记待弹出，等测评完成后再展示
+                if UserDefaults.standard.bool(forKey: "legacyGiftShouldAutoPresent") {
+                    UserDefaults.standard.set(false, forKey: "legacyGiftShouldAutoPresent")
+                    pendingLegacyGiftLetter = true
+                }
             }
 
             if let store = store, AppRatingManager.shared.shouldShowRating(transactionCount: store.recentTransactions.count) {
@@ -53,6 +61,14 @@ struct ContentView: View {
                     showRatingPrompt = true
                 }
             }
+        }
+        .fullScreenCover(isPresented: $showLegacyGiftLetter) {
+            LegacyGiftLetterView(onDismiss: {
+                showLegacyGiftLetter = false
+                if let store {
+                    store.markLegacyGiftNoticeAsRead()
+                }
+            })
         }
         .overlay {
             if showRatingPrompt {
@@ -133,6 +149,13 @@ struct ContentView: View {
                             assessmentStep = .quiz
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                                 NotificationCenter.default.post(name: .navigateToOnboardingChat, object: nil)
+                            }
+                            // 测评完成后弹出老用户感谢信
+                            if pendingLegacyGiftLetter {
+                                pendingLegacyGiftLetter = false
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                    showLegacyGiftLetter = true
+                                }
                             }
                         }
                         .transition(.opacity)
@@ -275,10 +298,12 @@ extension Notification.Name {
     static let showFeedback = Notification.Name("showFeedback")
     static let newShortcutText = Notification.Name("newShortcutText")
     static let navigateToOnboardingChat = Notification.Name("navigateToOnboardingChat")
+    /// 老用户会员福利发放成功时广播，StoreManager 借此重新计算 isPremium
+    static let legacyGiftGranted = Notification.Name("legacyGiftGranted")
 }
 
 #Preview {
     ContentView()
-        .modelContainer(for: [Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self], inMemory: true)
+        .modelContainer(for: [Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self, LegacyGiftGrant.self, AppNotice.self], inMemory: true)
 }
 

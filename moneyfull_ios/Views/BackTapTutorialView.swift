@@ -1,11 +1,10 @@
 import SwiftUI
-import SafariServices
 
 // MARK: - 快捷指令安装页（仿竞品风格）
 struct BackTapTutorialView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var expandedMethod: Int? = 1 // 默认展开方法一
-    @State private var showSafari = false
+    @Environment(\.openURL) private var openURL
     
     private let shortcutURL = URL(string: "https://www.icloud.com/shortcuts/1b5541113ab745b69a06049192de3dd1")!
     
@@ -27,7 +26,7 @@ struct BackTapTutorialView: View {
                                 HStack(spacing: 10) {
                                     Text("✋")
                                         .font(.system(size: 22))
-                                    Text("如何开启无疼记账？")
+                                    Text("如何开启无痛记账？")
                                         .font(.system(size: 18, weight: .bold))
                                         .foregroundColor(Color(hex: "#1A3C2E"))
                                 }
@@ -40,7 +39,7 @@ struct BackTapTutorialView: View {
                                         .font(.system(size: 15, weight: .semibold))
                                         .foregroundColor(Color(hex: "#1A3C2E"))
                                     
-                                    Button(action: { showSafari = true }) {
+                                    Button(action: { openURL(shortcutURL) }) {
                                         Text("点我安装")
                                             .font(.system(size: 17, weight: .bold))
                                             .foregroundColor(.white)
@@ -66,7 +65,7 @@ struct BackTapTutorialView: View {
                                         .font(.system(size: 15, weight: .semibold))
                                         .foregroundColor(Color(hex: "#1A3C2E"))
                                     
-                                    // 方法一
+                                    // 方法一：轻点背面
                                     TriggerMethodRow(
                                         index: 1,
                                         title: "使用轻触手机背部触发",
@@ -77,25 +76,71 @@ struct BackTapTutorialView: View {
                                         }
                                     } content: {
                                         VStack(alignment: .leading, spacing: 8) {
-                                            Text("1、手机设置 → 辅助功能 → 触控 → 轻点背面 → 轻点两下 → 选择「钱小满自动记账」")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(Color(hex: "#4A7A5E"))
-                                                .lineSpacing(4)
+                                            RichChatTextView(
+                                                text: "1、打开手机**「设置」** → 选择**「辅助功能」** → 选择**「触控」** → 选择**「轻点背面」** → 选择**「轻点两下」** → 选择**「钱小满自动记账」**",
+                                                baseColor: Color(hex: "#4A7A5E"),
+                                                highlightColor: Color(hex: "#1A3C2E"),
+                                                baseSize: 13,
+                                                highlightSize: 13
+                                            )
+                                            .lineSpacing(4)
                                             Text("2、设置完成，付款后轻点两下手机背面即可自动记账～")
                                                 .font(.system(size: 13))
                                                 .foregroundColor(Color(hex: "#4A7A5E"))
                                                 .lineSpacing(4)
                                         }
                                     }
-                                    
-                                    // 方法二
+
+                                    // 方法二：操作按钮（iPhone 15 Pro+）
                                     TriggerMethodRow(
                                         index: 2,
-                                        title: "使用辅助触控（小白点）触发",
+                                        title: "一键快捷记账（侧边按钮触发）",
                                         expanded: expandedMethod == 2
                                     ) {
                                         withAnimation(.easeInOut(duration: 0.25)) {
                                             expandedMethod = expandedMethod == 2 ? nil : 2
+                                        }
+                                    } content: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            RichChatTextView(
+                                                text: "适用于 iPhone 15 Pro 及以上机型（配备**「操作按钮」**，位于机身左侧最上方）。你可以将按钮绑定钱小满快捷记账指令，**长按按键**即可快速进入记账页面，**无需解锁打开 App**，消费后随手记更便捷。",
+                                                baseColor: Color(hex: "#4A7A5E"),
+                                                highlightColor: Color(hex: "#1A3C2E"),
+                                                baseSize: 13,
+                                                highlightSize: 13
+                                            )
+                                            .lineSpacing(4)
+                                            Divider()
+                                            Text("设置步骤：")
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .foregroundColor(Color(hex: "#1A3C2E"))
+                                            Text("1、先在「快捷指令」App 中添加钱小满快捷记账指令")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(Color(hex: "#4A7A5E"))
+                                                .lineSpacing(4)
+                                            RichChatTextView(
+                                                text: "2、打开系统**「设置 → 操作按钮」**",
+                                                baseColor: Color(hex: "#4A7A5E"),
+                                                highlightColor: Color(hex: "#1A3C2E"),
+                                                baseSize: 13,
+                                                highlightSize: 13
+                                            )
+                                            .lineSpacing(4)
+                                            Text("3、滑动选择「快捷指令」，选取「钱小满快捷记账」即可")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(Color(hex: "#4A7A5E"))
+                                                .lineSpacing(4)
+                                        }
+                                    }
+
+                                    // 方法三：辅助触控
+                                    TriggerMethodRow(
+                                        index: 3,
+                                        title: "使用辅助触控（小白点）触发",
+                                        expanded: expandedMethod == 3
+                                    ) {
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            expandedMethod = expandedMethod == 3 ? nil : 3
                                         }
                                     } content: {
                                         VStack(alignment: .leading, spacing: 8) {
@@ -109,15 +154,15 @@ struct BackTapTutorialView: View {
                                                 .lineSpacing(4)
                                         }
                                     }
-                                    
-                                    // 方法三
+
+                                    // 方法四：Siri 语音
                                     TriggerMethodRow(
-                                        index: 3,
+                                        index: 4,
                                         title: "使用 Siri 语音触发",
-                                        expanded: expandedMethod == 3
+                                        expanded: expandedMethod == 4
                                     ) {
                                         withAnimation(.easeInOut(duration: 0.25)) {
-                                            expandedMethod = expandedMethod == 3 ? nil : 3
+                                            expandedMethod = expandedMethod == 4 ? nil : 4
                                         }
                                     } content: {
                                         VStack(alignment: .leading, spacing: 8) {
@@ -151,7 +196,7 @@ struct BackTapTutorialView: View {
                                 Divider()
                                 
                                 FAQItem(
-                                    question: "1、自动记账是什么？",
+                                    question: "1、无痛记账是什么？",
                                     answer: "当您支付完成或查看账单详情时，触发预先设置好的快捷指令，能够自动识别当前页面的文字内容并转化成账单信息，同时唤起钱小满记账并自动填入账单信息。"
                                 )
                                 
@@ -177,7 +222,7 @@ struct BackTapTutorialView: View {
                     }
                 }
             }
-            .navigationTitle("自动记账")
+            .navigationTitle("无痛记账")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -189,26 +234,7 @@ struct BackTapTutorialView: View {
                 }
             }
         }
-        .sheet(isPresented: $showSafari) {
-            SafariSheetView(url: shortcutURL)
-                .ignoresSafeArea()
-        }
     }
-}
-
-// MARK: - Safari Sheet
-struct SafariSheetView: UIViewControllerRepresentable {
-    let url: URL
-    
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        let config = SFSafariViewController.Configuration()
-        config.entersReaderIfAvailable = false
-        let vc = SFSafariViewController(url: url, configuration: config)
-        vc.preferredControlTintColor = UIColor(Color(hex: "#34A873"))
-        return vc
-    }
-    
-    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 // MARK: - Section Card
@@ -238,7 +264,7 @@ private struct TriggerMethodRow<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: onTap) {
                 HStack {
-                    Text("方法\(["一", "二", "三"][index - 1])：\(title)")
+                    Text("方法\(["一", "二", "三", "四"][index - 1])：\(title)")
                         .font(.system(size: 14, weight: expanded ? .semibold : .regular))
                         .foregroundColor(expanded ? Color(hex: "#1A3C2E") : Color(hex: "#4A7A5E"))
                     Spacer()

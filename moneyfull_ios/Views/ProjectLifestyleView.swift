@@ -105,8 +105,8 @@ struct ProjectLifestyleView: View {
                     // MARK: 分类进度
                     categoryProgressCard
 
-                    // MARK: 大件 vs 日常（Plus）
-                    PlusLockedSection(
+                    // MARK: 大件 vs 日常（Pro）
+                    ProLockedSection(
                         isLocked: !storeManager.isPremium,
                         title: "解锁大件分析",
                         onUnlock: onShowPaywall
@@ -115,8 +115,8 @@ struct ProjectLifestyleView: View {
                     }
                     .padding(.horizontal, 24)
 
-                    // MARK: 每日消费走势（Plus）
-                    PlusLockedSection(
+                    // MARK: 每日消费走势（Pro）
+                    ProLockedSection(
                         isLocked: !storeManager.isPremium,
                         title: "解锁每日消费走势",
                         onUnlock: onShowPaywall

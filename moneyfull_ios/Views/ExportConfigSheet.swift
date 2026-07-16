@@ -302,8 +302,11 @@ struct ExportConfigSheet: View {
         isExporting = true
         // 在主线程提前捕获 @MainActor 数据，再派发到后台线程处理
         let allTransactions = store.fetchAllTransactions()
+        // 分类支持"项目专属"（Category.projectID），不同项目可能存在同名分类，
+        // uniqueKeysWithValues 遇到重复 key 会直接 crash，改用 uniquingKeysWith 兼容重名
         let categoryLookup: [String: Category] = Dictionary(
-            uniqueKeysWithValues: store.categories.map { ($0.name, $0) }
+            store.categories.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
         
         DispatchQueue.global(qos: .userInitiated).async {

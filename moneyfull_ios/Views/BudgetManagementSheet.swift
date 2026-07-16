@@ -11,6 +11,7 @@ struct BudgetManagementSheet: View {
 
     @State private var showAddForm = false
     @State private var editingItem: BudgetItem? = nil
+    @State private var showPaywall = false
 
     // 新增表单
     @State private var newName = ""
@@ -18,6 +19,9 @@ struct BudgetManagementSheet: View {
     @State private var newIcon = "tag.fill"
     @State private var newColorHex = "#A8E0C2"
     @FocusState private var isInputFocused: Bool
+    @State private var isEditingBudget = false
+    @State private var editBudgetText = ""
+    @State private var isGeneratingAI = false
 
     private let budgetIcons = [
         "tag.fill", "car.fill", "fork.knife", "house.fill",
@@ -36,45 +40,107 @@ struct BudgetManagementSheet: View {
     var body: some View {
         List {
             // MARK: 汇总
-            if totalBudget > 0 {
-                Section {
+            Section {
+                Button(action: {
+                    editBudgetText = totalBudget > 0 ? "\(Int(totalBudget))" : ""
+                    isEditingBudget = true
+                    isInputFocused = true
+                }) {
                     HStack {
                         Label("总预算", systemImage: "dollarsign.circle.fill")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(Color.App.darkGreen)
                         Spacer()
-                        Text("¥\(Int(totalBudget))")
-                            .font(.system(size: 16, weight: .heavy))
-                            .foregroundColor(Color.App.textBlack)
+                        if isEditingBudget {
+                            HStack(spacing: 2) {
+                                Text("¥").font(.system(size: 16, weight: .heavy))
+                                    .foregroundColor(Color.App.darkGreen)
+                                TextField("设置总预算", text: $editBudgetText)
+                                    .keyboardType(.decimalPad)
+                                    .font(.system(size: 16, weight: .heavy))
+                                    .frame(width: 80)
+                                    .multilineTextAlignment(.trailing)
+                                    .focused($isInputFocused)
+                                    .onChange(of: isInputFocused) { _, focused in
+                                        if !focused {
+                                            saveBudget()
+                                        }
+                                    }
+                            }
+                        } else {
+                            HStack(spacing: 4) {
+                                Text("¥\(Int(totalBudget))")
+                                    .font(.system(size: 16, weight: .heavy))
+                                    .foregroundColor(Color.App.textBlack)
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(Color.App.darkGreen.opacity(0.6))
+                            }
+                        }
                     }
-                    HStack {
-                        Label("已分配", systemImage: "checkmark.circle.fill")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.gray)
-                        Spacer()
-                        Text("¥\(Int(allocated))")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(Color.App.textBlack)
-                    }
-                    HStack {
-                        Label(unallocated >= 0 ? "未分配" : "超出预算",
-                              systemImage: unallocated >= 0 ? "minus.circle" : "exclamationmark.triangle.fill")
+                }
+                .buttonStyle(.plain)
+
+                HStack {
+                    Label("已分配", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text("¥\(Int(allocated))")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Color.App.textBlack)
+                }
+                HStack {
+                    Label(unallocated >= 0 ? "未分配" : "超出预算",
+                          systemImage: unallocated >= 0 ? "minus.circle" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(unallocated >= 0 ? Color(hex: "#FFA500") : Color.App.redExpense)
+                    Spacer()
+                    Text("¥\(Int(abs(unallocated)))")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(unallocated >= 0 ? Color(hex: "#FFA500") : Color.App.redExpense)
-                        Spacer()
-                        Text("¥\(Int(abs(unallocated)))")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(unallocated >= 0 ? Color(hex: "#FFA500") : Color.App.redExpense)
-                    }
-                } header: { Text("预算汇总") }
-            }
+                }
+            } header: { Text("预算汇总") }
 
             // MARK: 分类列表
             Section {
                 if items.isEmpty {
-                    Text("还没有预算分类，点击下方添加")
-                        .font(.system(size: 14)).foregroundColor(.gray)
-                        .listRowBackground(Color.clear)
+                    VStack(spacing: 12) {
+                        Text("还没有预算分类")
+                            .font(.system(size: 14)).foregroundColor(.gray)
+                        
+                        HStack(spacing: 12) {
+                            // AI 生成按钮
+                            Button {
+                                if storeManager.isPremium {
+                                    generateAIBudget()
+                                } else {
+                                    showPaywall = true
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    if isGeneratingAI {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                            .tint(.white)
+                                    } else {
+                                        Image(systemName: storeManager.isPremium ? "sparkles" : "lock.fill")
+                                            .font(.system(size: 12, weight: .bold))
+                                    }
+                                    Text(isGeneratingAI ? "规划中..." : (storeManager.isPremium ? "小满帮你规划" : "小满帮你规划  Pro"))
+                                        .font(.system(size: 13, weight: .bold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16).padding(.vertical, 9)
+                                .background(storeManager.isPremium ? Color.App.darkGreen : Color.gray.opacity(0.5))
+                                .clipShape(Capsule())
+                            }
+                            .disabled(isGeneratingAI)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .listRowBackground(Color.clear)
                 } else {
                     ForEach(items) { item in
                         BudgetItemEditRow(
@@ -91,13 +157,23 @@ struct BudgetManagementSheet: View {
                         )
                     }
                 }
-                // 添加按钮行
+                // 添加按钮行（免费用户最多3个分类）
                 Button {
-                    isInputFocused = false
-                    showAddForm = true
-                    newName = ""; newAmountText = ""; newIcon = "tag.fill"; newColorHex = "#A8E0C2"
+                    if !storeManager.isPremium && items.count >= 3 {
+                        showPaywall = true
+                    } else {
+                        isInputFocused = false
+                        showAddForm = true
+                        newName = ""; newAmountText = ""; newIcon = "tag.fill"; newColorHex = "#A8E0C2"
+                    }
                 } label: {
-                    Label("添加分类", systemImage: "plus.circle.fill")
+                    HStack {
+                        Label("添加分类", systemImage: "plus.circle.fill")
+                        if !storeManager.isPremium && items.count >= 3 {
+                            Text("（Pro）")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                    }
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(Color.App.darkGreen)
                 }
@@ -135,7 +211,7 @@ struct BudgetManagementSheet: View {
                 }
             } header: { Text("预算周期") }
 
-            // MARK: 预算预警（Plus）
+            // MARK: 预算预警（Pro）
             Section {
                 if storeManager.isPremium {
                     Toggle(isOn: Binding(
@@ -176,7 +252,7 @@ struct BudgetManagementSheet: View {
                             Spacer()
                             HStack(spacing: 4) {
                                 Image(systemName: "lock.fill").font(.system(size: 11))
-                                Text("Plus").font(.system(size: 12, weight: .heavy))
+                                Text("Pro").font(.system(size: 12, weight: .heavy))
                             }
                             .foregroundColor(Color.App.darkGreen)
                             .padding(.horizontal, 10).padding(.vertical, 4)
@@ -201,6 +277,52 @@ struct BudgetManagementSheet: View {
                     isInputFocused = false
                 }
                 .font(.system(size: 14, weight: .bold))
+            }
+        }
+        .fullScreenCover(isPresented: $showPaywall) {
+            PaywallView()
+                .environmentObject(storeManager)
+        }
+    }
+
+    private func saveBudget() {
+        if let value = Double(editBudgetText), value >= 0 {
+            store.updateProject(project, name: project.name, icon: project.icon,
+                               colorHex: project.colorHex, desc: project.desc,
+                               budget: value, budgetCycle: project.budgetCycle)
+        }
+        isEditingBudget = false
+    }
+
+    private func generateAIBudget() {
+        isGeneratingAI = true
+        Task {
+            do {
+                let items = try await LLMService.shared.generateBudgetBreakdown(
+                    name: project.name,
+                    desc: project.desc,
+                    supplement: "",
+                    totalBudget: project.budget > 0 ? project.budget : 5000,
+                    mode: "生活"
+                )
+                await MainActor.run {
+                    for (index, item) in items.enumerated() {
+                        store.addBudgetItem(
+                            to: project,
+                            categoryName: item.categoryName,
+                            categoryIcon: item.categoryIcon,
+                            categoryColorHex: item.categoryColorHex,
+                            amount: item.amount,
+                            sortOrder: index,
+                            alertThreshold: 0.8
+                        )
+                    }
+                    isGeneratingAI = false
+                }
+            } catch {
+                await MainActor.run {
+                    isGeneratingAI = false
+                }
             }
         }
     }
@@ -235,7 +357,10 @@ struct BudgetManagementSheet: View {
                     .foregroundColor(.gray)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 8), spacing: 10) {
                     ForEach(budgetIcons, id: \.self) { icon in
-                        Button { newIcon = icon } label: {
+                        Button {
+                            isInputFocused = false
+                            newIcon = icon
+                        } label: {
                             Image(systemName: icon)
                                 .font(.system(size: 18))
                                 .frame(width: 40, height: 40)
@@ -245,6 +370,7 @@ struct BudgetManagementSheet: View {
                                 .clipShape(Circle())
                                 .foregroundColor(newIcon == icon ? Color.App.darkGreen : .gray)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }

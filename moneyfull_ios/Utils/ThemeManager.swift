@@ -43,8 +43,8 @@ class ThemeManager: ObservableObject {
     }
     
     init() {
-        let raw = UserDefaults.standard.string(forKey: "themeMode") ?? ThemeMode.system.rawValue
-        mode = ThemeMode(rawValue: raw) ?? .system
+        let raw = UserDefaults.standard.string(forKey: "themeMode") ?? ThemeMode.light.rawValue
+        mode = ThemeMode(rawValue: raw) ?? .light
     }
     
     var colorScheme: ColorScheme? { mode.colorScheme }
@@ -56,12 +56,8 @@ class AnalyticsManager {
     
     private let projectId = "cmo9qaxjq0002wpz0k7spw409"
     private let apiKey = "cplt_02a1149fa805ba4a1a43b928a2d974816e106bc094b3fa1c98bc460e27e16917"
-    // Debug：本地 Next.js；Release：正式域名（HTTPS）
-    #if DEBUG
-    private let endpoint = "http://localhost:3000/api/events"
-    #else
+    // 不管本地测试还是线上，都统一上传到生产环境
     private let endpoint = "https://www.superindividual.youqukeji.cn/api/events"
-    #endif
     
     private init() {}
     

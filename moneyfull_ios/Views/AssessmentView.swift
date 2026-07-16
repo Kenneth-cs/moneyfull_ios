@@ -242,6 +242,45 @@ struct AssessmentView: View {
         }
     }
 
+    private func habitLabel(_ tag: HabitTag) -> String {
+        switch tag {
+        case .none:       return "一次都没记过"
+        case .lapsed:     return "记过一段时间，后来放弃了"
+        case .sometimes:  return "偶尔记一下"
+        case .daily:      return "大多数天都有记"
+        case .consistent: return "一直都有记录"
+        }
+    }
+
+    private func methodLabel(_ tag: MethodTag) -> String {
+        switch tag {
+        case .none:       return "不记录"
+        case .paymentApp: return "微信/支付宝账单"
+        case .excel:      return "Excel/数字表格"
+        case .otherApp:   return "其他记账App"
+        case .handwrite:  return "手写/手帐"
+        }
+    }
+
+    private func incomeLabel(_ tag: IncomeTag) -> String {
+        switch tag {
+        case .salary:    return "固定工资"
+        case .freelance: return "自由职业/接单"
+        case .multi:     return "工资+副业/多种收入"
+        case .student:   return "学生/生活费固定"
+        }
+    }
+
+    private func jtbdLabel(_ tag: JTBDTag) -> String {
+        switch tag {
+        case .ease:      return "更方便快捷地记账"
+        case .insight:   return "看清钱都花去哪了"
+        case .roi:       return "管理多个项目ROI"
+        case .budget:    return "做预算，避免超支"
+        case .importData: return "导入已有账单统一管理"
+        }
+    }
+
     private func finishAssessment() {
         guard let habit = selectedHabit,
               let method = selectedMethod,
@@ -251,6 +290,35 @@ struct AssessmentView: View {
         let persona = AssessmentEngine.determinePersona(habit: habit, method: method, income: income)
         AssessmentEngine.saveToUserDefaults(persona: persona, healthScore: score,
                                             habit: habit, method: method, income: income, jtbd: jtbd)
+
+        // V2.0 埋点：测评完成
+        AnalyticsManager.shared.trackEvent(
+            eventId: "assessment_completed",
+            eventName: "测评完成",
+            params: [
+                "记账习惯": habitLabel(habit),
+                "记录方法": methodLabel(method),
+                "收入来源": incomeLabel(income),
+                "核心诉求": jtbdLabel(jtbd),
+                "健康分": score
+            ]
+        )
+
+        // V2.0 埋点：画像生成
+        AnalyticsManager.shared.trackEvent(
+            eventId: "persona_generated",
+            eventName: "画像生成",
+            params: [
+                "画像类型": persona.displayName,
+                "画像字母": persona.letter,
+                "健康分": score,
+                "记账习惯": habitLabel(habit),
+                "记录方法": methodLabel(method),
+                "收入来源": incomeLabel(income),
+                "核心诉求": jtbdLabel(jtbd)
+            ]
+        )
+
         onComplete(persona, score, habit, method, income, jtbd)
     }
 }
@@ -317,7 +385,7 @@ private let questions: [AssessmentQuestion] = [
         typeBadge: "意图题",
         subtitle: "你来决定第一步。",
         options: [
-            AssessmentOption(icon: "⚡", text: "更省事地记账（少摩擦）", tag: JTBDTag.ease.rawValue),
+            AssessmentOption(icon: "⚡", text: "更方便快捷地记账（无痛记账）", tag: JTBDTag.ease.rawValue),
             AssessmentOption(icon: "🔍", text: "看清钱都花去哪了",       tag: JTBDTag.insight.rawValue),
             AssessmentOption(icon: "📊", text: "管理多个项目 ROI",       tag: JTBDTag.roi.rawValue),
             AssessmentOption(icon: "🎯", text: "做预算，避免超支",        tag: JTBDTag.budget.rawValue),

@@ -20,10 +20,12 @@ struct ProfileView: View {
     @State private var tempName: String = ""
     @State private var showPaywall = false
     @State private var showFuelPackSheet = false
+    @State private var showPrivacyPolicy = false
+    @State private var showTermsOfService = false
     
     // 从 AppStore 拿真实统计
     private var activeCount: Int { store.activeProjects.count }
-    private var totalTxCount: Int { store.recentTransactions.count }
+    private var totalTxCount: Int { store.fetchTotalTransactionCount() }
     
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -142,7 +144,7 @@ struct ProfileView: View {
                                                 .font(.system(size: 12))
                                                 .foregroundColor(.gray)
                                         } else {
-                                            Text("购买后获得额外 AI 次数")
+                                            Text("购买后获得额外和小满对话次数")
                                                 .font(.system(size: 12))
                                                 .foregroundColor(.gray)
                                         }
@@ -186,7 +188,7 @@ struct ProfileView: View {
                                         Text("能量饼干")
                                             .font(.system(size: 15, weight: .semibold))
                                             .foregroundColor(Color.App.textBlack)
-                                        Text("购买后获得额外 AI 次数")
+                                        Text("购买后获得额外和小满对话次数")
                                             .font(.system(size: 12))
                                             .foregroundColor(.gray)
                                     }
@@ -241,7 +243,7 @@ struct ProfileView: View {
                             MenuGridItem(icon: "brain",
                                          iconBg: Color.purple.opacity(0.2),
                                          iconColor: .purple,
-                                         title: "AI 记忆") { showMemoryManagement = true }
+                                         title: "小满记忆") { showMemoryManagement = true }
                             MenuGridItem(icon: "paintpalette",
                                          iconBg: Color.App.lightYellow.opacity(0.6),
                                          iconColor: Color.App.darkYellow,
@@ -286,6 +288,14 @@ struct ProfileView: View {
                                          iconBg: Color.App.lightYellow.opacity(0.6),
                                          iconColor: Color.App.darkYellow,
                                          title: "好评支持") { AppRatingManager.shared.openAppStore() }
+                            MenuGridItem(icon: "doc.text",
+                                         iconBg: Color.App.lightGreen.opacity(0.4),
+                                         iconColor: Color.App.darkGreen,
+                                         title: "隐私政策") { showPrivacyPolicy = true }
+                            MenuGridItem(icon: "doc.plaintext",
+                                         iconBg: Color.App.lightOrange.opacity(0.4),
+                                         iconColor: Color.App.darkOrange,
+                                         title: "用户协议") { showTermsOfService = true }
                         }
                         .padding(.horizontal, 4)
                     }
@@ -377,6 +387,14 @@ struct ProfileView: View {
         // 能量饼干页
         .fullScreenCover(isPresented: $showFuelPackSheet) {
             FuelPackSheet()
+        }
+        // 隐私政策
+        .sheet(isPresented: $showPrivacyPolicy) {
+            PrivacyPolicyView()
+        }
+        // 用户协议
+        .sheet(isPresented: $showTermsOfService) {
+            TermsOfServiceView()
         }
     }
 }
@@ -773,8 +791,6 @@ struct ProjectSortingView: View {
                             }
                         }
                         Spacer()
-                        Image(systemName: "line.3.horizontal")
-                            .foregroundColor(.gray.opacity(0.5))
                     }
                     .padding(.vertical, 4)
                 }

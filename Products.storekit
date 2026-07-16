@@ -22,7 +22,7 @@
         {
           "description" : "",
           "displayName" : "小份能量饼干",
-          "locale" : "en_US"
+          "locale" : "zh_Hans"
         }
       ],
       "productID" : "com.moneyfull.fuelpack.200",
@@ -37,7 +37,7 @@
         {
           "description" : "",
           "displayName" : "大份能量套餐",
-          "locale" : "en_US"
+          "locale" : "zh_Hans"
         }
       ],
       "productID" : "com.moneyfull.fuelpack.500",
@@ -51,9 +51,9 @@
     "_billingIssuesEnabled" : false,
     "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
-    "_locale" : "en_US",
+    "_locale" : "zh_Hans",
     "_renewalBillingIssuesEnabled" : false,
-    "_storefront" : "USA",
+    "_storefront" : "CHN",
     "_storeKitErrors" : [
 
     ],
@@ -83,9 +83,9 @@
           ],
           "localizations" : [
             {
-              "description" : "",
-              "displayName" : "",
-              "locale" : "en_US"
+              "description" : "解锁钱小满全部会员权益，按月自动续费，可随时取消",
+              "displayName" : "会员月卡",
+              "locale" : "zh_Hans"
             }
           ],
           "productID" : "com.moneyfull.premium.monthly",
@@ -113,9 +113,9 @@
           ],
           "localizations" : [
             {
-              "description" : "",
-              "displayName" : "",
-              "locale" : "en_US"
+              "description" : "解锁钱小满全部会员权益，按年自动续费，可随时取消",
+              "displayName" : "会员年卡",
+              "locale" : "zh_Hans"
             }
           ],
           "productID" : "com.moneyfull.premium.annual",

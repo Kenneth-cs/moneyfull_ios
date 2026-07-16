@@ -19,6 +19,7 @@ enum DashboardPeriod: String, CaseIterable {
 
 struct DashboardView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var storeManager: StoreManager
     @Binding var selectedTab: Int
     var onResetProjectNav: (() -> Void)? = nil
     @State private var detailProject: Project? = nil
@@ -178,21 +179,6 @@ struct DashboardView: View {
                         }
                     }
                 }
-                // 隐藏的 NavigationLink，用于编程式导航
-                .background(
-                    NavigationLink(destination: Group {
-                        if let project = detailProject {
-                            ProjectDetailView(project: project)
-                                .environmentObject(store)
-                        }
-                    }, isActive: Binding(
-                        get: { detailProject != nil },
-                        set: { if !$0 { detailProject = nil } }
-                    )) {
-                        EmptyView()
-                    }
-                    .hidden()
-                )
                 
                 // MARK: 最近交易（真实数据）
                 VStack(alignment: .leading, spacing: 16) {
@@ -267,6 +253,11 @@ struct DashboardView: View {
             Color.clear.frame(height: 110)
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        .navigationDestination(item: $detailProject) { project in
+            ProjectDetailView(project: project)
+                .environmentObject(store)
+                .environmentObject(storeManager)
+        }
         .fullScreenCover(isPresented: $isAddRecordPresented) {
             AddRecordView()
                 .environmentObject(store)

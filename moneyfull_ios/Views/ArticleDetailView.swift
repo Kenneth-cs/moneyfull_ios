@@ -123,59 +123,7 @@ struct ArticleDetailView: View {
     }
     
     private var articleBody: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            ForEach(article.paragraphs.indices, id: \.self) { index in
-                let para = article.paragraphs[index]
-                if para.hasPrefix("## ") {
-                    Text(String(para.dropFirst(3)))
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(Color(hex: "#226552"))
-                        .padding(.top, 8)
-                } else if para.hasPrefix("• ") {
-                    HStack(alignment: .top, spacing: 10) {
-                        Circle()
-                            .fill(Color(hex: "#9EE0C8"))
-                            .frame(width: 6, height: 6)
-                            .padding(.top, 7)
-                        Text(String(para.dropFirst(2)))
-                            .font(.system(size: 15))
-                            .foregroundColor(Color(hex: "#3A3A3A"))
-                            .lineSpacing(6)
-                    }
-                } else if para.hasPrefix("💡 ") {
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("💡")
-                            .font(.system(size: 14))
-                        Text(String(para.dropFirst(2)))
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(Color(hex: "#276956"))
-                            .lineSpacing(5)
-                    }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(hex: "#F0FBF6"))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                } else if para.hasPrefix("⚠️ ") {
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("⚠️")
-                            .font(.system(size: 14))
-                        Text(String(para.dropFirst(2)))
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(Color(hex: "#B8860B"))
-                            .lineSpacing(5)
-                    }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(hex: "#FFF8E1"))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                } else {
-                    Text(para)
-                        .font(.system(size: 15))
-                        .foregroundColor(Color(hex: "#3A3A3A"))
-                        .lineSpacing(7)
-                }
-            }
-        }
+        NoticeParagraphRenderer(paragraphs: article.paragraphs)
     }
     
     private var bottomTip: some View {

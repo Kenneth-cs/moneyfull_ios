@@ -24,7 +24,7 @@ struct NewProjectView: View {
     @State private var budgetCycle: BudgetCycle = .project
     @State private var customCycleDays: Int = 30
 
-    // MARK: 新增：预算预警（Plus）
+    // MARK: 新增：预算预警（Pro）
     @State private var budgetAlertEnabled: Bool = false
     @State private var budgetAlertThreshold: Double = 0.8
 
@@ -129,7 +129,7 @@ struct NewProjectView: View {
             PaywallView().environmentObject(storeManager)
         }
         .sheet(isPresented: $showBudgetManagement) {
-            NavigationView {
+            NavigationStack {
                 BudgetItemAddSheet { newItem in
                     uiBudgetItems.append(newItem)
                     showBudgetManagement = false
@@ -349,7 +349,7 @@ extension NewProjectView {
 
             Divider()
 
-            // 预算预警（Plus）
+            // 预算预警（Pro）
             budgetAlertSection
         }
         .padding(20)
@@ -376,7 +376,7 @@ extension NewProjectView {
 
     private var budgetActionButtons: some View {
         HStack(spacing: 12) {
-            // 小满帮你规划（Plus 锁定）
+            // 小满帮你规划（Pro 锁定）
             Button {
                 if storeManager.isPremium {
                     generateAIBudget()
@@ -391,20 +391,32 @@ extension NewProjectView {
                         Image(systemName: storeManager.isPremium ? "sparkles" : "lock.fill")
                             .font(.system(size: 13, weight: .bold))
                     }
-                    Text(storeManager.isPremium ? "小满帮你规划" : "小满帮你规划  Plus")
+                    Text(storeManager.isPremium ? "小满帮你规划" : "小满帮你规划  Pro")
                         .font(.system(size: 14, weight: .bold))
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(storeManager.isPremium ? Color.App.darkGreen : Color.gray.opacity(0.6))
+                .background(Color.App.darkGreen)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
             }
             .disabled(isGeneratingBudget)
 
-            // 手动添加
-            Button { showBudgetManagement = true } label: {
-                Text("手动添加")
+            // 手动添加（免费用户最多 3 个分类）
+            Button {
+                if !storeManager.isPremium && uiBudgetItems.count >= 3 {
+                    showPaywall = true
+                } else {
+                    showBudgetManagement = true
+                }
+            } label: {
+                HStack {
+                    Text("手动添加")
+                    if !storeManager.isPremium && uiBudgetItems.count >= 3 {
+                        Text("（Pro）")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                }
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(Color.App.darkGreen)
                     .frame(maxWidth: .infinity)
@@ -420,7 +432,7 @@ extension NewProjectView {
     }
 
     private var budgetAlertSection: some View {
-        PlusLockedSection(
+        ProLockedSection(
             isLocked: !storeManager.isPremium,
             title: "解锁预算预警",
             onUnlock: { showPaywall = true }
@@ -635,34 +647,7 @@ private struct BudgetItemAddSheet: View {
     }
 }
 
-// MARK: - 项目模式卡片
-private struct ProjectModeCard: View {
-    let mode: ProjectMode
-    let isSelected: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: mode.icon)
-                    .font(.system(size: 14, weight: .bold))
-                Text(mode.title)
-                    .font(.system(size: 15, weight: .heavy))
-            }
-            Text(mode.subtitle)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.gray)
-            Text(mode.description)
-                .font(.system(size: 11))
-                .foregroundColor(.gray)
-        }
-        .foregroundColor(isSelected ? Color.App.darkGreen : Color.App.textBlack)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(isSelected ? Color.App.primaryGreen.opacity(0.18) : Color.App.tabBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(isSelected ? Color.App.darkGreen : Color.clear, lineWidth: 1.5))
-    }
-}
+// ProjectModeCard 已移至 BudgetUITypes.swift
 
 // MARK: - 图标单元格
 private struct iconCell: View {

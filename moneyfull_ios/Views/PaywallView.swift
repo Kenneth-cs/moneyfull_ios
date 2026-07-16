@@ -16,7 +16,7 @@ private let premiumFeatures: [PremiumFeature] = [
         icon: "sparkles",
         iconBg: Color(hex: "#FFF0C0"),
         iconFg: Color(hex: "#C08A00"),
-        title: "每日 100 次 AI 调用",
+        title: "每日 100 次小满调用",
         desc: "语音 · 图片 · 对话全开放，告别次数焦虑"
     ),
     PremiumFeature(
@@ -30,22 +30,29 @@ private let premiumFeatures: [PremiumFeature] = [
         icon: "chart.bar.xaxis.ascending",
         iconBg: Color(hex: "#DDE8FF"),
         iconFg: Color(hex: "#4C6EF5"),
-        title: "项目 ROI 分析看板",
-        desc: "自由职业者专属，一键核算每个项目盈亏"
+        title: "经营看板 · 看清盈亏",
+        desc: "现金流 · 成本 · 利润，搞钱项目必看"
     ),
     PremiumFeature(
-        icon: "apps.iphone.badge.plus",
+        icon: "shield.lefthalf.filled",
+        iconBg: Color(hex: "#FFE0E0"),
+        iconFg: Color(hex: "#E74C3C"),
+        title: "预算防线 · 拒绝超支",
+        desc: "每日走势 · 超支预警，旅行装修必备"
+    ),
+    PremiumFeature(
+        icon: "wand.and.stars",
         iconBg: Color.App.lightOrange.opacity(0.5),
         iconFg: Color.App.darkOrange,
-        title: "高级水豚 Widget 皮肤",
-        desc: "动态形象随健康度变化，桌面养一只小满"
+        title: "小满一键规划预算",
+        desc: "说出项目场景，小满自动生成分类预算明细"
     ),
     PremiumFeature(
-        icon: "bolt.fill",
+        icon: "bell.badge.fill",
         iconBg: Color.App.lightYellow.opacity(0.5),
         iconFg: Color.App.darkYellow,
-        title: "新功能优先体验权",
-        desc: "大版本更新优先解锁，永远是第一批玩家"
+        title: "小满主动提醒",
+        desc: "超预算时财务预警提醒，不再不知不觉花超"
     ),
 ]
 
@@ -61,6 +68,9 @@ struct PaywallView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var wasPremiumOnOpen = false
+    @State private var showLegacyGiftLetter = false
+    @State private var showPrivacyPolicy = false
+    @State private var showTermsOfService = false
 
     var body: some View {
         ZStack {
@@ -74,6 +84,21 @@ struct PaywallView: View {
                     
                     PaywallPlansSection(selectedProduct: $selectedProduct, products: storeManager.getPremiumProducts(), currentProductID: storeManager.currentProductID)
                         .padding(.top, 28)
+
+                    Button(action: {
+                        // V2.0 埋点：查看付费说明
+                        AnalyticsManager.shared.trackEvent(
+                            eventId: "paywall_letter_viewed",
+                            eventName: "查看付费说明",
+                            params: ["source": "paywall"]
+                        )
+                        showLegacyGiftLetter = true
+                    }) {
+                        Text("关于会员付费上线的说明 →")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color.App.textSecondary)
+                    }
+                    .padding(.top, 10)
                     
                     PaywallCTASection(
                         selectedProduct: $selectedProduct,
@@ -88,7 +113,7 @@ struct PaywallView: View {
                     PaywallComparisonSection()
                         .padding(.top, 32)
                     
-                    PaywallFinePrint()
+                    PaywallFinePrint(showTermsOfService: $showTermsOfService, showPrivacyPolicy: $showPrivacyPolicy)
                         .padding(.top, 20)
                         .padding(.bottom, 48)
                 }
@@ -128,6 +153,15 @@ struct PaywallView: View {
             if isPremium && !wasPremiumOnOpen {
                 dismiss()
             }
+        }
+        .sheet(isPresented: $showLegacyGiftLetter) {
+            LegacyGiftLetterView(onDismiss: { showLegacyGiftLetter = false })
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            PrivacyPolicyView()
+        }
+        .sheet(isPresented: $showTermsOfService) {
+            TermsOfServiceView()
         }
     }
     
@@ -208,7 +242,7 @@ private struct PaywallHeaderSection: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(Color(hex: "#F0C060"))
-                    Text("小满专业版")
+                    Text("小满专业版Pro")
                         .font(.system(size: 13, weight: .black))
                         .kerning(2)
                         .foregroundColor(Color(hex: "#F0C060"))
@@ -284,7 +318,7 @@ private struct PaywallFeatureRow: View {
                 Text(feature.desc)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.gray)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
 
             Spacer()
@@ -531,13 +565,16 @@ private struct PaywallPlanCardWide: View {
 
 private struct PaywallComparisonSection: View {
     let rows: [(title: String, free: String, pro: String)] = [
-        ("AI 记账次数", "10 次 / 天", "100 次 / 天"),
-        ("项目抽屉数量", "3 个", "无限"),
-        ("项目 ROI 分析", "—", "支持"),
-        ("高级水豚皮肤", "—", "支持"),
-        ("全维度统计", "支持", "支持"),
+        ("小满记账次数", "10 次 / 天", "100 次 / 天"),
+        ("项目创建数量", "3 个", "无限"),
+        ("预算分类数量", "最多 3 个", "不限"),
+        ("小满预算规划", "—", "帮你规划"),
+        ("经营看板", "—", "四维分析"),
+        ("预算防线", "基础版", "完整版"),
+        ("预算预警提醒", "—", "财务实时监控"),
+        ("项目复盘总结", "—", "专业洞察建议"),
         ("账单导入导出", "支持", "支持"),
-        ("CloudKit 同步", "支持", "支持")
+        ("CloudKit 同步", "支持", "支持"),
     ]
 
     var body: some View {
@@ -722,6 +759,9 @@ private struct PaywallCTASection: View {
 // MARK: - Fine Print
 
 private struct PaywallFinePrint: View {
+    @Binding var showTermsOfService: Bool
+    @Binding var showPrivacyPolicy: Bool
+    
     var body: some View {
         VStack(spacing: 6) {
             Text("订阅将自动续费，可随时在 App Store 设置中取消")
@@ -729,13 +769,13 @@ private struct PaywallFinePrint: View {
                 .foregroundColor(.gray.opacity(0.6))
                 .multilineTextAlignment(.center)
             HStack(spacing: 16) {
-                Button(action: {}) {
+                Button(action: { showTermsOfService = true }) {
                     Text("服务条款")
                         .font(.system(size: 11))
                         .foregroundColor(.gray.opacity(0.6))
                         .underline()
                 }
-                Button(action: {}) {
+                Button(action: { showPrivacyPolicy = true }) {
                     Text("隐私政策")
                         .font(.system(size: 11))
                         .foregroundColor(.gray.opacity(0.6))
@@ -771,7 +811,7 @@ struct PremiumUpgradeBanner: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text("升级小满专业版")
+                        Text("升级小满专业版Pro")
                             .font(.system(size: 15, weight: .heavy))
                             .foregroundColor(Color(hex: "#103F2B"))
                             .lineLimit(1)
@@ -783,7 +823,7 @@ struct PremiumUpgradeBanner: View {
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color(hex: "#26825B")))
                     }
-                    Text("每日 100 次 AI · 无限项目 · 高级皮肤")
+                    Text("100 次小满 · 无限项目 · 经营看板 · AI 复盘")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Color(hex: "#1A5C40").opacity(0.8))
                         .lineLimit(1)

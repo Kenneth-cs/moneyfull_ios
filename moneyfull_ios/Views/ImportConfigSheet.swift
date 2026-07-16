@@ -7,8 +7,8 @@ struct ImportConfigSheet: View {
     @EnvironmentObject var store: AppStore
     
     @State private var step: ImportStep = .selectSource
-    @State private var selectedSource: ImportSource = .suishouji
-    @State private var csvContent: String?
+    @State private var selectedSource: ImportSource = .alipay
+    @State private var parsedRows: [[String]]?   // CSV 和 xlsx 统一转换成这个二维数组结构
     @State private var fileName: String = ""
     @State private var showFilePicker = false
     @State private var customMapping: [Int: CSVColumn] = [:]
@@ -60,7 +60,12 @@ struct ImportConfigSheet: View {
         }
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText, UTType.data],
+            allowedContentTypes: [
+                UTType.commaSeparatedText,
+                UTType.plainText,
+                UTType(filenameExtension: "xlsx") ?? UTType.data,  // 微信支付账单导出的是 xlsx 格式
+                UTType.data
+            ],
             allowsMultipleSelection: false
         ) { result in
             handleFileSelection(result)
@@ -126,25 +131,40 @@ struct ImportConfigSheet: View {
     }
     
     private func sourceOption(_ source: ImportSource) -> some View {
-        Button {
+        let iconColor = Color(hex: source.iconColor)
+        let isSelected = selectedSource == source
+
+        return Button {
             selectedSource = source
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: selectedSource == source ? "checkmark.circle.fill" : "circle")
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 20))
-                    .foregroundColor(selectedSource == source ? Color.App.primaryGreen : .gray.opacity(0.4))
-                
+                    .foregroundColor(isSelected ? Color.App.primaryGreen : .gray.opacity(0.4))
+
                 Image(systemName: source.icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(Color.App.darkGreen)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(iconColor)
                     .frame(width: 36, height: 36)
-                    .background(Color.App.primaryGreen.opacity(0.2))
+                    .background(iconColor.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                
-                Text(source.rawValue)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(Color.App.textBlack)
-                
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.rawValue)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.App.textBlack)
+                    // 支付宝/微信给个说明，降低用户困惑
+                    if source == .alipay {
+                        Text("支付宝 App → 我的 → 账单 → 下载账单")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                    } else if source == .wechat {
+                        Text("微信 → 支付 → 钱包 → 账单 → 下载账单")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                    }
+                }
+
                 Spacer()
             }
             .padding(.vertical, 4)
@@ -237,7 +257,7 @@ struct ImportConfigSheet: View {
             HStack(spacing: 16) {
                 Button {
                     step = .selectSource
-                    csvContent = nil
+                    parsedRows = nil
                 } label: {
                     Text("返回")
                         .font(.system(size: 16, weight: .medium))
@@ -347,7 +367,7 @@ struct ImportConfigSheet: View {
                 .font(.system(size: 24, weight: .heavy))
                 .foregroundColor(Color.App.textBlack)
             
-            Text("从其他记账 App 迁移数据到钱小满")
+            Text("支持支付宝、微信及主流记账 App")
                 .font(.system(size: 14))
                 .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
@@ -390,23 +410,39 @@ struct ImportConfigSheet: View {
             
             do {
                 let data = try Data(contentsOf: url)
-                
-                if let string = String(data: data, encoding: .utf8) {
-                    csvContent = string
-                } else if let string = String(data: data, encoding: .shiftJIS) {
-                    csvContent = string
-                } else if let string = String(data: data, encoding: .isoLatin1) {
-                    csvContent = string
+                let isXLSX = url.pathExtension.lowercased() == "xlsx"
+
+                let rows: [[String]]
+                if isXLSX {
+                    // 微信支付账单导出的是 xlsx（Excel 格式，本质是 ZIP+XML），
+                    // 不能当文本解码，要走专门的 xlsx 读取器
+                    guard let xlsxRows = XLSXReader.parseFirstSheetRows(data: data) else {
+                        errorMessage = "无法解析该 xlsx 文件，请确认是从微信支付导出的原始账单文件"
+                        showError = true
+                        return
+                    }
+                    rows = xlsxRows
                 } else {
-                    errorMessage = "无法识别文件编码，请确保是 UTF-8 编码的 CSV 文件"
-                    showError = true
-                    return
+                    let content: String
+                    if let string = String(data: data, encoding: .utf8) {
+                        content = string
+                    } else if let string = String(data: data, encoding: .shiftJIS) {
+                        content = string
+                    } else if let string = String(data: data, encoding: .isoLatin1) {
+                        content = string
+                    } else {
+                        errorMessage = "无法识别文件编码，请确保是 UTF-8 编码的 CSV 文件"
+                        showError = true
+                        return
+                    }
+                    rows = CSVImportService.parseCSV(content: content)
                 }
-                
+
+                parsedRows = rows
                 fileName = url.lastPathComponent
-                
+
                 let preview = CSVImportService.previewData(
-                    from: csvContent!,
+                    rows: rows,
                     source: selectedSource
                 )
                 previewHeaders = preview.headers
@@ -430,24 +466,35 @@ struct ImportConfigSheet: View {
     }
     
     private func performImport() {
-        guard let content = csvContent else { return }
+        guard let rows = parsedRows else { return }
         isImporting = true
-        // 在主线程提前捕获 @MainActor 数据
-        let categoryLookup = Dictionary(uniqueKeysWithValues: store.categories.map { ($0.name, $0) })
-        
+
+        // 必须在主线程提前捕获所有 @State 数据，再进入后台线程
+        // 注意：selectedSource / customMapping 都是 @State，不能在 DispatchQueue.global 里直接访问
+        //
+        // 注意：分类支持"项目专属"（Category.projectID），不同项目可能存在同名分类
+        // （比如两个项目都有"其它"分类），用 uniqueKeysWithValues 一旦撞名就会直接 crash！
+        // 改用 uniquingKeysWith，遇到重复名字时保留先出现的那个即可
+        let categoryLookup = Dictionary(
+            store.categories.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let source = selectedSource
+        let mapping: [Int: CSVColumn]? = (selectedSource == .custom) ? customMapping : nil
+
         DispatchQueue.global(qos: .userInitiated).async {
-            
+
             let parsed = CSVImportService.importTransactions(
-                from: content,
-                source: selectedSource,
-                customMapping: selectedSource == .custom ? customMapping : nil,
+                rows: rows,
+                source: source,
+                customMapping: mapping,
                 categoryLookup: categoryLookup
             )
             
             DispatchQueue.main.async {
                 guard !parsed.isEmpty else {
                     isImporting = false
-                    errorMessage = "未能解析出有效的账单数据，请检查文件格式"
+                    errorMessage = "未能解析出有效的账单数据。请确认：\n1. 已选择正确的来源（如「支付宝」）\n2. 文件是从对应 App 导出的 CSV 账单"
                     showError = true
                     return
                 }
@@ -470,6 +517,6 @@ struct ImportConfigSheet: View {
         _ = store.undoImport(batchID: result.batchID)
         importResult = nil
         step = .selectSource
-        csvContent = nil
+        parsedRows = nil
     }
 }

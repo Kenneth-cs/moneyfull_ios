@@ -45,3 +45,33 @@ trackEvent(
     eventName: "完成引导",
     params: ["steps_skipped": 0]
 )
+
+// ── V2.0 新增示例（测评与画像）──────────────────────────────
+// 测评完成
+trackEvent(
+    eventId: "assessment_completed",
+    eventName: "测评完成",
+    params: [
+        "habit": "habit_daily",
+        "method": "method_other_app",
+        "income": "income_salary",
+        "jtbd": "jtbd_insight",
+        "health_score": 75
+    ]
+)
+
+// 画像生成
+trackEvent(
+    eventId: "persona_generated",
+    eventName: "画像生成",
+    params: [
+        "persona_type": "persona_datadriven",
+        "persona_name": "数据控进阶者",
+        "persona_letter": "D",
+        "health_score": 75,
+        "habit": "habit_daily",
+        "method": "method_other_app",
+        "income": "income_salary",
+        "jtbd": "jtbd_insight"
+    ]
+)
