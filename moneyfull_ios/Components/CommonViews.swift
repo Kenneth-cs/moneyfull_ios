@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import SwiftData
+import CloudKit
 
 // MARK: - 页面顶部标题栏（标题绝对居中，logo 在左，铃铛在右）
 struct PageHeader: View {
@@ -187,16 +188,17 @@ struct CapybaraView: View {
 }
 
 // MARK: - 卡皮气泡 + 浮动动效组合
-struct GreetingMascotView: View {
-    @EnvironmentObject var store: AppStore
-    @State private var isBreathing = false
-    @State private var bounceScale: CGFloat = 1.0
-    @State private var currentQuote: String = ""
-    @State private var resetTask: Task<Void, Never>?
-    @State private var debounceTask: Task<Void, Never>?
-    @State private var tapCount: Int = 0
-    @State private var isInteracting: Bool = false
-    
+// MARK: - 小满状态协调器（气泡与卡皮共享同一份状态，支持分层渲染）
+@MainActor
+final class MascotCoordinator: ObservableObject {
+    @Published var currentQuote: String = ""
+    @Published var bounceScale: CGFloat = 1.0
+    @Published var isBreathing: Bool = false
+    @Published var isInteracting: Bool = false
+    var tapCount: Int = 0
+    var resetTask: Task<Void, Never>?
+    var debounceTask: Task<Void, Never>?
+
     private let randomQuotes = [
         "钱不是攒出来的，是赚出来的...但我还是劝你记账🦫",
         "今天没乱花钱吧？",
@@ -214,208 +216,179 @@ struct GreetingMascotView: View {
         "日拱一卒，功不唐捐💫",
         "今天也要努力不剁手哦🛍️"
     ]
-    
     private let level1Quotes = [
-        "别戳我，橘子会掉的🍊",
-        "戳一戳，财运多～",
-        "哎呀，被发现了🦫",
-        "你戳到我痒痒肉啦～",
-        "诶嘿！还没到记账时间呢～",
-        "Hello！今天心情如何？",
-        "嘻嘻，又来啦～",
-        "轻轻戳一下，满满正能量✨",
-        "今天也是元气满满的一天！",
-        "欢迎来找小满玩🦫"
+        "别戳我，橘子会掉的🍊", "戳一戳，财运多～", "哎呀，被发现了🦫",
+        "你戳到我痒痒肉啦～", "诶嘿！还没到记账时间呢～", "Hello！今天心情如何？",
+        "嘻嘻，又来啦～", "轻轻戳一下，满满正能量✨", "今天也是元气满满的一天！", "欢迎来找小满玩🦫"
     ]
-    
     private let level2Quotes = [
-        "还在戳？看来今天真的很闲呢～",
-        "深呼吸...我是佛系小满",
-        "橘子有点晕了哦🍊",
-        "我已经在转圈了，别再戳了💫",
-        "你戳的每一下，我都在用心感受❤️",
-        "再戳我就要去找橘子告状了🍊",
-        "哎呦，停下停下～",
-        "你是不是没事情做呀？去记个账吧📖",
-        "我的耐戳能力有限哦⚠️",
-        "小满：请对我温柔一点🥺"
+        "还在戳？看来今天真的很闲呢～", "深呼吸...我是佛系小满", "橘子有点晕了哦🍊",
+        "我已经在转圈了，别再戳了💫", "你戳的每一下，我都在用心感受❤️",
+        "再戳我就要去找橘子告状了🍊", "哎呦，停下停下～",
+        "你是不是没事情做呀？去记个账吧📖", "我的耐戳能力有限哦⚠️", "小满：请对我温柔一点🥺"
     ]
-    
     private let level3Quotes = [
-        "打坐中，勿扰 🧘‍♂️",
-        "我闭上眼睛，假装没看见你在戳我",
-        "溜了溜了，去梦里数钱啦～",
-        "你赢了，我已经没词了🏆",
-        "我决定退休了，让橘子来接班🍊",
-        "此刻我已到达禅境，万物皆空～",
-        "疯狂戳戳戳，我已无感🏳️",
-        "小满已下线，橘子值班中🍊",
-        "恭喜你解锁成就：连击大师🎯",
-        "我飞走了，下次再聊🕊️"
+        "打坐中，勿扰 🧘‍♂️", "我闭上眼睛，假装没看见你在戳我", "溜了溜了，去梦里数钱啦～",
+        "你赢了，我已经没词了🏆", "我决定退休了，让橘子来接班🍊",
+        "此刻我已到达禅境，万物皆空～", "疯狂戳戳戳，我已无感🏳️",
+        "小满已下线，橘子值班中🍊", "恭喜你解锁成就：连击大师🎯", "我飞走了，下次再聊🕊️"
     ]
-    
-    private func generateInteractiveQuote() -> String {
-        // 15% 概率触发个性化彩蛋
-        if Int.random(in: 1...100) <= 15 {
-            let now = Date()
-            let hour = Calendar.current.component(.hour, from: now)
-            let expense = store.monthlyExpense
-            let income = store.monthlyIncome
 
-            var eggs: [String] = []
-            if expense > 0 {
-                eggs.append("本月已花 ¥\(expense.formatted(.number.precision(.fractionLength(0))))，佛系一点哦～")
-            }
-            if income > 0 {
-                eggs.append("本月入账 ¥\(income.formatted(.number.precision(.fractionLength(0))))，继续努力💪")
-            }
-            if let firstTx = store.recentTransactions.first {
-                eggs.append("刚才的「\(firstTx.categoryName)」记得很棒！继续保持🦫")
-            }
-            if expense > 0 && income > 0 && expense > income * 0.9 {
-                eggs.append("快收支平衡啦，这个月省着点花～")
-            }
-            if hour >= 22 || hour < 4 {
-                eggs.append("这么晚还不睡，是在数钱吗？💤")
-            }
-            if hour >= 6 && hour < 9 {
-                eggs.append("早起的鸟儿有虫吃，早起的你能省几块钱？🐦")
-            }
-            if !eggs.isEmpty {
-                return eggs.randomElement()!
-            }
-        }
-        
-        if tapCount <= 1 {
-            return level1Quotes.randomElement() ?? "别戳我，橘子会掉的🍊"
-        } else if tapCount == 2 {
-            return level2Quotes.randomElement() ?? "还在戳？看来今天真的很闲呢～"
-        } else {
-            return level3Quotes.randomElement() ?? "打坐中，勿扰 🧘‍♂️"
-        }
-    }
-    
-    private func generateSmartQuote() -> String {
+    func generateSmartQuote(store: AppStore) -> String {
         if let lastTx = store.recentTransactions.first {
-            let diff = Date().timeIntervalSince(lastTx.date)
-            if diff < 120 { // < 2 minutes
+            if Date().timeIntervalSince(lastTx.date) < 120 {
                 return lastTx.type == .expense ? "账本+1，离财务自由又近了一步✨" : "哇塞！发财啦，今晚可以加个鸡腿🍗"
             }
         }
-        
         let expense = store.monthlyExpense
         let income = store.monthlyIncome
-        if expense == 0 && income > 0 {
-            return "今天竟然没花钱！不愧是勤俭持家的你👍"
-        } else if expense > 0 && expense > income * 0.9 {
-            return "哎呀，最近花得有点多啦，接下来要吃土了吗？💸"
-        }
-        
+        if expense == 0 && income > 0 { return "今天竟然没花钱！不愧是勤俭持家的你👍" }
+        if expense > 0 && expense > income * 0.9 { return "哎呀，最近花得有点多啦，接下来要吃土了吗？💸" }
         let hour = Calendar.current.component(.hour, from: Date())
-        if hour >= 5 && hour < 10 {
-            return "早安，新的一天也要佛系理财哦～"
-        } else if hour >= 11 && hour < 14 {
-            return "午饭时间到！吃点好的，记得记一笔呀🍱"
-        } else if hour >= 22 || hour < 4 {
-            return "夜深啦，橘子要掉了，快睡吧💤"
-        }
-        
+        if hour >= 5 && hour < 10 { return "早安，新的一天也要佛系理财哦～" }
+        if hour >= 11 && hour < 14 { return "午饭时间到！吃点好的，记得记一笔呀🍱" }
+        if hour >= 22 || hour < 4 { return "夜深啦，橘子要掉了，快睡吧💤" }
         return randomQuotes.randomElement() ?? "早安，今天也是平静的一天呢～"
     }
-    
+
+    func generateInteractiveQuote(store: AppStore) -> String {
+        if Int.random(in: 1...100) <= 15 {
+            let hour = Calendar.current.component(.hour, from: Date())
+            let expense = store.monthlyExpense
+            let income = store.monthlyIncome
+            var eggs: [String] = []
+            if expense > 0 { eggs.append("本月已花 ¥\(expense.formatted(.number.precision(.fractionLength(0))))，佛系一点哦～") }
+            if income > 0 { eggs.append("本月入账 ¥\(income.formatted(.number.precision(.fractionLength(0))))，继续努力💪") }
+            if let firstTx = store.recentTransactions.first { eggs.append("刚才的「\(firstTx.categoryName)」记得很棒！继续保持🦫") }
+            if expense > 0 && income > 0 && expense > income * 0.9 { eggs.append("快收支平衡啦，这个月省着点花～") }
+            if hour >= 22 || hour < 4 { eggs.append("这么晚还不睡，是在数钱吗？💤") }
+            if hour >= 6 && hour < 9 { eggs.append("早起的鸟儿有虫吃，早起的你能省几块钱？🐦") }
+            if !eggs.isEmpty { return eggs.randomElement()! }
+        }
+        if tapCount <= 1 { return level1Quotes.randomElement() ?? "别戳我，橘子会掉的🍊" }
+        if tapCount == 2 { return level2Quotes.randomElement() ?? "还在戳？看来今天真的很闲呢～" }
+        return level3Quotes.randomElement() ?? "打坐中，勿扰 🧘‍♂️"
+    }
+
+    /// 初始化：生成首条文案并启动呼吸动画
+    func setup(store: AppStore) {
+        if currentQuote.isEmpty {
+            currentQuote = generateSmartQuote(store: store)
+        }
+        withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+            isBreathing = true
+        }
+    }
+
+    /// 交易数据更新时刷新文案
+    func updateQuote(store: AppStore) {
+        currentQuote = generateSmartQuote(store: store)
+    }
+
+    /// 处理点击：弹跳动画 + 互动文案
+    func handleTap(store: AppStore) {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        tapCount += 1
+        withAnimation(.easeInOut(duration: 0.15)) { isInteracting = true }
+
+        let response: Double = tapCount >= 3 ? 0.15 : 0.2
+        withAnimation(.spring(response: response, dampingFraction: 0.5, blendDuration: 0)) {
+            bounceScale = 0.9
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            withAnimation(.spring(response: response + 0.1, dampingFraction: 0.3, blendDuration: 0)) {
+                bounceScale = 1.0
+            }
+        }
+
+        debounceTask?.cancel()
+        debounceTask = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            let finalTapCount = tapCount
+            let quote = generateInteractiveQuote(store: store)
+            withAnimation(.easeInOut) {
+                isInteracting = false
+                currentQuote = quote
+            }
+            let delaySec: UInt64 = finalTapCount <= 2 ? 5 : finalTapCount == 3 ? 10 : 15
+            resetTask?.cancel()
+            resetTask = Task {
+                try? await Task.sleep(nanoseconds: delaySec * 1_000_000_000)
+                if !Task.isCancelled {
+                    withAnimation(.easeInOut) {
+                        tapCount = 0
+                        currentQuote = generateSmartQuote(store: store)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 气泡独立视图（用于 ZStack 独立分层，使支出金额能渲染在气泡上方）
+// 宽度动态适配文字长度：text+padding+background 作为一个整体，.frame(maxWidth:) 放在最外层
+// 短文案 → 气泡收窄；长文案折行 → 气泡撑满 maxWidth；右边界始终固定（ZStack topTrailing 对齐）
+struct GreetingBubbleView: View {
+    @ObservedObject var coordinator: MascotCoordinator
+
+    var body: some View {
+        Text(coordinator.currentQuote.isEmpty || coordinator.isInteracting ? " " : coordinator.currentQuote)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundColor(Color.App.darkGreen)
+            .multilineTextAlignment(.leading)
+            .lineSpacing(3)
+            .lineLimit(2)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            // background 紧跟 padding，与文字同宽
+            .background(
+                ZStack(alignment: .bottomTrailing) {
+                    RoundedRectangle(cornerRadius: 16).fill(Color.white)
+                    // 气泡尾巴，指向右下方的卡皮
+                    Triangle()
+                        .fill(Color.white)
+                        .frame(width: 14, height: 10)
+                        .offset(x: -28, y: 8)
+                }
+            )
+            // frame 放在 background 之后，整体（文字+padding+背景）受约束；不超过 226
+            .frame(maxWidth: 226)
+            .opacity(coordinator.currentQuote.isEmpty || coordinator.isInteracting ? 0 : 1)
+            .animation(.easeInOut, value: coordinator.currentQuote)
+            // offset 作用于整个气泡（文字+背景一体），与卡皮同步呼吸
+            .offset(y: coordinator.isBreathing ? -5 : 3)
+            .animation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true), value: coordinator.isBreathing)
+    }
+}
+
+// MARK: - 卡皮独立视图（用于 ZStack 独立分层，覆盖在收入/储蓄卡片前面）
+struct GreetingCapybaraView: View {
+    @ObservedObject var coordinator: MascotCoordinator
+    @EnvironmentObject var store: AppStore
+
+    var body: some View {
+        CapybaraView(size: 80)
+            .scaleEffect(coordinator.bounceScale)
+            .offset(y: coordinator.isBreathing ? -5 : 3)
+            .animation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true), value: coordinator.isBreathing)
+            .onAppear { coordinator.setup(store: store) }
+            .onChange(of: store.recentTransactions) { coordinator.updateQuote(store: store) }
+            .onTapGesture { coordinator.handleTap(store: store) }
+    }
+}
+
+// MARK: - 完整小满视图（气泡 + 卡皮合体，供其他页面复用）
+// GreetingCapybaraView 内部已处理 onAppear / onChange / onTapGesture，无需再次添加
+struct GreetingMascotView: View {
+    @EnvironmentObject var store: AppStore
+    @StateObject private var coordinator = MascotCoordinator()
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
-            // 气泡：横向拉宽，贴近卡片顶部（黄色框位置）
-            Text(currentQuote.isEmpty || isInteracting ? " " : currentQuote)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(Color.App.darkGreen)
-                .multilineTextAlignment(.leading)
-                .lineSpacing(3)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .frame(width: 172, alignment: .leading)
-                .background(
-                    ZStack(alignment: .bottomTrailing) {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.white)
-                        // 尾巴在底部偏右，指向下方卡皮
-                        Triangle()
-                            .fill(Color.white)
-                            .frame(width: 14, height: 10)
-                            .offset(x: -28, y: 8)
-                    }
-                )
-                .opacity(currentQuote.isEmpty || isInteracting ? 0 : 1)
-                .animation(.easeInOut, value: currentQuote)
-            
-            // 卡皮：右对齐，位于气泡正下方（红色框位置）
-            CapybaraView(size: 80)
-                .scaleEffect(bounceScale)
-        }
-        .offset(y: isBreathing ? -5 : 3)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
-                isBreathing = true
-            }
-            if currentQuote.isEmpty {
-                currentQuote = generateSmartQuote()
-            }
-        }
-        .onChange(of: store.recentTransactions) {
-            currentQuote = generateSmartQuote()
-        }
-        .onTapGesture {
-            let generator = UIImpactFeedbackGenerator(style: .soft)
-            generator.impactOccurred()
-
-            tapCount += 1
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isInteracting = true
-            }
-
-            let response = tapCount >= 3 ? 0.15 : 0.2
-            withAnimation(.spring(response: response, dampingFraction: 0.5, blendDuration: 0)) {
-                bounceScale = 0.9
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.spring(response: response + 0.1, dampingFraction: 0.3, blendDuration: 0)) {
-                    bounceScale = 1.0
-                }
-            }
-
-            debounceTask?.cancel()
-            debounceTask = Task {
-                try? await Task.sleep(nanoseconds: 400_000_000)
-                guard !Task.isCancelled else { return }
-
-                let finalTapCount = tapCount
-                let quote = generateInteractiveQuote()
-                withAnimation(.easeInOut) {
-                    isInteracting = false
-                    currentQuote = quote
-                }
-
-                let delaySeconds: UInt64
-                if finalTapCount <= 2 {
-                    delaySeconds = 5
-                } else if finalTapCount == 3 {
-                    delaySeconds = 10
-                } else {
-                    
-                    delaySeconds = 15
-                }
-
-                resetTask?.cancel()
-                resetTask = Task {
-                    try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
-                    if !Task.isCancelled {
-                        withAnimation(.easeInOut) {
-                            tapCount = 0
-                            currentQuote = generateSmartQuote()
-                        }
-                    }
-                }
-            }
+            GreetingBubbleView(coordinator: coordinator)
+            GreetingCapybaraView(coordinator: coordinator)
         }
     }
 }
@@ -650,6 +623,101 @@ fileprivate struct DetailRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
+    }
+}
+
+// MARK: - 里程碑导出提醒 Banner
+// 当用户未开启 iCloud 同步、且记账笔数达到里程碑（50/100/300）时出现
+// 每个里程碑只提醒一次，用 UserDefaults 记录已展示状态
+struct ExportReminderBanner: View {
+    let milestone: Int          // 触发的里程碑笔数
+    let onExport: () -> Void    // 点击"导出备份"的回调
+    let onDismiss: () -> Void   // 点击"稍后"的回调
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Text("🎉")
+                    .font(.system(size: 22))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("你已记录了 \(milestone) 笔账！")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Color.App.textBlack)
+                    Text("但账单没有同步到 iCloud，换机或删除 App 后数据将无法找回。小满强烈建议先导出一份备份，并打开 iCloud 同步保驾护航～")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // 关闭按钮
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.gray)
+                        .padding(6)
+                        .background(Color.gray.opacity(0.12))
+                        .clipShape(Circle())
+                }
+            }
+            HStack(spacing: 10) {
+                // 导出按钮
+                Button(action: onExport) {
+                    Label("导出备份", systemImage: "arrow.down.doc.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.App.darkGreen)
+                        .clipShape(Capsule())
+                }
+                // 稍后按钮
+                Button(action: onDismiss) {
+                    Text("稍后再说")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.gray)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.gray.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.App.cardBackground)
+                .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.App.primaryGreen.opacity(0.4), lineWidth: 1)
+        )
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    // MARK: - 静态工具方法
+
+    /// 当前应触发的里程碑（未展示过 + 笔数已到）；nil 表示不需要展示
+    static func pendingMilestone(for totalCount: Int) -> Int? {
+        let milestones = [50, 100, 300]
+        // 找出最近刚达到、且未曾展示的最高里程碑
+        for milestone in milestones.reversed() {
+            guard totalCount >= milestone else { continue }
+            let key = dismissedKey(for: milestone)
+            if !UserDefaults.standard.bool(forKey: key) {
+                return milestone
+            }
+        }
+        return nil
+    }
+
+    /// 标记某个里程碑已展示（无论是导出还是关闭）
+    static func markDismissed(milestone: Int) {
+        UserDefaults.standard.set(true, forKey: dismissedKey(for: milestone))
+    }
+
+    private static func dismissedKey(for milestone: Int) -> String {
+        "exportReminderDismissed_\(milestone)"
     }
 }
 

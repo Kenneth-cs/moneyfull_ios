@@ -5,6 +5,8 @@ import SwiftData
 struct moneyfull_iosApp: App {
     @StateObject private var theme = ThemeManager()
     @StateObject private var storeManager = StoreManager.shared
+    @StateObject private var budgetAlertService = BudgetAlertService.shared
+    @Environment(\.scenePhase) private var scenePhase
     
     private let modelContainer: ModelContainer
     
@@ -68,9 +70,33 @@ struct moneyfull_iosApp: App {
             ContentView()
                 .environmentObject(theme)
                 .environmentObject(storeManager)
+                .environmentObject(budgetAlertService)
                 .preferredColorScheme(theme.colorScheme)
                 .tint(Color.App.darkGreen)
+                .onChange(of: scenePhase) { oldValue, newValue in
+                    if newValue == .active {
+                        // 用户回到前台，取消所有待发的预算预警推送
+                        let projects = fetchActiveProjects()
+                        for project in projects {
+                            budgetAlertService.cancelPendingPush(for: project.id)
+                        }
+                    }
+                }
+                .onAppear {
+                    // App启动时预排未来7天被动推送
+                    let projects = fetchActiveProjects()
+                    NotificationManager.shared.schedulePassiveBudgetChecks(
+                        projects: projects
+                    )
+                }
         }
         .modelContainer(modelContainer)
+    }
+    
+    private func fetchActiveProjects() -> [Project] {
+        let descriptor = FetchDescriptor<Project>(
+            predicate: #Predicate { !$0.isArchived }
+        )
+        return (try? modelContainer.mainContext.fetch(descriptor)) ?? []
     }
 }

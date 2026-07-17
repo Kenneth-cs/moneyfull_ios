@@ -48,13 +48,10 @@ struct ContentView: View {
             if store == nil {
                 store = AppStore(modelContext: modelContext)
                 store?.initialize()
-
-                // 老用户会员福利：标记待弹出，等测评完成后再展示
-                if UserDefaults.standard.bool(forKey: "legacyGiftShouldAutoPresent") {
-                    UserDefaults.standard.set(false, forKey: "legacyGiftShouldAutoPresent")
-                    pendingLegacyGiftLetter = true
-                }
             }
+
+            // 老用户会员福利弹窗：每次打开都检查，确保不会遗漏
+            checkAndPresentLegacyGift()
 
             if let store = store, AppRatingManager.shared.shouldShowRating(transactionCount: store.recentTransactions.count) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -69,6 +66,11 @@ struct ContentView: View {
                     store.markLegacyGiftNoticeAsRead()
                 }
             })
+        }
+        // CloudKit 延迟同步授权记录时（重装后首次启动），后台 retry 会发此通知
+        // 再次检查弹窗条件，确保不需要重启 App 就能看到感谢信
+        .onReceive(NotificationCenter.default.publisher(for: .legacyGiftGranted)) { _ in
+            checkAndPresentLegacyGift()
         }
         .overlay {
             if showRatingPrompt {
@@ -211,6 +213,29 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 老用户福利弹窗检查
+    /// 每次打开App都检查，确保福利弹窗不会遗漏
+    private func checkAndPresentLegacyGift() {
+        let shouldAutoPresent = UserDefaults.standard.bool(forKey: "legacyGiftShouldAutoPresent")
+        let letterPresented = UserDefaults.standard.bool(forKey: "legacyGiftLetterPresented")
+        
+        // 检查SwiftData中福利是否已发放
+        let grantDescriptor = FetchDescriptor<LegacyGiftGrant>()
+        let existingGrants = (try? modelContext.fetch(grantDescriptor)) ?? []
+        let hasGrant = existingGrants.contains(where: { $0.isGranted })
+        
+        // 满足条件：标记需要弹出 或者 福利已发放但弹窗没展示过
+        // 注意：只有老用户才会走到这里（新用户不会设置 legacyGiftShouldAutoPresent，也没有 LegacyGiftGrant）
+        if (shouldAutoPresent || hasGrant) && !letterPresented {
+            UserDefaults.standard.set(false, forKey: "legacyGiftShouldAutoPresent")
+            // 延迟弹出，避免与页面切换动画冲突
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                showLegacyGiftLetter = true
+                UserDefaults.standard.set(true, forKey: "legacyGiftLetterPresented")
+            }
+        }
+    }
+    
     private func handleDeepLink(_ url: URL) {
         #if DEBUG
         print("📱 Deep Link received: \(url)")

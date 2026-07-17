@@ -3,6 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var theme: ThemeManager
+    @EnvironmentObject var budgetAlertService: BudgetAlertService
     @State private var selectedTab = 0
     @State private var isAddRecordPresented = false
     @State private var isAIChatPresented = false
@@ -92,6 +93,33 @@ struct MainTabView: View {
         }
         .onAppear {
             checkPendingOCRText()
+        }
+        .overlay {
+            // 预算预警Banner（单触发）
+            if budgetAlertService.showBanner, let trigger = budgetAlertService.pendingAlerts.first {
+                BudgetAlertBanner(
+                    trigger: trigger,
+                    onTap: {
+                        budgetAlertService.handleBannerTap(projectID: trigger.projectID)
+                    },
+                    onDismiss: {
+                        budgetAlertService.dismissAlerts()
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $budgetAlertService.showAlertSheet) {
+            BudgetAlertSheet(
+                triggers: budgetAlertService.pendingAlerts,
+                onViewDetail: { projectID in
+                    budgetAlertService.handleSheetViewDetail(projectID: projectID)
+                },
+                onDismiss: {
+                    budgetAlertService.dismissAlerts()
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.hidden)
         }
     }
     

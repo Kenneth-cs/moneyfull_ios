@@ -427,43 +427,161 @@ struct ProfileStatCard: View {
 }
 
 // MARK: - iCloud 同步状态行
+import CloudKit
+
 struct ICloudStatusRow: View {
     @ObservedObject var store: AppStore
-    
+    @State private var cloudStatus: CKAccountStatus = .couldNotDetermine
+    @State private var isChecking = true
+
     private var stats: (projectCount: Int, transactionCount: Int, categoryCount: Int) {
         store.dataStats()
     }
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            Circle()
-                .fill(Color.blue.opacity(0.12))
-                .frame(width: 48, height: 48)
-                .overlay(
-                    Image(systemName: "icloud.fill")
-                        .foregroundColor(.blue)
-                        .font(.system(size: 20, weight: .semibold))
-                )
-            VStack(alignment: .leading, spacing: 3) {
-                Text("iCloud 已同步")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(Color.App.textBlack)
-                Text("\(stats.projectCount) 个项目 · \(stats.transactionCount) 笔账单")
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray)
-            }
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(Color.App.darkGreen)
-                .font(.system(size: 18))
+
+    // 根据 iCloud 账号状态返回图标、颜色、标题、风险说明、操作提示
+    private var statusConfig: (icon: String, color: Color, title: String, risk: String?, tip: String?) {
+        switch cloudStatus {
+        case .available:
+            return (
+                "checkmark.circle.fill",
+                Color.App.darkGreen,
+                "iCloud 同步已启用",
+                nil,
+                nil
+            )
+        case .noAccount:
+            return (
+                "exclamationmark.triangle.fill",
+                .red,
+                "未登录 iCloud 账号",
+                "⚠️ 数据仅存本机，换机或删除 App 后将无法恢复",
+                "前往 设置 > Apple ID 登录，或开启 iCloud"
+            )
+        case .restricted:
+            return (
+                "lock.icloud.fill",
+                .orange,
+                "iCloud 访问受限",
+                "⚠️ 家长控制或企业管理限制了 iCloud，数据无法同步",
+                "联系设备管理员，或前往 设置 解除限制"
+            )
+        case .couldNotDetermine, .temporarilyUnavailable:
+            return (
+                "icloud.slash.fill",
+                .gray,
+                "iCloud 状态未知",
+                "暂时无法确认同步状态，可能是网络问题",
+                "请检查网络后点击重试"
+            )
+        @unknown default:
+            return ("questionmark.circle.fill", .gray, "同步状态未知", nil, nil)
         }
-        .padding(16)
-        .overlay(
-            Divider()
-                .background(Color.gray.opacity(0.08))
-                .padding(.leading, 80),
-            alignment: .bottom
-        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 14) {
+                // 状态图标
+                Circle()
+                    .fill(statusConfig.color.opacity(0.12))
+                    .frame(width: 48, height: 48)
+                    .overlay(
+                        Group {
+                            if isChecking {
+                                ProgressView().scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "icloud.fill")
+                                    .foregroundColor(statusConfig.color)
+                                    .font(.system(size: 20, weight: .semibold))
+                            }
+                        }
+                    )
+
+                // 标题 + 数据统计
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(statusConfig.title)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(Color.App.textBlack)
+                    if cloudStatus == .available {
+                        Text("\(stats.projectCount) 个项目 · \(stats.transactionCount) 笔账单已同步")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                Spacer()
+
+                // 状态图标（右侧）
+                Image(systemName: statusConfig.icon)
+                    .foregroundColor(statusConfig.color)
+                    .font(.system(size: 20))
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, statusConfig.risk != nil ? 8 : 16)
+
+            // 非正常状态：展开说明 + 操作按钮
+            if cloudStatus != .available && !isChecking {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let risk = statusConfig.risk {
+                        Text(risk)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(statusConfig.color)
+                            .padding(.horizontal, 16)
+                    }
+                    if let tip = statusConfig.tip {
+                        Text(tip)
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                            .padding(.horizontal, 16)
+                    }
+                    // 操作按钮行
+                    HStack(spacing: 10) {
+                        if cloudStatus == .noAccount || cloudStatus == .restricted {
+                            Button(action: openSettings) {
+                                Label("去设置", systemImage: "gear")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .background(statusConfig.color)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        if cloudStatus == .couldNotDetermine || cloudStatus == .temporarilyUnavailable {
+                            Button(action: checkICloudStatus) {
+                                Label("重试", systemImage: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .background(statusConfig.color)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 14)
+                }
+            }
+        }
+        .onAppear { checkICloudStatus() }
+    }
+
+    private func checkICloudStatus() {
+        isChecking = true
+        CKContainer.default().accountStatus { status, _ in
+            DispatchQueue.main.async {
+                self.cloudStatus = status
+                self.isChecking = false
+            }
+        }
+    }
+
+    private func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CloudKit
 
 // 智能金额格式化：整数不显示小数，有小数才保留2位
 private func smartFormat(_ value: Double) -> String {
@@ -29,6 +30,12 @@ struct DashboardView: View {
     @State private var selectedPeriod: DashboardPeriod = .month
     @State private var showPeriodPicker = false
     @State private var showAllTransactions = false
+    // 气泡与卡皮共享同一个协调器，分别渲染在不同 ZStack 层
+    @StateObject private var mascotCoordinator = MascotCoordinator()
+    // 里程碑导出提醒 Banner
+    @State private var exportBannerMilestone: Int? = nil       // 当前应提示的里程碑，nil = 不展示
+    @State private var isCloudAvailable: Bool = true           // iCloud 同步是否正常
+    @State private var showExportFromBanner: Bool = false      // Banner 触发的导出 Sheet
 
     // 根据选中维度获取统计数据（store.refresh() 有 500ms 防抖，不会在滚动中触发，直接计算保证实时同步）
     private var currentStats: (expense: Double, income: Double, saving: Double) {
@@ -47,7 +54,9 @@ struct DashboardView: View {
                 PageHeader(title: "首页看板")
                 
                 // MARK: 顶部财务看板（真实数据）
+                // ZStack 层级：背景 → 气泡 → 财务数据（支出金额在气泡上方可读）→ 卡皮（浮在收入/储蓄卡片前面）
                 ZStack(alignment: .topTrailing) {
+                    // 层1: 背景渐变卡片
                     RoundedRectangle(cornerRadius: 32)
                         .fill(LinearGradient(
                             colors: [Color.App.primaryGreen, Color.App.lightGreen],
@@ -61,12 +70,12 @@ struct DashboardView: View {
                         .blur(radius: 20)
                         .offset(x: 40, y: -40)
                     
-                    // 卡皮 + 气泡（气泡贴顶，卡皮在下）
-                    GreetingMascotView()
+                    // 层2: 气泡（在财务数据下方，支出金额可叠在气泡上）
+                    GreetingBubbleView(coordinator: mascotCoordinator)
                         .padding(.trailing, 12)
                         .padding(.top, 8)
                     
-                    // 财务数据
+                    // 层3: 财务数据（支出金额、收入/储蓄卡片、记一笔按钮）
                     VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 6) {
@@ -79,6 +88,7 @@ struct DashboardView: View {
                                         .foregroundColor(Color.App.textOnPrimary.opacity(0.6))
                                 }
                             }
+                            // 支出金额在层3，叠在层2气泡上方，完全可读
                             Text("¥ \(smartFormat(currentStats.expense))")
                                 .font(.system(size: 34, weight: .heavy))
                                 .foregroundColor(Color.App.textOnPrimary)
@@ -90,9 +100,7 @@ struct DashboardView: View {
                             FinanceInfoCard(title: "收入", value: currentStats.income)
                             FinanceInfoCard(title: "储蓄", value: currentStats.saving)
                         }
-                        .frame(maxWidth: 240)
                         
-                        // 嵌入卡片内部的记一笔按钮
                         Button(action: {
                             AnalyticsManager.shared.trackEvent(eventId: "record_click_add", eventName: "点击记一笔入口", params: ["source": "dashboard"])
                             isAddRecordPresented = true
@@ -104,7 +112,7 @@ struct DashboardView: View {
                                         .frame(width: 24, height: 24)
                                     Image(systemName: "plus")
                                         .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(Color(hex: "#34A873")) // 调整为更明快、更接近图二的绿色
+                                        .foregroundColor(Color(hex: "#34A873"))
                                 }
                                 Text("记一笔")
                                     .font(.system(size: 16, weight: .bold))
@@ -112,16 +120,41 @@ struct DashboardView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(Color(hex: "#34A873")) // 调整为更明快、更接近图二的绿色
+                            .background(Color(hex: "#34A873"))
                             .clipShape(Capsule())
                             .shadow(color: Color(hex: "#34A873").opacity(0.4), radius: 8, x: 0, y: 4)
                         }
-                        .padding(.top, -5) // 稍微拉近与上方卡片的距离
+                        .padding(.top, -5)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
+                    
+                    // 层4: 卡皮（浮在收入/储蓄卡片前面；top padding = 气泡top(8) + 气泡高度(≈56)）
+                    GreetingCapybaraView(coordinator: mascotCoordinator)
+                        .padding(.trailing, 12)
+                        .padding(.top, 64)
                 }
                 .padding(.horizontal, 24)
+
+                // MARK: 里程碑导出提醒 Banner（仅 iCloud 未同步时展示）
+                if let milestone = exportBannerMilestone {
+                    ExportReminderBanner(
+                        milestone: milestone,
+                        onExport: {
+                            ExportReminderBanner.markDismissed(milestone: milestone)
+                            exportBannerMilestone = nil
+                            showExportFromBanner = true
+                        },
+                        onDismiss: {
+                            ExportReminderBanner.markDismissed(milestone: milestone)
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                exportBannerMilestone = nil
+                            }
+                        }
+                    )
+                    .padding(.horizontal, 24)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 
                 // MARK: 进行中的项目（横向滑动，最新在前）
                 VStack(spacing: 16) {
@@ -268,6 +301,38 @@ struct DashboardView: View {
         .fullScreenCover(isPresented: $showAllTransactions) {
             AllTransactionsView()
                 .environmentObject(store)
+        }
+        // Banner 触发的导出 Sheet
+        .sheet(isPresented: $showExportFromBanner) {
+            ExportConfigSheet()
+                .environmentObject(store)
+        }
+        // 首次进入时：异步检测 iCloud 状态 + 里程碑
+        .onAppear {
+            checkExportBannerIfNeeded()
+        }
+        // 每次记账笔数变化时重新检测（新记录写入后可能触发新里程碑）
+        .onChange(of: store.fetchTotalTransactionCount()) {
+            checkExportBannerIfNeeded()
+        }
+    }
+
+    /// 检测 iCloud 同步状态 + 未展示的里程碑，决定是否显示导出提醒 Banner
+    private func checkExportBannerIfNeeded() {
+        let total = store.fetchTotalTransactionCount()
+        guard let milestone = ExportReminderBanner.pendingMilestone(for: total) else { return }
+
+        // 异步检测 iCloud 账号状态
+        CKContainer.default().accountStatus { status, _ in
+            DispatchQueue.main.async {
+                isCloudAvailable = (status == .available)
+                // 只有 iCloud 不可用时才展示 Banner
+                if !isCloudAvailable {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        exportBannerMilestone = milestone
+                    }
+                }
+            }
         }
     }
 }

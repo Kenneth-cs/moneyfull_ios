@@ -218,25 +218,63 @@ struct BudgetManagementSheet: View {
                         get: { project.budgetAlertThreshold > 0 },
                         set: { newVal in
                             project.budgetAlertThreshold = newVal ? 0.8 : 0
+                            BudgetAlertService.shared.resetProjectCheckpoint(for: project.id)
                         }
                     )) {
                         Label("开启预算预警", systemImage: "bell.badge.fill")
                             .font(.system(size: 14, weight: .semibold))
                     }
                     .tint(Color.App.darkGreen)
+                    
                     if project.budgetAlertThreshold > 0 {
+                        // 预警阈值
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("总预算达到 \(Int(project.budgetAlertThreshold * 100))% 时推送提醒")
-                                .font(.system(size: 13)).foregroundColor(.gray)
+                            HStack {
+                                Text("预警阈值")
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text("\(Int(project.budgetAlertThreshold * 100))%")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen)
+                            }
+                            
                             Slider(value: Binding(
                                 get: { project.budgetAlertThreshold },
-                                set: { project.budgetAlertThreshold = $0 }
-                            ), in: 0.5...1.0, step: 0.05)
-                                .tint(Color.App.darkGreen)
+                                set: { 
+                                    project.budgetAlertThreshold = $0
+                                    BudgetAlertService.shared.resetProjectCheckpoint(for: project.id)
+                                }
+                            ), in: 0.5...1.0, step: 0.01)
+                            .tint(Color.App.darkGreen)
+                            
                             HStack {
                                 Text("50%").font(.system(size: 10)).foregroundColor(.gray)
                                 Spacer()
                                 Text("100%").font(.system(size: 10)).foregroundColor(.gray)
+                            }
+                        }
+                        
+                        // 超出X%再次提醒
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("超出X%再次提醒")
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text("\(Int(project.budgetAlertStep * 100))%")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Color.App.darkGreen)
+                            }
+                            
+                            Slider(value: Binding(
+                                get: { project.budgetAlertStep },
+                                set: { project.budgetAlertStep = $0 }
+                            ), in: 0.01...0.20, step: 0.01)
+                            .tint(Color.App.darkGreen)
+                            
+                            HStack {
+                                Text("1%").font(.system(size: 10)).foregroundColor(.gray)
+                                Spacer()
+                                Text("20%").font(.system(size: 10)).foregroundColor(.gray)
                             }
                         }
                     }
@@ -270,11 +308,23 @@ struct BudgetManagementSheet: View {
         .navigationTitle("预算管理")
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
+        .simultaneousGesture(
+            TapGesture()
+                .onEnded { _ in
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+        )
+        .simultaneousGesture(
+            DragGesture()
+                .onChanged { _ in
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+        )
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("完成") {
-                    isInputFocused = false
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
                 .font(.system(size: 14, weight: .bold))
             }

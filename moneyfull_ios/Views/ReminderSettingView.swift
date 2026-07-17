@@ -34,6 +34,8 @@ struct ReminderSettingView: View {
                         weekendDNDSection
                     }
                     
+                    budgetAlertSection
+                    
                     tipSection
                 }
                 .padding(20)
@@ -201,6 +203,55 @@ struct ReminderSettingView: View {
                     manager.isWeekendDND = newValue
                     scheduleReminder()
                 }
+        }
+        .padding(20)
+        .background(Color.App.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+    
+    private var budgetAlertSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("离开 App 后推送", systemImage: "bell.badge.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Color.App.textBlack)
+                    
+                    Text("记账触发预算预警时，离开 App 后推送通知")
+                        .font(.system(size: 13))
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { manager.isBudgetPushEnabled },
+                    set: { manager.isBudgetPushEnabled = $0 }
+                ))
+                .tint(Color.App.primaryGreen)
+            }
+            
+            Divider()
+            
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("多天未开 App 提醒", systemImage: "clock.arrow.circlepath")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Color.App.textBlack)
+                    
+                    Text("多天未记账时，推送预算提醒")
+                        .font(.system(size: 13))
+                        .foregroundColor(.gray)
+                }
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { manager.isBudgetPassiveEnabled },
+                    set: { manager.isBudgetPassiveEnabled = $0 }
+                ))
+                .tint(Color.App.primaryGreen)
+            }
         }
         .padding(20)
         .background(Color.App.cardBackground)

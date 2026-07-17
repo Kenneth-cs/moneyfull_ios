@@ -296,6 +296,10 @@ class AppStore: ObservableObject {
         modelContext.insert(tx)
         save()
         refresh()
+        
+        // 预算预警检查
+        BudgetAlertService.shared.check(after: tx, in: project)
+        
         return tx
     }
     
@@ -337,6 +341,11 @@ class AppStore: ObservableObject {
         }
         save()
         refresh()
+        
+        // 预算预警检查
+        if let project = tx.project {
+            BudgetAlertService.shared.check(after: tx, in: project)
+        }
     }
     
     /// 归档 / 取消归档项目
@@ -407,6 +416,7 @@ class AppStore: ObservableObject {
                        colorHex: String, desc: String, budget: Double,
                        projectMode: String? = nil, budgetCycle: String? = nil,
                        targetIncome: Double? = nil, defaultRate: Double? = nil) {
+        let budgetChanged = project.budget != budget
         project.name = name
         project.icon = icon
         project.colorHex = colorHex
@@ -418,6 +428,11 @@ class AppStore: ObservableObject {
         if let rate = defaultRate { project.defaultRate = rate }
         save()
         refresh()
+        
+        // 预算金额变更时重置检查点
+        if budgetChanged {
+            BudgetAlertService.shared.resetProjectCheckpoint(for: project.id)
+        }
     }
 
     func updateProjectSortOrder(_ orderedProjects: [Project]) {
@@ -1025,18 +1040,18 @@ class AppStore: ObservableObject {
         return calendar.date(from: DateComponents(year: 2026, month: 7, day: 18)) ?? .distantPast
     }()
 
-    /// 福利领取截止日期：此日期之后不再发放福利（2 个月窗口期）
+    /// 福利领取截止日期：此日期之后不再发放福利
     private static let legacyGiftClaimDeadline: Date = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
         return calendar.date(from: DateComponents(year: 2026, month: 9, day: 18)) ?? .distantFuture
     }()
 
-    /// 一次性检测：是否为老用户，若是则发放 6 个月会员体验期 + 插入消息中心通知
-    /// 触发一次后（无论结果如何）不再重复检测，避免每次启动都查一次数据库
+    /// 每次启动检测：是否为老用户，若是则发放 6 个月会员体验期 + 插入消息中心通知
+    /// 超过截止日期后此脚本不再执行
     private func checkAndGrantLegacyGiftIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: "legacyGiftChecked") else { return }
-        defer { UserDefaults.standard.set(true, forKey: "legacyGiftChecked") }
+        // 超过领取截止时间，不再检测
+        guard Date() < Self.legacyGiftClaimDeadline else { return }
 
         // 已经领取过（可能是从其他设备通过 CloudKit 同步过来的记录），不重复发放
         let grantDescriptor = FetchDescriptor<LegacyGiftGrant>()
@@ -1044,14 +1059,6 @@ class AppStore: ObservableObject {
         if existingGrants.contains(where: { $0.isGranted }) {
             #if DEBUG
             print("ℹ️ 老用户福利: 已在其他设备领取过，跳过")
-            #endif
-            return
-        }
-
-        // 超过领取截止时间，不再发放
-        guard Date() < Self.legacyGiftClaimDeadline else {
-            #if DEBUG
-            print("ℹ️ 老用户福利: 已超过领取截止时间（\(Self.legacyGiftClaimDeadline)），跳过")
             #endif
             return
         }
@@ -1066,8 +1073,11 @@ class AppStore: ObservableObject {
 
         guard hasLegacyTransaction else {
             #if DEBUG
-            print("ℹ️ 老用户福利: 无早于截止日期的记账记录，判定为新用户，不发放")
+            print("ℹ️ 老用户福利: 首次检查无记录，5秒后重试（等待 CloudKit 同步）")
             #endif
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                self?.retryCheckAndGrantLegacyGift(attempt: 1)
+            }
             return
         }
 
@@ -1098,8 +1108,139 @@ class AppStore: ObservableObject {
         // 通知 StoreManager 重新计算会员状态
         NotificationCenter.default.post(name: .legacyGiftGranted, object: nil)
 
+        // 发放后调度事后核查（以防 CloudKit 延迟同步了更早的授权记录）
+        schedulePostGrantReconciliation()
+
         #if DEBUG
-        print("✅ 老用户福利: 发放成功，体验期至 \(grant.expiresAt?.description ?? "-")")
+        let expiry = grant.expiresAt?.description ?? "-"
+        print("✅ 老用户福利: 发放成功，体验期至 \(expiry)")
+        #endif
+    }
+    
+    /// 重试检测：等待 CloudKit 同步完成后再次检查，最多重试3次（5秒、15秒、30秒）
+    ///
+    /// 重要防重逻辑：当发现"有老交易但无授权记录"时，不在 attempt 1/2 立即发放，
+    /// 而是继续等待授权记录从 CloudKit 同步过来（授权记录比交易记录慢到）。
+    /// 仅在 attempt 3（距首次检查约 50 秒）仍无授权记录时才真正发放。
+    /// 这样可防止重装 App + 网络延迟导致原有授权记录被覆盖、截止日期向后偏移。
+    private func retryCheckAndGrantLegacyGift(attempt: Int) {
+        guard Date() < Self.legacyGiftClaimDeadline else { return }
+
+        let grantDescriptor = FetchDescriptor<LegacyGiftGrant>()
+        let existingGrants = (try? modelContext.fetch(grantDescriptor)) ?? []
+
+        // 已有有效授权（可能刚从 CloudKit 同步过来），更新会员状态 + 触发弹窗，然后跳过发放
+        if existingGrants.contains(where: { $0.isGranted }) {
+            // 更新 StoreManager 的 isPremium（否则要等下次启动才刷新）
+            StoreManager.shared.refreshLegacyGiftStatus()
+            // 通知 ContentView 重新检查是否需要弹出感谢信
+            NotificationCenter.default.post(name: .legacyGiftGranted, object: nil)
+            #if DEBUG
+            print("ℹ️ 老用户福利: 重试时发现 CloudKit 已同步授权记录，已更新会员状态并触发弹窗检查")
+            #endif
+            return
+        }
+
+        let cutoffDate = Self.legacyUserCutoffDate
+        var txDescriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate<Transaction> { $0.date < cutoffDate }
+        )
+        txDescriptor.fetchLimit = 1
+        let hasLegacyTransaction = !((try? modelContext.fetch(txDescriptor)) ?? []).isEmpty
+
+        // 没有老交易记录 → 继续等待 CloudKit 同步（可能确实是新用户）
+        guard hasLegacyTransaction else {
+            if attempt < 3 {
+                let delays = [15, 30]
+                let delay = delays[attempt - 1]
+                #if DEBUG
+                print("ℹ️ 老用户福利: 第\(attempt)次重试无记录，\(delay)秒后再试")
+                #endif
+                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delay)) { [weak self] in
+                    self?.retryCheckAndGrantLegacyGift(attempt: attempt + 1)
+                }
+            } else {
+                #if DEBUG
+                print("ℹ️ 老用户福利: 3次重试均无记录，判定为新用户（可能CloudKit同步失败或确实是新用户）")
+                #endif
+            }
+            return
+        }
+
+        // ⚠️ 关键防重：有老交易但授权记录尚未到达
+        // attempt 1/2 时继续等待，给授权记录同步时间；attempt 3 才确认发放
+        // 场景：重装 App 后交易记录同步快（已有大量记录），授权记录同步慢（只有 1 条）
+        if existingGrants.isEmpty && attempt < 3 {
+            let extraDelay = attempt == 1 ? 20 : 25
+            #if DEBUG
+            print("ℹ️ 老用户福利: 第\(attempt)次重试 — 有老交易但授权记录未到，等\(extraDelay)秒确认（防止重复发放）")
+            #endif
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(extraDelay)) { [weak self] in
+                self?.retryCheckAndGrantLegacyGift(attempt: attempt + 1)
+            }
+            return
+        }
+
+        // attempt == 3 或授权确实不存在 → 正式发放
+        let now = Date()
+        let grant = existingGrants.first ?? LegacyGiftGrant()
+        grant.isGranted = true
+        grant.grantedAt = now
+        grant.expiresAt = Calendar.current.date(byAdding: .month, value: 6, to: now)
+        if existingGrants.isEmpty {
+            modelContext.insert(grant)
+        }
+
+        let noticeID = AppNoticeData.legacyGiftLetter.id
+        let noticeDescriptor = FetchDescriptor<AppNotice>(predicate: #Predicate<AppNotice> { $0.noticeID == noticeID })
+        let existingNotices = (try? modelContext.fetch(noticeDescriptor)) ?? []
+        if existingNotices.isEmpty {
+            let notice = AppNotice(noticeID: noticeID, title: AppNoticeData.legacyGiftLetter.title, receivedAt: now, isRead: false)
+            modelContext.insert(notice)
+        }
+
+        save()
+        fetchAppNotices()
+        UserDefaults.standard.set(true, forKey: "legacyGiftShouldAutoPresent")
+        NotificationCenter.default.post(name: .legacyGiftGranted, object: nil)
+
+        // 发放后调度事后核查：若 CloudKit 延迟同步了更早的授权记录，自动修正截止日期
+        schedulePostGrantReconciliation()
+
+        #if DEBUG
+        let retryExpiry = grant.expiresAt?.description ?? "-"
+        print("✅ 老用户福利: 重试发放成功（attempt \(attempt)），体验期至 \(retryExpiry)")
+        #endif
+    }
+
+    /// 发放后 120 秒调度一次核查：
+    /// 若 CloudKit 延迟同步了更早的授权记录（重装时原始记录迟到），保留 grantedAt 最早的那条
+    private func schedulePostGrantReconciliation() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
+            self?.reconcileDuplicateLegacyGrants()
+        }
+    }
+
+    /// 去重核查：若存在多条有效授权（重装+CloudKit延迟可能产生），保留最早那条并删除多余的
+    private func reconcileDuplicateLegacyGrants() {
+        let descriptor = FetchDescriptor<LegacyGiftGrant>()
+        let allGrants = (try? modelContext.fetch(descriptor)) ?? []
+        let validGrants = allGrants.filter { $0.isGranted }
+        guard validGrants.count > 1 else { return }
+
+        // 保留 grantedAt 最早的授权（原始发放时间），删除后续重复产生的
+        guard let earliest = validGrants.min(by: {
+            ($0.grantedAt ?? .distantFuture) < ($1.grantedAt ?? .distantFuture)
+        }) else { return }
+
+        for grant in validGrants where grant !== earliest {
+            modelContext.delete(grant)
+        }
+        save()
+        StoreManager.shared.refreshLegacyGiftStatus()
+
+        #if DEBUG
+        print("🔧 老用户福利核查: 发现 \(validGrants.count) 条重复授权，已合并，保留最早记录（grantedAt: \(earliest.grantedAt?.description ?? "-")，expiresAt: \(earliest.expiresAt?.description ?? "-")）")
         #endif
     }
     

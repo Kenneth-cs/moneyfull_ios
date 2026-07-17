@@ -66,6 +66,7 @@ final class Project {
     var budgetCycleStartDate: Date? = nil
     var budgetCycleDays: Int = 30
     var budgetAlertThreshold: Double = 0        // 总预算预警线（Pro）
+    var budgetAlertStep: Double = 0.05          // 预警步进（默认5%，Pro）
     var defaultRate: Double = 0                 // 默认时薪（记工时时使用，可选功能）
     var defaultRateGranularity: String = "hour" // "hour" | "day"
     var targetIncome: Double = 0                // 目标收入 / 合同金额

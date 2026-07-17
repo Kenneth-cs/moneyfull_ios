@@ -454,7 +454,7 @@ class LLMService {
     func generateEarningInsight(project: Project) async throws -> String {
         let categorySpend = (project.transactions ?? [])
             .filter { $0.type == .expense }
-            .reduce(into: [String: Double]()) { $0[$1.categoryName, default: 0] + abs($1.amount) }
+            .reduce(into: [String: Double]()) { $0[$1.categoryName, default: 0] += abs($1.amount) }
             .map { "\($0.key): ¥\(Int($0.value))" }
             .joined(separator: ", ")
         

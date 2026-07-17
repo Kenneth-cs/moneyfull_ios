@@ -766,7 +766,7 @@ struct ProjectReviewView: View {
 
         Task {
             do {
-                guard let image = await ReportExportService.exportAsImage(
+                guard let image = ReportExportService.exportAsImage(
                     project: project, reviewResult: result, projectMode: projectMode
                 ) else {
                     throw ExportError.renderFailed
@@ -789,7 +789,7 @@ struct ProjectReviewView: View {
 
         Task {
             do {
-                guard let pdfData = await ReportExportService.exportAsPDF(
+                guard let pdfData = ReportExportService.exportAsPDF(
                     project: project, reviewResult: result, projectMode: projectMode
                 ) else {
                     throw ExportError.renderFailed
