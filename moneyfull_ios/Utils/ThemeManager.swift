@@ -57,7 +57,7 @@ class AnalyticsManager {
     private let projectId = "cmo9qaxjq0002wpz0k7spw409"
     private let apiKey = "cplt_02a1149fa805ba4a1a43b928a2d974816e106bc094b3fa1c98bc460e27e16917"
     // 不管本地测试还是线上，都统一上传到生产环境
-    private let endpoint = "https://www.superindividual.youqukeji.cn/api/events"
+    private let endpoint = "https://www.superindividual.originapex.cn/api/events"
     
     private init() {}
     

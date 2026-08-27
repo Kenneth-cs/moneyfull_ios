@@ -37,9 +37,15 @@ struct DashboardView: View {
     @State private var isCloudAvailable: Bool = true           // iCloud 同步是否正常
     @State private var showExportFromBanner: Bool = false      // Banner 触发的导出 Sheet
 
-    // 根据选中维度获取统计数据（store.refresh() 有 500ms 防抖，不会在滚动中触发，直接计算保证实时同步）
-    private var currentStats: (expense: Double, income: Double, saving: Double) {
-        store.stats(for: selectedPeriod)
+    // MARK: - 缓存计算结果（避免 body 每次重渲时重复执行耗时操作）
+    @State private var _stats: (expense: Double, income: Double, saving: Double) = (0, 0, 0)
+
+    // MARK: - 计算属性代理（body 直接读缓存，零计算开销）
+    private var currentStats: (expense: Double, income: Double, saving: Double) { _stats }
+
+    // MARK: - 核心统计刷新（仅在 dataVersion / 统计维度变化时调用，不在 body 里计算）
+    private func updateStats() {
+        _stats = store.stats(for: selectedPeriod)
     }
 
     // 进行中项目（使用 AppStore 已排序的顺序：置顶 → sortOrder → 创建时间）
@@ -196,7 +202,7 @@ struct DashboardView: View {
                     } else {
                         // 横向可滑动卡片列表（onTapGesture 不会被 ScrollView 滑动误触发）
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 14) {
+                            LazyHStack(spacing: 14) {
                                 ForEach(sortedActiveProjects) { project in
                                     ProjectCard(project: project)
                                         .frame(width: 160)
@@ -311,8 +317,15 @@ struct DashboardView: View {
         .onAppear {
             checkExportBannerIfNeeded()
         }
-        // 每次记账笔数变化时重新检测（新记录写入后可能触发新里程碑）
-        .onChange(of: store.fetchTotalTransactionCount()) {
+        // 统计缓存：数据变更（dataVersion）或切换统计维度时重算一次
+        .task(id: store.dataVersion) {
+            updateStats()
+        }
+        .onChange(of: selectedPeriod) {
+            updateStats()
+        }
+        // 每次数据变更时重新检测（新记录写入后可能触发新里程碑）
+        .onChange(of: store.dataVersion) {
             checkExportBannerIfNeeded()
         }
     }
@@ -444,11 +457,13 @@ struct FinanceInfoCard: View {
 // MARK: - 项目卡片（绑定真实 Project）
 struct ProjectCard: View {
     let project: Project
-    
+    @EnvironmentObject var store: AppStore
+
     var body: some View {
-        // 每次 body 只计算一次，避免多次遍历 CoreData 关系
-        let totalSpent = project.totalSpent
-        let budgetProgress = project.budgetProgress
+        // 查 AppStore 预计算的汇总表，避免每张卡片遍历 CoreData 关系
+        let summary = store.projectSummaries[project.id]
+        let totalSpent = summary?.totalSpent ?? 0
+        let budgetProgress = summary?.budgetProgress ?? 0
         let pair = progressColorPair(for: project.colorHex)
         
         return VStack(alignment: .leading, spacing: 14) {

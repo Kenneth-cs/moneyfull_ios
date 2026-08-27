@@ -9,6 +9,15 @@ struct ProjectDashboardView: View {
     @EnvironmentObject private var store: AppStore
     @State private var selectedDimension: DashboardDimension = .cashFlow
     @State private var selectedPeriod: ProjectDashboardPeriod = .month
+    @State private var stats: DashboardProjectStats?
+    
+    private var safeStats: DashboardProjectStats {
+        stats ?? ProjectStatsCalculator.calculateDashboardStats(project: project)
+    }
+    
+    private func loadStats() {
+        stats = ProjectStatsCalculator.calculateDashboardStats(project: project)
+    }
     
     var body: some View {
         ScrollView {
@@ -40,6 +49,16 @@ struct ProjectDashboardView: View {
                 PresentationBackButton()
             }
         }
+        .task(id: store.dataVersion) {
+            loadStats()
+        }
+        .onChange(of: selectedPeriod) { _, _ in
+            // 周期变化时趋势图会自动用静态方法重算，但保险起见刷新一次 stats
+            loadStats()
+        }
+        .onChange(of: selectedDimension) { _, _ in
+            loadStats()
+        }
     }
     
     // MARK: - 现金流总览卡
@@ -62,10 +81,10 @@ struct ProjectDashboardView: View {
                     Text("累计可用资金")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.availableCash))
+                    Text(formatCurrency(safeStats.availableCash))
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(project.availableCash >= 0 ? .green : .red)
+                        .foregroundColor(safeStats.availableCash >= 0 ? .green : .red)
                 }
                 
                 Spacer()
@@ -75,10 +94,10 @@ struct ProjectDashboardView: View {
                     Text("本月净现金流")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.monthlyNetCashFlow))
+                    Text(formatCurrency(safeStats.monthlyNetCashFlow))
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(project.monthlyNetCashFlow >= 0 ? .green : .red)
+                        .foregroundColor(safeStats.monthlyNetCashFlow >= 0 ? .green : .red)
                 }
             }
         }
@@ -130,13 +149,13 @@ struct ProjectDashboardView: View {
     private var dimensionCard: some View {
         switch selectedDimension {
         case .cashFlow:
-            CashFlowDimensionCard(project: project, period: selectedPeriod)
+            CashFlowDimensionCard(stats: safeStats, period: selectedPeriod)
         case .income:
-            IncomeDimensionCard(project: project, period: selectedPeriod)
+            IncomeDimensionCard(stats: safeStats, period: selectedPeriod, project: project)
         case .cost:
-            CostDimensionCard(project: project, period: selectedPeriod)
+            CostDimensionCard(stats: safeStats, period: selectedPeriod, project: project)
         case .profit:
-            ProfitDimensionCard(project: project, period: selectedPeriod)
+            ProfitDimensionCard(stats: safeStats, period: selectedPeriod)
         }
     }
     
@@ -167,15 +186,16 @@ struct ProjectDashboardView: View {
     
     // 现金流趋势 - 折线图
     private var cashFlowTrendChart: some View {
-        Chart {
-            ForEach(trendData, id: \.date) { item in
+        let data = DashboardProjectStats.trend(for: project, period: selectedPeriod, dimension: .cashFlow)
+        return Chart {
+            ForEach(data, id: \.date) { item in
                 LineMark(
                     x: .value("日期", item.date),
                     y: .value("金额", item.amount)
                 )
                 .foregroundStyle(Color.accentColor.gradient)
                 .interpolationMethod(.catmullRom)
-                
+
                 AreaMark(
                     x: .value("日期", item.date),
                     y: .value("金额", item.amount)
@@ -188,11 +208,12 @@ struct ProjectDashboardView: View {
         .chartYAxis { trendYAxis }
         .frame(height: 200)
     }
-    
+
     // 收入趋势 - 柱状图
     private var incomeTrendChart: some View {
-        Chart {
-            ForEach(trendData, id: \.date) { item in
+        let data = DashboardProjectStats.trend(for: project, period: selectedPeriod, dimension: .income)
+        return Chart {
+            ForEach(data, id: \.date) { item in
                 BarMark(
                     x: .value("日期", item.date, unit: .month),
                     y: .value("金额", item.amount)
@@ -205,11 +226,12 @@ struct ProjectDashboardView: View {
         .chartYAxis { trendYAxis }
         .frame(height: 200)
     }
-    
+
     // 成本趋势 - 三类成本堆叠图
     private var costTrendChart: some View {
-        Chart {
-            ForEach(stackedCostData, id: \.date) { item in
+        let data = DashboardProjectStats.stackedCostTrend(for: project, period: selectedPeriod)
+        return Chart {
+            ForEach(data, id: \.date) { item in
                 BarMark(
                     x: .value("日期", item.date, unit: .month),
                     y: .value("金额", item.amount)
@@ -226,11 +248,12 @@ struct ProjectDashboardView: View {
         .chartYAxis { trendYAxis }
         .frame(height: 200)
     }
-    
+
     // 利润趋势 - 三层利润折线图
     private var profitTrendChart: some View {
-        Chart {
-            ForEach(profitTrendData, id: \.date) { item in
+        let data = DashboardProjectStats.profitTrend(for: project, period: selectedPeriod)
+        return Chart {
+            ForEach(data, id: \.date) { item in
                 ForEach(item.values, id: \.type) { value in
                     LineMark(
                         x: .value("日期", item.date),
@@ -250,7 +273,7 @@ struct ProjectDashboardView: View {
         .chartYAxis { trendYAxis }
         .frame(height: 200)
     }
-    
+
     // 公共X轴
     private var trendXAxis: some AxisContent {
         AxisMarks(values: .stride(by: .month, count: 1)) { value in
@@ -263,7 +286,7 @@ struct ProjectDashboardView: View {
             }
         }
     }
-    
+
     // 公共Y轴
     private var trendYAxis: some AxisContent {
         AxisMarks { value in
@@ -273,157 +296,9 @@ struct ProjectDashboardView: View {
             }
         }
     }
-    
-    // MARK: - 趋势数据
-    
-    private var trendData: [(date: Date, amount: Double)] {
-        let calendar = Calendar.current
-        let now = Date()
-        var data: [(date: Date, amount: Double)] = []
-        
-        // 根据选择的时间周期生成过去6个周期的数据
-        let periodsToShow = 6
-        for i in 0..<periodsToShow {
-            let date: Date
-            switch selectedPeriod {
-            case .month:
-                date = calendar.date(byAdding: .month, value: -i, to: now) ?? now
-            case .quarter:
-                date = calendar.date(byAdding: .month, value: -i * 3, to: now) ?? now
-            case .year:
-                date = calendar.date(byAdding: .year, value: -i, to: now) ?? now
-            }
-            
-            let amount = calculateAmountForPeriod(date: date, dimension: selectedDimension, period: selectedPeriod)
-            data.append((date: date, amount: amount))
-        }
-        
-        return data.reversed()
-    }
-    
-    private func calculateAmountForPeriod(date: Date, dimension: DashboardDimension, period: ProjectDashboardPeriod) -> Double {
-        let calendar = Calendar.current
-        let startDate: Date
-        
-        switch period {
-        case .month:
-            startDate = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
-        case .quarter:
-            let month = calendar.component(.month, from: date)
-            let quarterStartMonth = ((month - 1) / 3) * 3 + 1
-            startDate = calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: quarterStartMonth, day: 1)) ?? date
-        case .year:
-            startDate = calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: 1, day: 1)) ?? date
-        }
-        
-        let endDate = calendar.date(byAdding: .month, value: 1, to: startDate) ?? date
-        
-        let transactions = (project.transactions ?? []).filter { $0.date >= startDate && $0.date < endDate }
-        
-        switch dimension {
-        case .cashFlow:
-            let income = transactions.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-            let expense = transactions.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-            return income - expense
-        case .income:
-            return transactions.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-        case .cost:
-            return transactions.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-        case .profit:
-            let income = transactions.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-            let expense = transactions.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-            return income - expense
-        }
-    }
-    
-    // 成本堆叠数据
-    private var stackedCostData: [(date: Date, type: String, amount: Double)] {
-        let calendar = Calendar.current
-        let now = Date()
-        var data: [(date: Date, type: String, amount: Double)] = []
-        
-        let periodsToShow = 6
-        for i in 0..<periodsToShow {
-            let startDate: Date
-            switch selectedPeriod {
-            case .month:
-                let monthDate = calendar.date(byAdding: .month, value: -i, to: now) ?? now
-                startDate = calendar.date(from: calendar.dateComponents([.year, .month], from: monthDate)) ?? monthDate
-            case .quarter:
-                let monthDate = calendar.date(byAdding: .month, value: -i * 3, to: now) ?? now
-                let month = calendar.component(.month, from: monthDate)
-                let quarterStartMonth = ((month - 1) / 3) * 3 + 1
-                startDate = calendar.date(from: DateComponents(year: calendar.component(.year, from: monthDate), month: quarterStartMonth, day: 1)) ?? monthDate
-            case .year:
-                let yearDate = calendar.date(byAdding: .year, value: -i, to: now) ?? now
-                startDate = calendar.date(from: DateComponents(year: calendar.component(.year, from: yearDate), month: 1, day: 1)) ?? yearDate
-            }
-            
-            let endDate = calendar.date(byAdding: .month, value: 1, to: startDate) ?? startDate
-            let transactions = (project.transactions ?? []).filter { $0.date >= startDate && $0.date < endDate && $0.type == .expense }
-            
-            let directCost = transactions.filter { $0.cashFlowType == "operating" }.reduce(0) { $0 + abs($1.amount) }
-            let personalCost = transactions.filter { $0.cashFlowType == "personal" }.reduce(0) { $0 + abs($1.amount) }
-            
-            // 固定成本按月计算
-            let fixedCostMonthly = (project.fixedCosts ?? []).filter { $0.isActive }.reduce(0) { $0 + $1.monthlyAmount }
-            
-            data.append((date: startDate, type: "直接成本", amount: directCost))
-            data.append((date: startDate, type: "固定成本", amount: fixedCostMonthly))
-            data.append((date: startDate, type: "生活成本", amount: personalCost))
-        }
-        
-        return data.reversed()
-    }
-    
-    // 利润趋势数据
-    private var profitTrendData: [(date: Date, values: [(type: String, amount: Double)])] {
-        let calendar = Calendar.current
-        let now = Date()
-        var data: [(date: Date, values: [(type: String, amount: Double)])] = []
-        
-        let periodsToShow = 6
-        for i in 0..<periodsToShow {
-            let startDate: Date
-            switch selectedPeriod {
-            case .month:
-                let monthDate = calendar.date(byAdding: .month, value: -i, to: now) ?? now
-                startDate = calendar.date(from: calendar.dateComponents([.year, .month], from: monthDate)) ?? monthDate
-            case .quarter:
-                let monthDate = calendar.date(byAdding: .month, value: -i * 3, to: now) ?? now
-                let month = calendar.component(.month, from: monthDate)
-                let quarterStartMonth = ((month - 1) / 3) * 3 + 1
-                startDate = calendar.date(from: DateComponents(year: calendar.component(.year, from: monthDate), month: quarterStartMonth, day: 1)) ?? monthDate
-            case .year:
-                let yearDate = calendar.date(byAdding: .year, value: -i, to: now) ?? now
-                startDate = calendar.date(from: DateComponents(year: calendar.component(.year, from: yearDate), month: 1, day: 1)) ?? yearDate
-            }
-            
-            let endDate = calendar.date(byAdding: .month, value: 1, to: startDate) ?? startDate
-            let transactions = (project.transactions ?? []).filter { $0.date >= startDate && $0.date < endDate }
-            
-            let income = transactions.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-            let directCost = transactions.filter { $0.type == .expense && $0.cashFlowType == "operating" }.reduce(0) { $0 + abs($1.amount) }
-            let personalCost = transactions.filter { $0.type == .expense && $0.cashFlowType == "personal" }.reduce(0) { $0 + abs($1.amount) }
-            let fixedCostMonthly = (project.fixedCosts ?? []).filter { $0.isActive }.reduce(0) { $0 + $1.monthlyAmount }
-            
-            let grossProfit = income - directCost
-            let operatingNetProfit = grossProfit - fixedCostMonthly
-            let taxReserve = max(0, operatingNetProfit * project.taxRate)
-            let disposableIncome = operatingNetProfit - personalCost - taxReserve
-            
-            data.append((date: startDate, values: [
-                (type: "毛利", amount: grossProfit),
-                (type: "经营净利润", amount: operatingNetProfit),
-                (type: "可支配收入", amount: disposableIncome)
-            ]))
-        }
-        
-        return data.reversed()
-    }
-    
+
     // MARK: - 工具方法
-    
+
     private func formatCurrency(_ amount: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
@@ -470,12 +345,11 @@ enum ProjectDashboardPeriod: String, CaseIterable {
 // MARK: - 现金流维度卡
 
 struct CashFlowDimensionCard: View {
-    let project: Project
+    let stats: DashboardProjectStats
     let period: ProjectDashboardPeriod
-    
+
     var body: some View {
         VStack(spacing: 16) {
-            // 标题
             HStack {
                 Text("现金流分析")
                     .font(.headline)
@@ -485,75 +359,69 @@ struct CashFlowDimensionCard: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
-            // 累计可用资金
+
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("累计可用资金")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.availableCash))
+                    Text(formatCurrency(stats.availableCash))
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(project.availableCash >= 0 ? .green : .red)
+                        .foregroundColor(stats.availableCash >= 0 ? .green : .red)
                 }
                 Spacer()
             }
-            
-            // 本月净现金流
+
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("本月净现金流")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.monthlyNetCashFlow))
+                    Text(formatCurrency(stats.monthlyNetCashFlow))
                         .font(.title3)
                         .fontWeight(.semibold)
-                        .foregroundColor(project.monthlyNetCashFlow >= 0 ? .green : .red)
+                        .foregroundColor(stats.monthlyNetCashFlow >= 0 ? .green : .red)
                 }
                 Spacer()
             }
-            
-            // 经营/个人拆分
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("经营/个人现金流拆分")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
+
                 HStack(spacing: 20) {
-                    // 经营现金流
                     VStack(alignment: .leading, spacing: 4) {
                         Text("经营支出")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatCurrency(project.operatingCashFlow))
+                        Text(formatCurrency(stats.operatingCashFlow))
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
-                    
+
                     Spacer()
-                    
-                    // 个人现金流
+
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("个人支出")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatCurrency(project.personalCashFlow))
+                        Text(formatCurrency(stats.personalCashFlow))
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
                 }
-                
-                // 进度条
+
                 GeometryReader { geometry in
-                    let total = project.operatingCashFlow + project.personalCashFlow
-                    let operatingWidth = total > 0 ? geometry.size.width * (project.operatingCashFlow / total) : geometry.size.width * 0.5
-                    
+                    let total = abs(stats.operatingCashFlow) + abs(stats.personalCashFlow)
+                    let operatingWidth = total > 0 ? geometry.size.width * (abs(stats.operatingCashFlow) / total) : geometry.size.width * 0.5
+
                     HStack(spacing: 2) {
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.blue)
                             .frame(width: operatingWidth)
-                        
+
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.orange)
                             .frame(width: geometry.size.width - operatingWidth - 2)
@@ -561,18 +429,17 @@ struct CashFlowDimensionCard: View {
                 }
                 .frame(height: 8)
             }
-            
-            // 未来30天刚性支出
-            if project.upcomingFixedCosts > 0 {
+
+            if stats.upcomingFixedCosts > 0 {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("未来30天刚性支出")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
+
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.orange)
-                        Text(formatCurrency(project.upcomingFixedCosts))
+                        Text(formatCurrency(stats.upcomingFixedCosts))
                             .font(.subheadline)
                             .fontWeight(.medium)
                         Spacer()
@@ -588,7 +455,7 @@ struct CashFlowDimensionCard: View {
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
+
     private func formatCurrency(_ amount: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
@@ -601,12 +468,12 @@ struct CashFlowDimensionCard: View {
 // MARK: - 收入维度卡
 
 struct IncomeDimensionCard: View {
-    let project: Project
+    let stats: DashboardProjectStats
     let period: ProjectDashboardPeriod
-    
+    let project: Project
+
     var body: some View {
         VStack(spacing: 16) {
-            // 标题
             HStack {
                 Text("收入分析")
                     .font(.headline)
@@ -616,23 +483,21 @@ struct IncomeDimensionCard: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
-            // 已到账收入
+
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("已到账收入")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.monthlyIncome))
+                    Text(formatCurrency(stats.monthlyIncome))
                         .font(.title)
                         .fontWeight(.bold)
                         .foregroundColor(.green)
                 }
                 Spacer()
             }
-            
-            // 应收账款摘要
-            if project.totalReceivable > 0 {
+
+            if stats.totalReceivable > 0 {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("应收账款")
@@ -645,25 +510,25 @@ struct IncomeDimensionCard: View {
                                 .foregroundColor(.accentColor)
                         }
                     }
-                    
+
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("待回款总额")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(formatCurrency(project.totalReceivable))
+                            Text(formatCurrency(stats.totalReceivable))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                         }
-                        
+
                         Spacer()
-                        
-                        if project.overdueReceivable > 0 {
+
+                        if stats.overdueReceivable > 0 {
                             VStack(alignment: .trailing, spacing: 4) {
                                 Text("逾期金额")
                                     .font(.caption)
                                     .foregroundColor(.red)
-                                Text(formatCurrency(project.overdueReceivable))
+                                Text(formatCurrency(stats.overdueReceivable))
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                     .foregroundColor(.red)
@@ -672,16 +537,14 @@ struct IncomeDimensionCard: View {
                     }
                 }
             }
-            
-            // 业务线收入占比
-            if !project.incomeByCategory.isEmpty {
+
+            if !stats.incomeByCategory.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("业务线收入占比")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
-                    // 环形图
-                    Chart(project.incomeByCategory.prefix(5), id: \.categoryName) { item in
+
+                    Chart(stats.incomeByCategory.prefix(5), id: \.categoryName) { item in
                         SectorMark(
                             angle: .value("金额", item.amount),
                             innerRadius: .ratio(0.6),
@@ -696,15 +559,14 @@ struct IncomeDimensionCard: View {
                             Text("收入构成")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text("\(project.incomeByCategory.count)个分类")
+                            Text("\(stats.incomeByCategory.count)个分类")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
-                    // 分类明细
+
                     VStack(spacing: 8) {
-                        ForEach(project.incomeByCategory.prefix(5), id: \.categoryName) { item in
+                        ForEach(stats.incomeByCategory.prefix(5), id: \.categoryName) { item in
                             HStack {
                                 Circle()
                                     .fill(colorForCategory(item.categoryName))
@@ -729,7 +591,7 @@ struct IncomeDimensionCard: View {
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
+
     private func formatCurrency(_ amount: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
@@ -737,7 +599,7 @@ struct IncomeDimensionCard: View {
         formatter.maximumFractionDigits = 0
         return formatter.string(from: NSNumber(value: amount)) ?? "¥0"
     }
-    
+
     private func colorForCategory(_ category: String) -> Color {
         let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .red, .yellow, .cyan]
         let index = abs(category.hashValue) % colors.count
@@ -748,12 +610,12 @@ struct IncomeDimensionCard: View {
 // MARK: - 成本维度卡
 
 struct CostDimensionCard: View {
-    let project: Project
+    let stats: DashboardProjectStats
     let period: ProjectDashboardPeriod
-    
+    let project: Project
+
     var body: some View {
         VStack(spacing: 16) {
-            // 标题
             HStack {
                 Text("成本分析")
                     .font(.headline)
@@ -763,19 +625,17 @@ struct CostDimensionCard: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
-            // 三类成本三格卡
+
             HStack(spacing: 12) {
-                // 直接成本
                 VStack(spacing: 4) {
                     Text("直接成本")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.directCost))
+                    Text(formatCurrency(stats.directCost))
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.blue)
-                    Text("\(Int(costPercentage.direct))%")
+                    Text("\(Int(stats.costPercentage.direct))%")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -783,17 +643,16 @@ struct CostDimensionCard: View {
                 .padding(8)
                 .background(Color.blue.opacity(0.1))
                 .cornerRadius(8)
-                
-                // 固定成本
+
                 VStack(spacing: 4) {
                     Text("固定成本")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.fixedCostMonthly))
+                    Text(formatCurrency(stats.fixedCostMonthly))
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.orange)
-                    Text("\(Int(costPercentage.fixed))%")
+                    Text("\(Int(stats.costPercentage.fixed))%")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -801,17 +660,16 @@ struct CostDimensionCard: View {
                 .padding(8)
                 .background(Color.orange.opacity(0.1))
                 .cornerRadius(8)
-                
-                // 个人成本
+
                 VStack(spacing: 4) {
                     Text("生活成本")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatCurrency(project.personalCost))
+                    Text(formatCurrency(stats.personalCost))
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.purple)
-                    Text("\(Int(costPercentage.personal))%")
+                    Text("\(Int(stats.costPercentage.personal))%")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -820,14 +678,13 @@ struct CostDimensionCard: View {
                 .background(Color.purple.opacity(0.1))
                 .cornerRadius(8)
             }
-            
-            // 直接成本明细（按分类）
+
             if !costByCategory.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("直接成本明细")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
+
                     VStack(spacing: 8) {
                         ForEach(costByCategory.prefix(5), id: \.categoryName) { item in
                             HStack {
@@ -845,8 +702,7 @@ struct CostDimensionCard: View {
                     }
                 }
             }
-            
-            // 固定经营成本明细
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("固定经营成本明细")
@@ -859,9 +715,8 @@ struct CostDimensionCard: View {
                             .foregroundColor(.accentColor)
                     }
                 }
-                
-                if project.fixedCostMonthly > 0 {
-                    // 显示固定成本列表
+
+                if stats.fixedCostMonthly > 0 {
                     ForEach(project.fixedCosts?.prefix(3) ?? [], id: \.id) { cost in
                         HStack {
                             Image(systemName: "building.2.fill")
@@ -874,13 +729,13 @@ struct CostDimensionCard: View {
                                 .fontWeight(.medium)
                         }
                     }
-                    
+
                     HStack {
                         Text("合计")
                             .font(.caption)
                             .fontWeight(.semibold)
                         Spacer()
-                        Text("\(formatCurrency(project.fixedCostMonthly))/月")
+                        Text("\(formatCurrency(stats.fixedCostMonthly))/月")
                             .font(.caption)
                             .fontWeight(.semibold)
                     }
@@ -890,14 +745,13 @@ struct CostDimensionCard: View {
                         .foregroundColor(.secondary)
                 }
             }
-            
-            // 生活成本明细（按分类）
-            if project.personalCost > 0 {
+
+            if stats.personalCost > 0 {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("生活成本明细")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
+
                     VStack(spacing: 8) {
                         ForEach(personalCostByCategory.prefix(5), id: \.categoryName) { item in
                             HStack {
@@ -921,57 +775,47 @@ struct CostDimensionCard: View {
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
-    // 直接成本按分类聚合
+
+    // 直接成本按分类聚合（仍按本月）
     private var costByCategory: [(categoryName: String, amount: Double)] {
         let calendar = Calendar.current
         let now = Date()
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
-        
+
         var categoryMap: [String: Double] = [:]
         for tx in (project.transactions ?? []) {
             if tx.date >= startOfMonth && tx.type == .expense && tx.cashFlowType == "operating" {
                 categoryMap[tx.categoryName, default: 0] += abs(tx.amount)
             }
         }
-        
+
         return categoryMap.map { (categoryName: $0.key, amount: $0.value) }
             .sorted { $0.amount > $1.amount }
     }
-    
-    // 生活成本按分类聚合
+
+    // 生活成本按分类聚合（仍按本月）
     private var personalCostByCategory: [(categoryName: String, amount: Double)] {
         let calendar = Calendar.current
         let now = Date()
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
-        
+
         var categoryMap: [String: Double] = [:]
         for tx in (project.transactions ?? []) {
             if tx.date >= startOfMonth && tx.type == .expense && tx.cashFlowType == "personal" {
                 categoryMap[tx.categoryName, default: 0] += abs(tx.amount)
             }
         }
-        
+
         return categoryMap.map { (categoryName: $0.key, amount: $0.value) }
             .sorted { $0.amount > $1.amount }
     }
-    
+
     private func colorForCategory(_ category: String) -> Color {
         let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .red, .yellow, .cyan]
         let index = abs(category.hashValue) % colors.count
         return colors[index]
     }
-    
-    private var costPercentage: (direct: Double, fixed: Double, personal: Double) {
-        let total = project.directCost + project.fixedCostMonthly + project.personalCost
-        guard total > 0 else { return (0, 0, 0) }
-        return (
-            direct: (project.directCost / total) * 100,
-            fixed: (project.fixedCostMonthly / total) * 100,
-            personal: (project.personalCost / total) * 100
-        )
-    }
-    
+
     private func formatCurrency(_ amount: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
@@ -984,12 +828,11 @@ struct CostDimensionCard: View {
 // MARK: - 利润维度卡
 
 struct ProfitDimensionCard: View {
-    let project: Project
+    let stats: DashboardProjectStats
     let period: ProjectDashboardPeriod
-    
+
     var body: some View {
         VStack(spacing: 16) {
-            // 标题
             HStack {
                 Text("利润分析")
                     .font(.headline)
@@ -999,124 +842,112 @@ struct ProfitDimensionCard: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
-            // 利润瀑布（进度条式）
+
             VStack(spacing: 12) {
-                // 总收入
                 HStack {
                     Text("总收入")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(formatCurrency(project.monthlyIncome))
+                    Text(formatCurrency(stats.monthlyIncome))
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
-                
-                // 进度条
+
                 GeometryReader { geometry in
-                    let maxValue = max(project.monthlyIncome, 1)
-                    let directCostWidth = geometry.size.width * (project.directCost / maxValue)
-                    let fixedCostWidth = geometry.size.width * (project.fixedCostMonthly / maxValue)
-                    let personalCostWidth = geometry.size.width * (project.personalCost / maxValue)
-                    let taxWidth = geometry.size.width * (project.taxReserve / maxValue)
-                    
+                    let maxValue = max(stats.monthlyIncome, 1)
+                    let directCostWidth = geometry.size.width * (stats.directCost / maxValue)
+                    let fixedCostWidth = geometry.size.width * (stats.fixedCostMonthly / maxValue)
+                    let personalCostWidth = geometry.size.width * (stats.personalCost / maxValue)
+                    let taxWidth = geometry.size.width * (stats.taxReserve / maxValue)
+
                     VStack(spacing: 4) {
-                        // 总收入条
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.green)
                             .frame(width: geometry.size.width, height: 8)
-                        
-                        // 直接成本条
+
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.blue)
                             .frame(width: directCostWidth, height: 8)
-                        
-                        // 固定成本条
+
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.orange)
                             .frame(width: fixedCostWidth, height: 8)
-                        
-                        // 个人成本条
+
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.purple)
                             .frame(width: personalCostWidth, height: 8)
-                        
-                        // 税费条
+
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.red)
                             .frame(width: taxWidth, height: 8)
                     }
                 }
                 .frame(height: 50)
-                
-                // 毛利
+
                 HStack {
                     Text("= 毛利")
                         .font(.subheadline)
                         .foregroundColor(.primary)
                     Spacer()
-                    Text(formatCurrency(project.grossProfit))
+                    Text(formatCurrency(stats.grossProfit))
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(project.grossProfit >= 0 ? .green : .red)
+                        .foregroundColor(stats.grossProfit >= 0 ? .green : .red)
                 }
-                
-                // 毛利率
+
                 HStack {
                     Text("毛利率")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("\(Int(project.grossMargin * 100))%")
+                    Text("\(Int(stats.grossMargin * 100))%")
                         .font(.caption)
                         .fontWeight(.medium)
-                        .foregroundColor(project.grossMargin >= 0 ? .green : .red)
+                        .foregroundColor(stats.grossMargin >= 0 ? .green : .red)
                 }
-                
-                // 经营净利润
+
                 HStack {
                     Text("- 固定成本")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(formatCurrency(project.fixedCostMonthly))
+                    Text(formatCurrency(stats.fixedCostMonthly))
                         .font(.subheadline)
                         .foregroundColor(.orange)
                 }
-                
+
                 HStack {
                     Text("= 经营净利润")
                         .font(.subheadline)
                         .foregroundColor(.primary)
                     Spacer()
-                    Text(formatCurrency(project.operatingNetProfit))
+                    Text(formatCurrency(stats.operatingNetProfit))
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(project.operatingNetProfit >= 0 ? .green : .red)
+                        .foregroundColor(stats.operatingNetProfit >= 0 ? .green : .red)
                 }
-                
-                // 可支配收入
+
                 HStack {
                     Text("- 生活成本 - 税费")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(formatCurrency(project.personalCost + project.taxReserve))
+                    Text(formatCurrency(stats.personalCost + stats.taxReserve))
                         .font(.subheadline)
                         .foregroundColor(.purple)
                 }
-                
+
                 HStack {
                     Text("= 可支配收入")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                     Spacer()
-                    Text(formatCurrency(project.disposableIncome))
+                    Text(formatCurrency(stats.disposableIncome))
                         .font(.title3)
                         .fontWeight(.bold)
-                        .foregroundColor(project.disposableIncome >= 0 ? .green : .red)
+                        .foregroundColor(stats.disposableIncome >= 0 ? .green : .red)
                 }
             }
         }
@@ -1125,7 +956,7 @@ struct ProfitDimensionCard: View {
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
+
     private func formatCurrency(_ amount: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency

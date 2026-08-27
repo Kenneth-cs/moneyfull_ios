@@ -405,6 +405,78 @@ struct Triangle: Shape {
     }
 }
 
+// MARK: - 横向滑动手势桥接（UIKit）
+/// 内部桥接 UIPanGestureRecognizer，只识别水平滑动，避免与 ScrollView 的垂直手势冲突。
+private struct HorizontalSwipeGestureView: UIViewRepresentable {
+    @Binding var offset: CGFloat
+    let totalActionWidth: CGFloat
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(offset: $offset, totalActionWidth: totalActionWidth)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = true
+        view.backgroundColor = .clear
+
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        pan.delegate = context.coordinator
+        pan.cancelsTouchesInView = false
+        view.addGestureRecognizer(pan)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        // 视图一旦创建无需更新，手势通过 binding 修改 offset
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        @Binding var offset: CGFloat
+        let totalActionWidth: CGFloat
+        private var startOffset: CGFloat = 0
+
+        init(offset: Binding<CGFloat>, totalActionWidth: CGFloat) {
+            self._offset = offset
+            self.totalActionWidth = totalActionWidth
+        }
+
+        /// 只在水平速度明显大于垂直速度时才启动手势，把垂直滑动完整留给 ScrollView
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y)
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let translation = gesture.translation(in: view).x
+
+            switch gesture.state {
+            case .began:
+                startOffset = offset
+            case .changed:
+                let target = startOffset + translation
+                if target < 0 {
+                    offset = max(target, -totalActionWidth)
+                } else if offset < 0 {
+                    offset = min(0, target)
+                }
+            case .ended, .cancelled:
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    if offset < -totalActionWidth / 2 {
+                        offset = -totalActionWidth
+                    } else {
+                        offset = 0
+                    }
+                }
+            default:
+                break
+            }
+        }
+    }
+}
+
 struct SwipeActionView<Content: View>: View {
     let content: Content
     let onEdit: () -> Void
@@ -465,25 +537,8 @@ struct SwipeActionView<Content: View>: View {
 
             content
                 .offset(x: offset)
-                .gesture(
-                    DragGesture(minimumDistance: 20)
-                        .onChanged { value in
-                            let newOffset = value.translation.width
-                            if newOffset < 0 {
-                                offset = max(newOffset, -totalActionWidth)
-                            } else if offset < 0 {
-                                offset = min(0, newOffset + offset)
-                            }
-                        }
-                        .onEnded { value in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                if offset < -totalActionWidth / 2 {
-                                    offset = -totalActionWidth
-                                } else {
-                                    offset = 0
-                                }
-                            }
-                        }
+                .overlay(
+                    HorizontalSwipeGestureView(offset: $offset, totalActionWidth: totalActionWidth)
                 )
         }
         .clipped()

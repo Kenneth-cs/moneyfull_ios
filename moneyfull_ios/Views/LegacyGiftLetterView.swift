@@ -6,6 +6,8 @@ import SwiftUI
 /// 1. ContentView：老用户首次启动新版本，自动作为 fullScreenCover 展示一次
 /// 2. NoticeCenterView：消息中心点开后作为 sheet 可随时回看
 struct LegacyGiftLetterView: View {
+    /// 是否为老用户（已发放福利），影响底部按钮文案
+    var isLegacyUser: Bool = true
     var onDismiss: () -> Void
 
     var body: some View {
@@ -318,6 +320,25 @@ struct LegacyGiftLetterView: View {
                             .stroke(Color(hex: "#B0E0C8"), lineWidth: 1.5)
                     )
             )
+
+            if !isLegacyUser {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(hex: "#6A9A78"))
+                        .padding(.top, 1)
+                    Text("温馨提示：此礼物已在新版本升级时自动发放至符合条件的「早期用户」账户，若您升级后未看到会员状态变化，敬请关注后续其它精彩活动喔～")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundColor(Color(hex: "#4A8A58"))
+                        .lineSpacing(4)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(hex: "#F0FBF5"))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.top, 8)
+            }
         }
         .padding(.bottom, 20)
     }
@@ -453,24 +474,39 @@ struct LegacyGiftLetterView: View {
             )
             .frame(height: 24)
 
-            Button(action: onDismiss) {
+            Button(action: {
+                // 埋点：区分老用户领取 vs 非老用户关闭
+                AnalyticsManager.shared.trackEvent(
+                    eventId: "legacy_gift_letter_dismiss",
+                    eventName: isLegacyUser ? "感谢信-点击领取" : "感谢信-我已了解",
+                    params: ["is_legacy_user": isLegacyUser]
+                )
+                onDismiss()
+            }) {
                 HStack(spacing: 8) {
-                    Text("❤️")
-                        .font(.system(size: 16))
-                    Text("点击领取")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                    if isLegacyUser {
+                        Text("❤️")
+                            .font(.system(size: 16))
+                        Text("点击领取")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                    } else {
+                        Text("我知道啦")
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    }
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
                     LinearGradient(
-                        colors: [Color(hex: "#1A7A50"), Color(hex: "#34A873")],
+                        colors: isLegacyUser
+                            ? [Color(hex: "#1A7A50"), Color(hex: "#34A873")]
+                            : [Color(hex: "#6A8A78"), Color(hex: "#8AAA98")],
                         startPoint: .leading, endPoint: .trailing
                     )
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 18))
-                .shadow(color: Color(hex: "#1A7A50").opacity(0.35), radius: 10, x: 0, y: 5)
+                .shadow(color: (isLegacyUser ? Color(hex: "#1A7A50") : Color(hex: "#6A8A78")).opacity(0.25), radius: 10, x: 0, y: 5)
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 24)
@@ -502,6 +538,10 @@ extension Text {
     }
 }
 
-#Preview {
-    LegacyGiftLetterView(onDismiss: {})
+#Preview("老用户") {
+    LegacyGiftLetterView(isLegacyUser: true, onDismiss: {})
+}
+
+#Preview("非老用户") {
+    LegacyGiftLetterView(isLegacyUser: false, onDismiss: {})
 }

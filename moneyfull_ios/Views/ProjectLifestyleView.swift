@@ -85,10 +85,15 @@ struct ProjectLifestyleView: View {
         }
     }
     
-    private func categorySpent(_ categoryName: String) -> Double {
+    /// 预聚合所有支出分类金额，ForEach 内查表而非逐行重扫 transactions
+    private var categorySpentMap: [String: Double] {
         (project.transactions ?? [])
-            .filter { $0.type == .expense && $0.categoryName == categoryName }
-            .reduce(0) { $0 + abs($1.amount) }
+            .filter { $0.type == .expense }
+            .reduce(into: [String: Double]()) { $0[$1.categoryName, default: 0] += abs($1.amount) }
+    }
+
+    private func categorySpent(_ categoryName: String, from map: [String: Double]) -> Double {
+        map[categoryName] ?? 0
     }
 
     var body: some View {
@@ -226,6 +231,7 @@ struct ProjectLifestyleView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
             } else {
+                let spentMap = categorySpentMap
                 VStack(spacing: 12) {
                     ForEach(budgetItems) { item in
                         BudgetProgressRow(item: BudgetItemUI(
@@ -234,7 +240,7 @@ struct ProjectLifestyleView: View {
                             categoryColorHex: item.categoryColorHex,
                             amount: item.amount,
                             alertThreshold: item.alertThreshold,
-                            spent: categorySpent(item.categoryName)
+                            spent: categorySpent(item.categoryName, from: spentMap)
                         ))
                     }
                 }

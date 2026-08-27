@@ -4,9 +4,9 @@ cplt_02a1149fa805ba4a1a43b928a2d974816e106bc094b3fa1c98bc460e27e16917
 
 iOS Swift 接入示例:
 #if DEBUG
-private let kApiBase = "http://localhost:3000"
+private let kApiBase = "https://www.superindividual.originapex.cn"
 #else
-private let kApiBase = "https://www.superindividual.youqukeji.cn"
+private let kApiBase = "https://www.superindividual.originapex.cn"
 #endif
 private let kApiKey  = "cplt_02a1149fa805ba4a1a43b928a2d974816e106bc094b3fa1c98bc460e27e16917"
 

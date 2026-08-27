@@ -155,7 +155,7 @@ struct PaywallView: View {
             }
         }
         .sheet(isPresented: $showLegacyGiftLetter) {
-            LegacyGiftLetterView(onDismiss: { showLegacyGiftLetter = false })
+            LegacyGiftLetterView(isLegacyUser: storeManager.isLegacyGiftActive, onDismiss: { showLegacyGiftLetter = false })
         }
         .sheet(isPresented: $showPrivacyPolicy) {
             PrivacyPolicyView()

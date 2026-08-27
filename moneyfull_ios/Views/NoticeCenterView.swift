@@ -114,11 +114,12 @@ private struct NoticeRow: View {
 
 private struct NoticeDetailSheet: View {
     let notice: AppNotice
+    @EnvironmentObject var storeManager: StoreManager
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         if notice.noticeID == AppNoticeData.legacyGiftLetter.id {
-            LegacyGiftLetterView(onDismiss: { dismiss() })
+            LegacyGiftLetterView(isLegacyUser: storeManager.isLegacyGiftActive, onDismiss: { dismiss() })
         } else {
             GenericNoticeDetailView(notice: notice, onDismiss: { dismiss() })
         }

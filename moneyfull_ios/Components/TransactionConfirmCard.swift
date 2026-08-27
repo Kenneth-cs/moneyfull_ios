@@ -108,7 +108,11 @@ struct TransactionConfirmCard: View {
                 Button(action: {
                     guard !displayData.isNewCategory else { return }
                     pauseTimer()
-                    amountText = String(format: "%.0f", displayData.amount)
+                    // 整数不带小数点，小数保留原样（避免 "%.0f" 四舍五入导致 31.85 显示为 32）
+                    let amt = displayData.amount
+                    amountText = amt.truncatingRemainder(dividingBy: 1) == 0
+                        ? String(Int(amt))
+                        : String(amt)
                     showAmountEditor = true
                 }) {
                     HStack {

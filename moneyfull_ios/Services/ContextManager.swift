@@ -107,7 +107,10 @@ class ContextManager {
         return context
     }
     
-    func saveChatHistory(role: String, content: String, isPrescripted: Bool = false) throws {
+    /// 保存聊天记录，返回新建记录的 UUID（可忽略）
+    /// 调用方可存储此 ID，用于后续通过 updateChatHistoryContent 同步修改记录内容
+    @discardableResult
+    func saveChatHistory(role: String, content: String, isPrescripted: Bool = false) throws -> UUID {
         guard let modelContext = modelContext else {
             throw ContextError.noModelContext
         }
@@ -117,6 +120,24 @@ class ContextManager {
         try modelContext.save()
         #if DEBUG
         print("💾 saveChatHistory: 已保存 \(role) 消息: \(content.prefix(50))\(isPrescripted ? " [预制]" : "")")
+        #endif
+        return chat.id
+    }
+
+    /// 通过记录 ID 更新聊天历史的文本内容（用于修改账单后同步气泡文字）
+    func updateChatHistoryContent(id: UUID, newContent: String) {
+        guard let modelContext = modelContext else { return }
+        let descriptor = FetchDescriptor<ChatHistory>(predicate: #Predicate { $0.id == id })
+        guard let record = (try? modelContext.fetch(descriptor))?.first else {
+            #if DEBUG
+            print("⚠️ updateChatHistoryContent: 未找到 id=\(id) 的记录")
+            #endif
+            return
+        }
+        record.content = newContent
+        try? modelContext.save()
+        #if DEBUG
+        print("✏️ updateChatHistoryContent: 已更新记录内容 → \(newContent.prefix(50))")
         #endif
     }
     

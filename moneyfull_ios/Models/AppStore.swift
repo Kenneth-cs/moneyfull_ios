@@ -2,11 +2,21 @@ import SwiftData
 import SwiftUI
 import CoreData
 
+/// 项目收支汇总（渲染路径查表用，避免每张卡片重复遍历关系）
+struct ProjectSummary: Equatable {
+    let totalSpent: Double
+    let totalIncome: Double
+    let budgetProgress: Double
+}
+
 /// 全局状态管理：负责所有数据的增删查改，注入到 View 层使用
 @MainActor
 class AppStore: ObservableObject {
     private let modelContext: ModelContext
-    
+
+    /// 统一数据变更信号：在金额相关模型写操作后自增，供各 View 作为缓存失效依据
+    @Published private(set) var dataVersion: Int = 0
+
     /// 所有进行中项目
     @Published var activeProjects: [Project] = []
     /// 所有已归档项目
@@ -17,6 +27,8 @@ class AppStore: ObservableObject {
     @Published var categories: [Category] = []
     /// 消息中心通知列表（按时间倒序）
     @Published var appNotices: [AppNotice] = []
+    /// 项目收支汇总表（fetchProjects 时一次遍历产出，渲染路径查表）
+    @Published private(set) var projectSummaries: [UUID: ProjectSummary] = [:]
     
     // 本月汇总数据
     @Published var monthlyExpense: Double = 0
@@ -112,12 +124,100 @@ class AppStore: ObservableObject {
     
     // MARK: - 读取数据
     
+    /// 全量刷新：启动、CloudKit 同步、批量导入等场景使用
     func refresh() {
-        fetchProjects()
-        fetchRecentTransactions()
-        fetchCategories()
-        fetchAppNotices()
+        refreshProjects()
+        refreshTransactions()
+        refreshCategories()
+        refreshNotices()
         calcMonthlyStats()
+        bumpDataVersion()
+    }
+
+    // MARK: - 分域刷新（避免任意 @Published 变化触发全屏重绘）
+
+    private func refreshProjects() {
+        let descriptor = FetchDescriptor<Project>()
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        let newActive = all
+            .filter { !$0.isArchived }
+            .sorted {
+                if $0.isPinned != $1.isPinned { return $0.isPinned }
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.createdAt > $1.createdAt
+            }
+        let newArchived = all
+            .filter { $0.isArchived }
+            .sorted { $0.createdAt > $1.createdAt }
+
+        // 一次遍历产出全部项目的收支汇总，渲染路径（项目卡片）查表而非各自遍历关系
+        var summaries: [UUID: ProjectSummary] = [:]
+        summaries.reserveCapacity(all.count)
+        for project in all {
+            var spent: Double = 0
+            var income: Double = 0
+            for tx in project.transactions ?? [] {
+                if tx.type == .expense {
+                    spent += abs(tx.amount)
+                } else if tx.type == .income {
+                    income += abs(tx.amount)
+                }
+            }
+            summaries[project.id] = ProjectSummary(
+                totalSpent: spent,
+                totalIncome: income,
+                budgetProgress: project.budget > 0 ? spent / project.budget : 0
+            )
+        }
+
+        assignIfChanged(\.activeProjects, newActive)
+        assignIfChanged(\.archivedProjects, newArchived)
+        assignIfChanged(\.projectSummaries, summaries)
+    }
+
+    private func refreshTransactions() {
+        var descriptor = FetchDescriptor<Transaction>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 50
+        assignIfChanged(\.recentTransactions, (try? modelContext.fetch(descriptor)) ?? [])
+    }
+
+    private func refreshCategories() {
+        let descriptor = FetchDescriptor<Category>(
+            sortBy: [SortDescriptor(\.createdAt, order: .forward)]
+        )
+        let newCategories = (try? modelContext.fetch(descriptor)) ?? []
+        assignIfChanged(\.categories, newCategories)
+
+        repairCloudKitCategoriesIfNeeded()
+    }
+
+    private func refreshNotices() {
+        let descriptor = FetchDescriptor<AppNotice>(
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+        )
+        assignIfChanged(\.appNotices, (try? modelContext.fetch(descriptor)) ?? [])
+    }
+
+    /// 只在值变化时赋值，避免无谓的 objectWillChange
+    private func assignIfChanged<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<AppStore, T>, _ newValue: T) {
+        if self[keyPath: keyPath] != newValue {
+            self[keyPath: keyPath] = newValue
+        }
+    }
+
+    /// dataVersion 只在金额相关模型变更时自增
+    private func bumpDataVersion() {
+        dataVersion += 1
+    }
+
+    /// 刷新与金额/项目汇总相关的域，并 bump dataVersion
+    private func refreshFinancialAndBump() {
+        refreshProjects()
+        refreshTransactions()
+        calcMonthlyStats()
+        bumpDataVersion()
     }
 
     /// 消息中心未读数量，用于首页铃铛角标
@@ -125,19 +225,12 @@ class AppStore: ObservableObject {
         appNotices.filter { !$0.isRead }.count
     }
 
-    private func fetchAppNotices() {
-        let descriptor = FetchDescriptor<AppNotice>(
-            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
-        )
-        appNotices = (try? modelContext.fetch(descriptor)) ?? []
-    }
-
     /// 将某条消息标记为已读（点开详情时调用）
     func markNoticeAsRead(_ notice: AppNotice) {
         guard !notice.isRead else { return }
         notice.isRead = true
         save()
-        fetchAppNotices()
+        refreshNotices()
     }
 
     /// 关闭自动弹出的"给陪伴的你"感谢信时调用，把消息中心对应那条也标记为已读
@@ -148,52 +241,16 @@ class AppStore: ObservableObject {
         }
     }
     
-    private func fetchProjects() {
-        let descriptor = FetchDescriptor<Project>()
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        activeProjects = all
-            .filter { !$0.isArchived }
-            .sorted {
-                if $0.isPinned != $1.isPinned { return $0.isPinned }
-                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
-                return $0.createdAt > $1.createdAt
-            }
-        archivedProjects = all
-            .filter { $0.isArchived }
-            .sorted { $0.createdAt > $1.createdAt }
-    }
-    
-    private func fetchRecentTransactions() {
-        var descriptor = FetchDescriptor<Transaction>(
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
-        descriptor.fetchLimit = 50
-        recentTransactions = (try? modelContext.fetch(descriptor)) ?? []
-    }
-
     func fetchAllTransactions() -> [Transaction] {
         let descriptor = FetchDescriptor<Transaction>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        let result = (try? modelContext.fetch(descriptor)) ?? []
-        #if DEBUG
-        print("📋 AppStore.fetchAllTransactions - count: \(result.count)")
-        #endif
-        return result
+        return (try? modelContext.fetch(descriptor)) ?? []
     }
-    
+
     func fetchTotalTransactionCount() -> Int {
         let descriptor = FetchDescriptor<Transaction>()
         return (try? modelContext.fetchCount(descriptor)) ?? 0
-    }
-    
-    private func fetchCategories() {
-        let descriptor = FetchDescriptor<Category>(
-            sortBy: [SortDescriptor(\.createdAt, order: .forward)]
-        )
-        categories = (try? modelContext.fetch(descriptor)) ?? []
-        
-        repairCloudKitCategoriesIfNeeded()
     }
     
     /// 动态修复从 iCloud 延迟同步过来的缺乏 groupName 的旧分类数据
@@ -270,13 +327,26 @@ class AppStore: ObservableObject {
             startDate = Date.distantPast
         }
 
-        let descriptor = FetchDescriptor<Transaction>(
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
-        let allTxs = (try? modelContext.fetch(descriptor)) ?? []
-        let txs = period == .all ? allTxs : allTxs.filter { $0.date >= startDate }
-        let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-        let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
+        // 时间范围下推到数据库，求和不依赖顺序故去掉 sortBy
+        let descriptor: FetchDescriptor<Transaction>
+        if period == .all {
+            descriptor = FetchDescriptor<Transaction>()
+        } else {
+            descriptor = FetchDescriptor<Transaction>(
+                predicate: #Predicate { $0.date >= startDate }
+            )
+        }
+        let txs = (try? modelContext.fetch(descriptor)) ?? []
+        // 一次遍历同时累加收入与支出
+        var exp: Double = 0
+        var inc: Double = 0
+        for tx in txs {
+            if tx.type == .expense {
+                exp += abs(tx.amount)
+            } else if tx.type == .income {
+                inc += abs(tx.amount)
+            }
+        }
         return (exp, inc, inc - exp)
     }
     
@@ -295,14 +365,14 @@ class AppStore: ObservableObject {
         project.transactions = (project.transactions ?? []) + [tx]
         modelContext.insert(tx)
         save()
-        refresh()
-        
+        refreshFinancialAndBump()
+
         // 预算预警检查
         BudgetAlertService.shared.check(after: tx, in: project)
-        
+
         return tx
     }
-    
+
     /// 新建项目
     @discardableResult
     func addProject(name: String, icon: String, colorHex: String,
@@ -315,46 +385,54 @@ class AppStore: ObservableObject {
                               targetIncome: targetIncome, defaultRate: defaultRate)
         modelContext.insert(project)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
         return project
     }
     
     // MARK: - 修改数据
     
     /// 更新交易记录
+    /// 注意：通过 UUID 重新从数据库获取活跃对象后再修改，
+    /// 避免因 SwiftData 内存淘汰或 iCloud 同步导致传入的 tx 成为"幽灵对象"而修改不生效
     func updateTransaction(_ tx: Transaction, amount: Double, type: TransactionType,
                            categoryName: String, categoryIcon: String, categoryColorHex: String,
                            note: String, date: Date, project: Project? = nil,
                            cashFlowType: String? = nil) {
-        tx.amount = amount
-        tx.rawType = type.rawValue // 直接修改底层存储属性
-        tx.categoryName = categoryName
-        tx.categoryIcon = categoryIcon
-        tx.categoryColorHex = categoryColorHex
-        tx.note = note
-        tx.date = date
+        // 通过 UUID 重新抓取活跃的 managed 对象
+        let txID = tx.id
+        let descriptor = FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == txID })
+        let target = (try? modelContext.fetch(descriptor))?.first ?? tx
+
+        target.amount = amount
+        target.rawType = type.rawValue  // 底层存储属性，CloudKit 不支持枚举
+        target.categoryName = categoryName
+        target.categoryIcon = categoryIcon
+        target.categoryColorHex = categoryColorHex
+        target.note = note
+        target.date = date
         if let project = project {
-            tx.project = project
+            target.project = project
         }
         if let cashFlowType = cashFlowType {
-            tx.cashFlowType = cashFlowType
+            target.cashFlowType = cashFlowType
         }
         save()
-        refresh()
-        
+        refreshFinancialAndBump()
+
         // 预算预警检查
-        if let project = tx.project {
-            BudgetAlertService.shared.check(after: tx, in: project)
+        if let project = target.project {
+            BudgetAlertService.shared.check(after: target, in: project)
         }
     }
-    
+
     /// 归档 / 取消归档项目
     func toggleArchive(project: Project) {
         let wasArchived = project.isArchived
         project.isArchived.toggle()
         save()
-        refresh()
-        
+        refreshFinancialAndBump()
+
         if !wasArchived {
             AnalyticsManager.shared.trackEvent(
                 eventId: "project_archive",
@@ -365,7 +443,7 @@ class AppStore: ObservableObject {
             )
         }
     }
-    
+
     /// 设置/取消活跃项目（全局唯一）
     func toggleActiveProject(_ project: Project) {
         // 如果当前项目已经是活跃项目，则取消
@@ -381,37 +459,39 @@ class AppStore: ObservableObject {
             project.isActiveProject = true
         }
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     // MARK: - 删除数据
-    
+
     func deleteTransaction(_ tx: Transaction) {
         modelContext.delete(tx)
         save()
-        refresh()
+        refreshFinancialAndBump()
     }
-    
+
     func deleteProject(_ project: Project) {
         for tx in project.transactions ?? [] {
             modelContext.delete(tx)
         }
         modelContext.delete(project)
         save()
-        refresh()
+        refreshFinancialAndBump()
     }
-    
+
     func updateProjectColor(_ project: Project, colorHex: String) {
         project.colorHex = colorHex
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
 
     func updateProjectWorkingDays(_ project: Project, days: Int) {
         project.workingDays = max(0, days)
         save()
     }
-    
+
     func updateProject(_ project: Project, name: String, icon: String,
                        colorHex: String, desc: String, budget: Double,
                        projectMode: String? = nil, budgetCycle: String? = nil,
@@ -427,8 +507,8 @@ class AppStore: ObservableObject {
         if let income = targetIncome { project.targetIncome = income }
         if let rate = defaultRate { project.defaultRate = rate }
         save()
-        refresh()
-        
+        refreshFinancialAndBump()
+
         // 预算金额变更时重置检查点
         if budgetChanged {
             BudgetAlertService.shared.resetProjectCheckpoint(for: project.id)
@@ -440,17 +520,18 @@ class AppStore: ObservableObject {
             project.sortOrder = index
         }
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     // MARK: - 分类管理
-    
+
     func addCategory(name: String, icon: String, colorHex: String, groupName: String = "", transactionType: String = "both") {
         let category = Category(name: name, icon: icon, colorHex: colorHex, isGlobal: false, transactionType: transactionType, groupName: groupName)
         modelContext.insert(category)
         save()
-        refresh()
-        
+        refreshCategories()
+
         AnalyticsManager.shared.trackEvent(
             eventId: "category_created",
             eventName: "添加分类",
@@ -461,11 +542,11 @@ class AppStore: ObservableObject {
             ]
         )
     }
-    
+
     func deleteCategory(_ category: Category) {
         modelContext.delete(category)
         save()
-        refresh()
+        refreshCategories()
     }
 
     func updateCategory(_ category: Category, name: String, icon: String, colorHex: String, groupName: String? = nil) {
@@ -476,7 +557,7 @@ class AppStore: ObservableObject {
             category.groupName = groupName
         }
         save()
-        refresh()
+        refreshCategories()
     }
     
     // MARK: - BudgetItem CRUD
@@ -492,10 +573,11 @@ class AppStore: ObservableObject {
         project.budgetItems = (project.budgetItems ?? []) + [item]
         modelContext.insert(item)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
         return item
     }
-    
+
     func updateBudgetItem(_ item: BudgetItem, categoryName: String? = nil, categoryIcon: String? = nil,
                           categoryColorHex: String? = nil, amount: Double? = nil,
                           sortOrder: Int? = nil, alertThreshold: Double? = nil) {
@@ -506,27 +588,31 @@ class AppStore: ObservableObject {
         if let order = sortOrder { item.sortOrder = order }
         if let threshold = alertThreshold { item.alertThreshold = threshold }
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     func deleteBudgetItem(_ item: BudgetItem) {
         if let project = item.project {
             project.budgetItems = (project.budgetItems ?? []).filter { $0.id != item.id }
         }
         modelContext.delete(item)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     func reorderBudgetItems(_ items: [BudgetItem]) {
         for (index, item) in items.enumerated() {
             item.sortOrder = index
         }
         save()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     // MARK: - TimeEntry CRUD
-    
+
     @discardableResult
     func addTimeEntry(to project: Project, duration: Double, granularity: String = "hour",
                       rate: Double, note: String = "", date: Date = Date()) -> TimeEntry {
@@ -536,17 +622,19 @@ class AppStore: ObservableObject {
         project.timeEntries = (project.timeEntries ?? []) + [entry]
         modelContext.insert(entry)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
         return entry
     }
-    
+
     func deleteTimeEntry(_ entry: TimeEntry) {
         if let project = entry.project {
             project.timeEntries = (project.timeEntries ?? []).filter { $0.id != entry.id }
         }
         modelContext.delete(entry)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
     
     // MARK: - 备份
@@ -582,14 +670,14 @@ class AppStore: ObservableObject {
         )
         modelContext.insert(project)
         save()
-        refresh()
+        refreshProjects()
         return project
     }
-    
+
     @discardableResult
     func addImportedTransactions(_ transactions: [(amount: Double, type: TransactionType, categoryName: String, categoryIcon: String, categoryColorHex: String, note: String, date: Date)], batchID: UUID) -> Int {
         let project = getOrCreateHistoryProject()
-        
+
         var count = 0
         for item in transactions {
             let tx = Transaction(
@@ -608,22 +696,22 @@ class AppStore: ObservableObject {
             count += 1
         }
         save()
-        refresh()
+        refreshFinancialAndBump()
         return count
     }
-    
+
     func undoImport(batchID: UUID) -> Int {
         let descriptor = FetchDescriptor<Transaction>(
             predicate: #Predicate<Transaction> { $0.importBatchID != nil }
         )
         guard let allImported = try? modelContext.fetch(descriptor) else { return 0 }
-        
+
         let batch = allImported.filter { $0.importBatchID == batchID }
         for tx in batch {
             modelContext.delete(tx)
         }
         save()
-        refresh()
+        refreshFinancialAndBump()
         return batch.count
     }
     
@@ -632,6 +720,63 @@ class AppStore: ObservableObject {
     private func save() {
         try? modelContext.save()
     }
+
+    // MARK: - 性能测试数据（仅 Debug 包）
+
+    #if DEBUG
+    /// 性能测试专用批次标识（固定 UUID，保证重启后仍能一键清除）
+    static let perfTestBatchID = UUID(uuidString: "A1B2C3D4-1111-2222-3333-444455556666")!
+
+    /// 一键生成 count 条测试账单（挂到"日常收支"项目，用于滚动性能复现）
+    func generatePerfTestTransactions(count: Int = 5000) {
+        let project = activeProjects.first(where: { $0.name == "日常收支" }) ?? activeProjects.first ?? getOrCreateHistoryProject()
+        let categories: [(name: String, icon: String, color: String, type: TransactionType)] = [
+            ("餐饮", "fork.knife", "#F6D7A8", .expense),
+            ("购物", "bag.fill", "#F2B7C6", .expense),
+            ("交通", "tram.fill", "#B3D1E6", .expense),
+            ("日用", "basket.fill", "#DCCFC4", .expense),
+            ("娱乐", "gamecontroller.fill", "#D8C6E8", .expense),
+            ("工资", "dollarsign.circle.fill", "#A8E0C2", .income),
+            ("兼职", "clock.fill", "#BFE6EA", .income)
+        ]
+        let now = Date()
+        for i in 0..<count {
+            let cat = categories[i % categories.count]
+            // 均匀分布在过去的两年内
+            let date = now.addingTimeInterval(-Double(i % 730) * 86400 - Double(i % 86400))
+            let tx = Transaction(
+                amount: Double((i % 500) + 1) + Double(i % 100) / 100,
+                type: cat.type,
+                categoryName: cat.name,
+                categoryIcon: cat.icon,
+                categoryColorHex: cat.color,
+                note: "性能测试 #\(i)",
+                date: date
+            )
+            tx.importBatchID = Self.perfTestBatchID
+            tx.project = project
+            modelContext.insert(tx)
+        }
+        save()
+        refreshFinancialAndBump()
+    }
+
+    /// 一键清除全部性能测试账单，返回清除条数
+    @discardableResult
+    func clearPerfTestTransactions() -> Int {
+        let descriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate<Transaction> { $0.importBatchID != nil }
+        )
+        guard let allImported = try? modelContext.fetch(descriptor) else { return 0 }
+        let batch = allImported.filter { $0.importBatchID == Self.perfTestBatchID }
+        for tx in batch {
+            modelContext.delete(tx)
+        }
+        save()
+        refreshFinancialAndBump()
+        return batch.count
+    }
+    #endif
     
     /// 首次启动时创建默认「日常收支」项目和系统预设分类
     private func setupDefaultDataIfNeeded() {
@@ -731,7 +876,7 @@ class AppStore: ObservableObject {
             modelContext.insert(cat)
         }
         try? modelContext.save()
-        fetchCategories()
+        refreshCategories()
     }
 
     private func migrateMorandiColors() {
@@ -830,7 +975,7 @@ class AppStore: ObservableObject {
             }
         }
         save()
-        fetchCategories()
+        refreshCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV2Done")
     }
 
@@ -842,10 +987,10 @@ class AppStore: ObservableObject {
             cat.transactionType = "both"
         }
         save()
-        fetchCategories()
+        refreshCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV3Done")
     }
-    
+
     private func migrateV4Categories() {
         guard !UserDefaults.standard.bool(forKey: "categoryMigrationV4Done_fix1") else { return }
         
@@ -916,22 +1061,22 @@ class AppStore: ObservableObject {
         }
         
         save()
-        fetchCategories()
+        refreshCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV4Done_fix1")
     }
-    
+
     private func migrateV5Categories() {
         guard !UserDefaults.standard.bool(forKey: "categoryMigrationV5Done") else { return }
-        
+
         let allCats = (try? modelContext.fetch(FetchDescriptor<Category>())) ?? []
-        
+
         // 1. 删除所有带 "(通用)" 的冗余分类，解决文案和图标重复问题
         for cat in allCats {
             if cat.name.contains("(通用)") {
                 modelContext.delete(cat)
             }
         }
-        
+
         // 2. 对于原本没有单独基础分类的类目，补充纯净的名称（去掉通用两字）
         let existingNames = Set(allCats.map { $0.name })
         let v5Defaults: [(String, String, String, String, String, String)] = [
@@ -941,35 +1086,35 @@ class AppStore: ObservableObject {
             ("额外", "gift.fill", "#F2B7C6", "income", "额外", "额外"),
             ("临时", "clock.fill", "#BFE6EA", "income", "临时", "临时")
         ]
-        
+
         for (name, icon, colorHex, type, group, incomeGroup) in v5Defaults {
             if !existingNames.contains(name) {
                 let cat = Category(name: name, icon: icon, colorHex: colorHex, isGlobal: true, transactionType: type, groupName: group, incomeGroupName: incomeGroup)
                 modelContext.insert(cat)
             }
         }
-        
+
         save()
-        fetchCategories()
+        refreshCategories()
         UserDefaults.standard.set(true, forKey: "categoryMigrationV5Done")
     }
     
     /// 迁移：取消"日常收支"项目的置顶状态，让它参与正常排序
     private func migrateDailyProjectUnpin() {
         guard !UserDefaults.standard.bool(forKey: "dailyProjectUnpinDone") else { return }
-        
+
         let descriptor = FetchDescriptor<Project>()
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        
+
         for project in all where project.name == "日常收支" && project.isPinned {
             project.isPinned = false
         }
-        
+
         save()
-        refresh()
+        refreshProjects()
         UserDefaults.standard.set(true, forKey: "dailyProjectUnpinDone")
     }
-    
+
     /// 迁移：为个人生活成本分类设置 isDirectCost = false
     private func migrateV7CostCategory() {
         guard !UserDefaults.standard.bool(forKey: "costCategoryMigrationV7Done") else { return }
@@ -989,26 +1134,26 @@ class AppStore: ObservableObject {
         }
 
         save()
-        fetchCategories()
+        refreshCategories()
         UserDefaults.standard.set(true, forKey: "costCategoryMigrationV7Done")
     }
 
     /// 迁移：为旧项目设置默认 projectMode = "lifestyle"
     private func migrateV6ProjectMode() {
         guard !UserDefaults.standard.bool(forKey: "projectModeMigrationV6Done") else { return }
-        
+
         let descriptor = FetchDescriptor<Project>()
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        
+
         for project in all {
             // 新字段都有默认值，这里主要确保 projectMode 不为空
             if project.projectMode.isEmpty {
                 project.projectMode = "lifestyle"
             }
         }
-        
+
         save()
-        refresh()
+        refreshProjects()
         UserDefaults.standard.set(true, forKey: "projectModeMigrationV6Done")
     }
     
@@ -1044,7 +1189,7 @@ class AppStore: ObservableObject {
     private static let legacyGiftClaimDeadline: Date = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        return calendar.date(from: DateComponents(year: 2026, month: 9, day: 18)) ?? .distantFuture
+        return calendar.date(from: DateComponents(year: 2026, month: 8, day: 9)) ?? .distantFuture
     }()
 
     /// 每次启动检测：是否为老用户，若是则发放 6 个月会员体验期 + 插入消息中心通知
@@ -1101,7 +1246,7 @@ class AppStore: ObservableObject {
         }
 
         save()
-        fetchAppNotices()
+        refreshNotices()
 
         // 通知 UI 层：本次需要自动弹出一次感谢信
         UserDefaults.standard.set(true, forKey: "legacyGiftShouldAutoPresent")
@@ -1200,7 +1345,7 @@ class AppStore: ObservableObject {
         }
 
         save()
-        fetchAppNotices()
+        refreshNotices()
         UserDefaults.standard.set(true, forKey: "legacyGiftShouldAutoPresent")
         NotificationCenter.default.post(name: .legacyGiftGranted, object: nil)
 
@@ -1302,9 +1447,9 @@ class AppStore: ObservableObject {
         }
         
         try? modelContext.save()
-        fetchCategories()
+        refreshCategories()
     }
-    
+
     // MARK: - Receivable CRUD（应收账款）
     
     @discardableResult
@@ -1316,10 +1461,11 @@ class AppStore: ObservableObject {
         project.receivables = (project.receivables ?? []) + [receivable]
         modelContext.insert(receivable)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
         return receivable
     }
-    
+
     func updateReceivable(_ receivable: Receivable, clientName: String? = nil,
                           projectName: String? = nil, amount: Double? = nil,
                           expectedDate: Date? = nil, note: String? = nil) {
@@ -1329,9 +1475,10 @@ class AppStore: ObservableObject {
         if let date = expectedDate { receivable.expectedDate = date }
         if let n = note { receivable.note = n }
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     func markReceivable(_ receivable: Receivable, received: Bool) {
         if received {
             receivable.rawStatus = ReceivableStatus.received.rawValue
@@ -1341,20 +1488,22 @@ class AppStore: ObservableObject {
             receivable.receivedDate = nil
         }
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     func deleteReceivable(_ receivable: Receivable) {
         if let project = receivable.project {
             project.receivables = (project.receivables ?? []).filter { $0.id != receivable.id }
         }
         modelContext.delete(receivable)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     // MARK: - FixedCost CRUD（固定成本）
-    
+
     @discardableResult
     func addFixedCost(to project: Project, name: String, amount: Double,
                       frequency: FixedCostFrequency = .monthly, category: String = "",
@@ -1365,10 +1514,11 @@ class AppStore: ObservableObject {
         project.fixedCosts = (project.fixedCosts ?? []) + [fixedCost]
         modelContext.insert(fixedCost)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
         return fixedCost
     }
-    
+
     func updateFixedCost(_ fixedCost: FixedCost, name: String? = nil, amount: Double? = nil,
                          frequency: FixedCostFrequency? = nil, category: String? = nil,
                          nextDueDate: Date? = nil) {
@@ -1378,21 +1528,24 @@ class AppStore: ObservableObject {
         if let cat = category { fixedCost.category = cat }
         if let date = nextDueDate { fixedCost.nextDueDate = date }
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     func toggleFixedCost(_ fixedCost: FixedCost) {
         fixedCost.isActive.toggle()
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
-    
+
     func deleteFixedCost(_ fixedCost: FixedCost) {
         if let project = fixedCost.project {
             project.fixedCosts = (project.fixedCosts ?? []).filter { $0.id != fixedCost.id }
         }
         modelContext.delete(fixedCost)
         save()
-        refresh()
+        refreshProjects()
+        bumpDataVersion()
     }
 }

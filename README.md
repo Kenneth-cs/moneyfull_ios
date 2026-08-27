@@ -73,6 +73,43 @@
 - **UI 风格**: Clean & Minimalist, 卡片式设计, 莫兰迪色系渐变
 - **数据存储**: 本地优先 (Offline First)，使用高性能本地数据库保障极致速度
 
+## Bug修复记录
+
+### [2026-08-02] AI 记账确认后"修改账单"数据不同步修复
+
+**问题描述：**
+- 用户通过 AI 助手记录一笔账，在自动确认前修改了金额；
+- 自动确认完成后，点击聊天气泡下方的"修改账单"按钮，修改完保存后，聊天气泡里显示的入账金额/分类没有更新。
+
+**根因分析：**
+1. `handleTransactionConfirmed()` 在账单确认时，将 `"已成功入账 -¥xxx（分类）"` 以字符串形式硬写入 `ChatMessage.content`，此后即使数据库数据被修改，气泡文本也不会刷新。
+2. `EditTransactionView.handleSave()` 确实正确调用了 `store.updateTransaction()` 写入数据库，数据本身没有丢失，只是气泡文本未更新，让用户误以为没有同步。
+
+**修复方案（共3处，均在本次修复）：**
+
+① **`EditTransactionView.init` 金额初始化修复（根因1）**
+- 旧：`String(200.0)` = `"200.0"`，用户按一次退格变成 `"200."`，Swift 的 `Double("200.")` 返回 nil，`handleSave()` guard 静默失败，数据不保存
+- 新：整数金额用 `String(Int(amount))` 格式化为 `"200"`，彻底规避小数点残留问题
+
+② **`EditTransactionView.handleSave` 金额表达式解析修复（根因2）**
+- 旧：键盘的 `+`/`-` 键会被拼入 amount 字符串（如 `"200+50"`），`Double("200+50")` = nil → guard 失败 → 数据不保存
+- 新：新增 `evaluateAmountExpression` 函数，支持简单加减法表达式解析，`"200+50"` → 250
+
+③ **`AppStore.updateTransaction` 防幽灵对象修复（根因3）**
+- 旧：直接修改传入的 `tx` 对象引用；若 SwiftData 因内存淘汰或 iCloud 同步让 `tx` 成为"幽灵对象"（detached），修改不会写入数据库
+- 新：先通过 `tx.id`（UUID）重新 fetch 活跃的 managed 对象，再修改，确保保存一定生效
+
+**气泡文本同步修复（上次修复）：**
+- 新增 `editingMessageIndex` 记录被编辑消息的位置，在 sheet `onDismiss` 时同步刷新气泡文本（"已成功入账 -¥xxx"）
+
+**同步修复：**
+- `parseTransaction`、`processImage`、`processOCRText` 三个 AI 调用入口均加入了最多2次自动重试机制（间隔1秒），避免因网络抖动导致 AI 调用失败而数据丢失。
+
+**全部账单页说明：**
+- `AllTransactionsView` 调用 `store.fetchAllTransactions()` 是全量查询，默认无时间/项目筛选，能看到所有数据。若用户看不到，优先检查筛选器是否有激活条件（时间/项目/分类筛选器显示绿色表示已激活，点"清除筛选"即可）。
+
+---
+
 ## 下一步行动计划
 接下来，我将开始为您搭建阶段一的基础框架。如果您对目前的开发节奏和规划满意，我们可以立刻开始 ios 项目的初始化并提交第一版代码！
 

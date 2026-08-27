@@ -161,11 +161,13 @@ struct ProjectsView: View {
 struct ProjectDetailCard: View {
     let project: Project
     let onToggleActive: () -> Void
+    @EnvironmentObject var store: AppStore
 
     var body: some View {
-        // 每次 body 只遍历一次 CoreData 关系
-        let totalSpent = project.totalSpent
-        let budgetProgress = project.budgetProgress
+        // 查 AppStore 预计算的汇总表，避免每张卡片遍历 CoreData 关系
+        let summary = store.projectSummaries[project.id]
+        let totalSpent = summary?.totalSpent ?? 0
+        let budgetProgress = summary?.budgetProgress ?? 0
         let pair = progressColorPair(for: project.colorHex)
         let startColor = Color(hex: pair.start)
         let endColor = Color(hex: pair.end)

@@ -41,31 +41,38 @@ struct AllTransactionsView: View {
         case custom = "自定义"
     }
     
-    // 筛选后的交易记录
-    private var filteredTransactions: [Transaction] {
-        var transactions = store.fetchAllTransactions()
-        
-        #if DEBUG
-        print("📋 AllTransactionsView - fetchAllTransactions count: \(transactions.count)")
-        if let first = transactions.first {
-            print("📋 First transaction date: \(first.date), category: \(first.categoryName)")
-        }
-        if let last = transactions.last {
-            print("📋 Last transaction date: \(last.date), category: \(last.categoryName)")
-        }
-        print("📋 Selected period: \(selectedPeriod.rawValue)")
-        #endif
-        
+    // MARK: - 缓存计算结果（避免 body 每次重渲时重复执行耗时操作）
+    @State private var _filteredTransactions: [Transaction] = []
+    @State private var _groupedTransactions: [(key: String, value: [Transaction])] = []
+    @State private var _totalExpense: Double = 0
+    @State private var _totalIncome: Double = 0
+    @State private var _allCategories: [String] = []
+
+    // MARK: - 计算属性代理（body 直接读缓存，零计算开销）
+    private var filteredTransactions: [Transaction] { _filteredTransactions }
+    private var groupedTransactions: [(key: String, value: [Transaction])] { _groupedTransactions }
+    private var totalExpense: Double { _totalExpense }
+    private var totalIncome: Double { _totalIncome }
+    private var allCategories: [String] { _allCategories }
+
+    // MARK: - 核心统计刷新（仅在 dataVersion / 筛选条件变化时调用，一次 fetch 派生全部结果）
+    private func updateFilteredData() {
+        let all = store.fetchAllTransactions()
+        // 分类选项从全量记录派生（不受筛选影响）
+        _allCategories = Array(Set(all.map { $0.categoryName })).sorted()
+
+        var transactions = all
+
         // 按项目筛选
         if let project = selectedProject {
             transactions = transactions.filter { $0.project?.id == project.id }
         }
-        
+
         // 按分类筛选
         if let category = selectedCategory {
             transactions = transactions.filter { $0.categoryName == category }
         }
-        
+
         // 按类型筛选
         switch selectedType {
         case .all:
@@ -75,11 +82,11 @@ struct AllTransactionsView: View {
         case .income:
             transactions = transactions.filter { $0.type == .income }
         }
-        
+
         // 按时间筛选
         let calendar = Calendar.current
         let now = Date()
-        
+
         switch selectedPeriod {
         case .all:
             break
@@ -104,44 +111,31 @@ struct AllTransactionsView: View {
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: customEndDate))!
             transactions = transactions.filter { $0.date >= startOfDay && $0.date < endOfDay }
         }
-        
-        return transactions
-    }
-    
-    // 按日期分组的交易记录
-    private var groupedTransactions: [(key: String, value: [Transaction])] {
-        let sorted = filteredTransactions.sorted { $0.date > $1.date }
+
+        _filteredTransactions = transactions
+
+        // 收支合计：一次遍历同时累加
+        var expense: Double = 0
+        var income: Double = 0
+        for tx in transactions {
+            if tx.type == .expense {
+                expense += abs(tx.amount)
+            } else if tx.type == .income {
+                income += abs(tx.amount)
+            }
+        }
+        _totalExpense = expense
+        _totalIncome = income
+
+        // 按日期分组（fetchAllTransactions 已按时间倒序，filter 保序，无需重排）
         var groups: [Date: [Transaction]] = [:]
-        let calendar = Calendar.current
-        for tx in sorted {
+        for tx in transactions {
             let day = calendar.startOfDay(for: tx.date)
             groups[day, default: []].append(tx)
         }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy年M月d日"
-        let result = groups.sorted { $0.key > $1.key }.map { (key: formatter.string(from: $0.key), value: $0.value) }
-        #if DEBUG
-        print("📋 groupedTransactions count: \(result.count)")
-        for group in result {
-            print("📋 Group: \(group.key) - \(group.value.count) items")
-        }
-        #endif
-        return result
-    }
-    
-    // 获取所有分类名称
-    private var allCategories: [String] {
-        let transactions = store.fetchAllTransactions()
-        return Array(Set(transactions.map { $0.categoryName })).sorted()
-    }
-    
-    // 统计数据
-    private var totalExpense: Double {
-        filteredTransactions.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-    }
-    
-    private var totalIncome: Double {
-        filteredTransactions.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
+        _groupedTransactions = groups.sorted { $0.key > $1.key }.map { (key: formatter.string(from: $0.key), value: $0.value) }
     }
     
     var body: some View {
@@ -183,6 +177,20 @@ struct AllTransactionsView: View {
                     selectedPeriod = .custom
                 }
             )
+        }
+        // 数据变更或筛选条件变化时刷新一次，滚动/切 tab 不再触发计算
+        .task(id: store.dataVersion) {
+            updateFilteredData()
+        }
+        .onChange(of: selectedProject) { _, _ in updateFilteredData() }
+        .onChange(of: selectedCategory) { _, _ in updateFilteredData() }
+        .onChange(of: selectedType) { _, _ in updateFilteredData() }
+        .onChange(of: selectedPeriod) { _, _ in updateFilteredData() }
+        .onChange(of: customStartDate) { _, _ in
+            if selectedPeriod == .custom { updateFilteredData() }
+        }
+        .onChange(of: customEndDate) { _, _ in
+            if selectedPeriod == .custom { updateFilteredData() }
         }
     }
     

@@ -27,7 +27,12 @@ struct EditTransactionView: View {
     init(transaction: Transaction) {
         self.transaction = transaction
         _type = State(initialValue: transaction.type)
-        _amount = State(initialValue: String(transaction.amount))
+        // 整数金额用纯整数格式，避免 "200.0" 导致退格后出现 "200." 而无法被 Double() 解析
+        let rawAmount = transaction.amount
+        let initialAmount = rawAmount.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(rawAmount))
+            : String(rawAmount)
+        _amount = State(initialValue: initialAmount)
         _note = State(initialValue: transaction.note)
         _date = State(initialValue: transaction.date)
         _selectedCategory = State(initialValue: nil)
@@ -344,9 +349,29 @@ struct EditTransactionView: View {
         }
     }
     
+    /// 将金额字符串解析为 Double，支持简单加减法（如 "200+50" → 250，"300-25" → 275）
+    private func evaluateAmountExpression(_ expression: String) -> Double? {
+        let s = expression.trimmingCharacters(in: .whitespaces)
+        // 直接是合法数字
+        if let v = Double(s), v > 0 { return v }
+        // 处理加法："200+50"
+        if let plusIdx = s.firstIndex(of: "+") {
+            let left = String(s[..<plusIdx])
+            let right = String(s[s.index(after: plusIdx)...])
+            if let a = Double(left), let b = Double(right), (a + b) > 0 { return a + b }
+        }
+        // 处理减法：取最后一个 "-"（排除负号）
+        if let minusIdx = s.lastIndex(of: "-"), minusIdx != s.startIndex {
+            let left = String(s[..<minusIdx])
+            let right = String(s[s.index(after: minusIdx)...])
+            if let a = Double(left), let b = Double(right), (a - b) > 0 { return a - b }
+        }
+        return nil
+    }
+
     private func handleSave() {
         guard let category = selectedCategory,
-              let amountValue = Double(amount), amountValue > 0 else {
+              let amountValue = evaluateAmountExpression(amount) else {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return
         }

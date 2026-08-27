@@ -17,7 +17,6 @@ struct ProjectDetailView: View {
     // MARK: 新增状态
     @State private var showPaywall = false
     @State private var showBudgetManagement = false
-    @State private var showEarningDashboard = false
     @State private var showLifestyleDashboard = false
     
     // MARK: - 缓存数据
@@ -29,6 +28,8 @@ struct ProjectDetailView: View {
     @State private var _totalSpent: Double = 0
     @State private var _totalIncome: Double = 0
     @State private var _budgetProgress: Double = 0
+    // 经营看板入口卡缓存（消除约 25 次级联遍历）
+    @State private var _dashboardStats: DashboardProjectStats?
     
     // MARK: - 静态 DateFormatter（避免 body 每次重渲时重复创建）
     /// 排序用 key：yyyy-MM-dd，保证字符串排序 == 日期排序
@@ -94,6 +95,9 @@ struct ProjectDetailView: View {
         _totalSpent = totalExp
         _totalIncome = totalInc
         _budgetProgress = project.budget > 0 ? totalExp / project.budget : 0
+
+        // 经营看板入口卡缓存：一次聚合消除级联计算属性
+        _dashboardStats = ProjectStatsCalculator.calculateDashboardStats(project: project)
         
         // 1. 分组交易记录（用 yyyy-MM-dd 做 key 保证排序正确）
         let sorted = txs.sorted { $0.date > $1.date }
@@ -508,14 +512,6 @@ struct ProjectDetailView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showEarningDashboard) {
-            ProjectEarningView(
-                project: project,
-                onShowPaywall: { showPaywall = true }
-            )
-            .environmentObject(store)
-            .environmentObject(storeManager)
-        }
         .fullScreenCover(isPresented: $showLifestyleDashboard) {
             ProjectLifestyleView(
                 project: project,
@@ -531,21 +527,9 @@ struct ProjectDetailView: View {
         .onAppear {
             updateCacheData()
         }
-        .task {
-            // 确保视图加载时从数据库获取最新数据
+        // dataVersion 统一驱动：任何写操作后刷新缓存，避免 body 内 fault 关系
+        .task(id: store.dataVersion) {
             updateCacheData()
-        }
-        // 增删：count 变化
-        .onChange(of: project.transactions?.count) { _, _ in reloadCache() }
-        // 编辑金额（count 不变，但弹窗关闭时数据已写入 SwiftData）
-        .onChange(of: editingTransaction != nil) { _, isPresented in
-            if !isPresented { reloadCache() }
-        }
-        // CloudKit 同步兜底：月度汇总变化时也刷新
-        .onChange(of: store.monthlyExpense) { _, _ in reloadCache() }
-        // 从其他页面添加记录后返回时刷新
-        .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
-            reloadCache()
         }
     }
 }
@@ -744,6 +728,7 @@ extension ProjectDetailView {
                         .environmentObject(store)
                         .environmentObject(storeManager)
                 } label: {
+                    let stats = _dashboardStats ?? ProjectStatsCalculator.calculateDashboardStats(project: project)
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             HStack(spacing: 6) {
@@ -759,30 +744,30 @@ extension ProjectDetailView {
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundColor(.gray)
                         }
-                        
+
                         // 4个主指标
                         HStack(spacing: 0) {
                             earningMetricCell(title: "可用资金",
-                                            value: "¥\(Int(project.availableCash))",
-                                            color: project.availableCash >= 0 ? Color.App.darkGreen : Color.App.redExpense)
+                                            value: "¥\(Int(stats.availableCash))",
+                                            color: stats.availableCash >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                             Divider().frame(height: 36)
                             earningMetricCell(title: "本月净现金流",
-                                            value: "¥\(Int(project.monthlyNetCashFlow))",
-                                            color: project.monthlyNetCashFlow >= 0 ? Color.App.darkGreen : Color.App.redExpense)
+                                            value: "¥\(Int(stats.monthlyNetCashFlow))",
+                                            color: stats.monthlyNetCashFlow >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                             Divider().frame(height: 36)
                             earningMetricCell(title: "毛利率",
-                                            value: "\(Int(project.grossMargin * 100))%",
-                                            color: project.grossMargin >= 0 ? Color.App.darkGreen : Color.App.redExpense)
+                                            value: "\(Int(stats.grossMargin * 100))%",
+                                            color: stats.grossMargin >= 0 ? Color.App.darkGreen : Color.App.redExpense)
                         }
-                        
+
                         // 2个辅助小字
                         HStack(spacing: 16) {
-                            Text("可支配收入: ¥\(Int(project.disposableIncome))")
+                            Text("可支配收入: ¥\(Int(stats.disposableIncome))")
                                 .font(.system(size: 12))
                                 .foregroundColor(.gray)
-                            
-                            if project.totalReceivable > 0 {
-                                Text("待回款: ¥\(Int(project.totalReceivable))")
+
+                            if stats.totalReceivable > 0 {
+                                Text("待回款: ¥\(Int(stats.totalReceivable))")
                                     .font(.system(size: 12))
                                     .foregroundColor(.orange)
                             }

@@ -25,8 +25,18 @@ struct ProfileView: View {
     
     // 从 AppStore 拿真实统计
     private var activeCount: Int { store.activeProjects.count }
-    private var totalTxCount: Int { store.fetchTotalTransactionCount() }
-    
+
+    // MARK: - 缓存计算结果（避免 body 每次重渲时重复执行耗时操作）
+    @State private var _totalTxCount: Int = 0
+
+    // MARK: - 计算属性代理（body 直接读缓存，零计算开销）
+    private var totalTxCount: Int { _totalTxCount }
+
+    // MARK: - 核心统计刷新（仅在 dataVersion 变化时调用，不在 body 里计算）
+    private func updateTotalTxCount() {
+        _totalTxCount = store.fetchTotalTransactionCount()
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
@@ -320,12 +330,95 @@ struct ProfileView: View {
                     .padding(.top, 8)
                 
                 Spacer().frame(height: 16)
+
+                #if DEBUG
+                // MARK: 性能测试入口（Debug 包专属）
+                VStack(spacing: 12) {
+                    Text("性能测试工具")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundColor(.gray.opacity(0.8))
+                        .kerning(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(spacing: 0) {
+                        Button {
+                            store.generatePerfTestTransactions(count: 5000)
+                        } label: {
+                            HStack(spacing: 16) {
+                                Circle()
+                                    .fill(Color.App.lightOrange.opacity(0.4))
+                                    .frame(width: 42, height: 42)
+                                    .overlay(
+                                        Image(systemName: "hare.fill")
+                                            .foregroundColor(Color.App.darkOrange)
+                                            .font(.system(size: 18, weight: .semibold))
+                                    )
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("生成 5000 条测试账单")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(Color.App.textBlack)
+                                    Text("用于复现滚动卡顿问题")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.gray.opacity(0.5))
+                            }
+                            .contentShape(Rectangle())
+                            .padding(16)
+                        }
+                        .buttonStyle(.plain)
+
+                        Divider().padding(.leading, 72).opacity(0.5)
+
+                        Button {
+                            _ = store.clearPerfTestTransactions()
+                        } label: {
+                            HStack(spacing: 16) {
+                                Circle()
+                                    .fill(Color.gray.opacity(0.15))
+                                    .frame(width: 42, height: 42)
+                                    .overlay(
+                                        Image(systemName: "trash.fill")
+                                            .foregroundColor(.gray)
+                                            .font(.system(size: 18, weight: .semibold))
+                                    )
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("清空测试账单")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(Color.App.textBlack)
+                                    Text("按导入批次一键清除")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.gray.opacity(0.5))
+                            }
+                            .contentShape(Rectangle())
+                            .padding(16)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .background(Color.App.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 28))
+                    .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
+                }
+                .padding(.horizontal, 24)
+                #endif
             }
         }
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 110)
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        // 总笔数缓存：数据变更时重算一次
+        .task(id: store.dataVersion) {
+            updateTotalTxCount()
+        }
         // 改名弹窗
         .alert("修改昵称", isPresented: $showEditName) {
             TextField("请输入昵称", text: $tempName)

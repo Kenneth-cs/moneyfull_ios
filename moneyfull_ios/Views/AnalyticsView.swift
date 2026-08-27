@@ -48,6 +48,10 @@ struct AnalyticsView: View {
     
     @State private var allTransactions: [Transaction] = []
 
+    // 可见性感知的 dataVersion 驱动（修复 P0-6：原 recentTransactions.count / monthlyExpense 双信号盲区）
+    @State private var loadedVersion: Int = -1
+    @State private var isVisible = false
+
     // MARK: - 缓存计算结果（避免 body 每次重渲时重复执行耗时操作）
     @State private var _filteredTransactions: [Transaction] = []
     @State private var _periodExpenseTxs: [Transaction] = []
@@ -81,7 +85,7 @@ struct AnalyticsView: View {
     private func updateFilteredData() {
         let calendar = Calendar.current
 
-        // 1. 过滤当期交易
+        // 1. 过滤当期交易：预先算好区间边界，用简单 Date 比较替代 calendar.isDate
         let filtered: [Transaction]
         switch timeRange {
         case .week:
@@ -92,18 +96,32 @@ struct AnalyticsView: View {
             }
             filtered = allTransactions.filter { $0.date >= selectedWeekStart && $0.date < weekEnd }
         case .month:
-            filtered = allTransactions.filter { calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month) }
+            let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: selectedMonth)) ?? selectedMonth
+            guard let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart) else {
+                filtered = []
+                break
+            }
+            filtered = allTransactions.filter { $0.date >= monthStart && $0.date < monthEnd }
         case .year:
-            filtered = allTransactions.filter { calendar.component(.year, from: $0.date) == selectedYear }
+            let yearStart = calendar.date(from: DateComponents(year: selectedYear, month: 1, day: 1)) ?? Date()
+            guard let yearEnd = calendar.date(from: DateComponents(year: selectedYear + 1, month: 1, day: 1)) else {
+                filtered = []
+                break
+            }
+            filtered = allTransactions.filter { $0.date >= yearStart && $0.date < yearEnd }
         case .custom:
             filtered = allTransactions.filter { $0.date >= customStartDate && $0.date <= customEndDate }
         }
         _filteredTransactions = filtered
-        _periodExpenseTxs = filtered.filter { $0.type == .expense }
-        _periodIncomeTxs  = filtered.filter { $0.type == .income }
 
-        // 2. 上期对比
-        var prevStart: Date?; var prevEnd: Date?
+        // 收支汇总：一次遍历同时算出当期支出/收入/上期支出/记账天数
+        var currentExp: Double = 0
+        var currentInc: Double = 0
+        var prevExpense: Double = 0
+        var daysSet = Set<Date>()
+        let calendarForDay = Calendar.current
+
+        var prevStart: Date?, prevEnd: Date?
         switch timeRange {
         case .week:
             prevStart = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedWeekStart)
@@ -119,17 +137,22 @@ struct AnalyticsView: View {
             prevStart = calendar.date(byAdding: .day, value: -days, to: customStartDate)
             prevEnd   = customStartDate
         }
-        let prevExpense: Double
-        if let s = prevStart, let e = prevEnd {
-            prevExpense = allTransactions
-                .filter { $0.date >= s && $0.date < e && $0.type == .expense }
-                .reduce(0) { $0 + abs($1.amount) }
-        } else { prevExpense = 0 }
-        _previousPeriodExpense = prevExpense
 
-        // 3. 收支汇总
-        let currentExp = _periodExpenseTxs.reduce(0) { $0 + abs($1.amount) }
-        let currentInc = _periodIncomeTxs.reduce(0)  { $0 + abs($1.amount) }
+        for tx in allTransactions {
+            daysSet.insert(calendarForDay.startOfDay(for: tx.date))
+            let amount = abs(tx.amount)
+            if tx.type == .expense {
+                if let s = prevStart, let e = prevEnd, tx.date >= s && tx.date < e {
+                    prevExpense += amount
+                }
+                if filtered.contains(tx) { currentExp += amount }
+            } else if tx.type == .income {
+                if filtered.contains(tx) { currentInc += amount }
+            }
+        }
+        _previousPeriodExpense = prevExpense
+        _periodExpenseTxs = filtered.filter { $0.type == .expense }
+        _periodIncomeTxs  = filtered.filter { $0.type == .income }
         _expenseChangeDiff = currentExp - prevExpense
         _savingRate = currentInc > 0 ? (currentInc - currentExp) / currentInc : 0
 
@@ -160,8 +183,8 @@ struct AnalyticsView: View {
         // 6. 环形图数据
         updateDonutData()
 
-        // 7. 累计记账天数（Set 哈希去重，较慢，只在此处算一次存起来）
-        _allTxDaysCount = Set(allTransactions.map { Calendar.current.startOfDay(for: $0.date) }).count
+        // 7. 累计记账天数
+        _allTxDaysCount = daysSet.count
 
         // 8. 项目列表缓存（避免 body 直接持有 store.activeProjects 依赖）
         _activeProjects = store.activeProjects
@@ -170,10 +193,15 @@ struct AnalyticsView: View {
 
     /// store 数据变化时调用：重新抓取所有账单并刷新缓存
     private func reloadFromStore() {
-        Task { @MainActor in
-            allTransactions = store.fetchAllTransactions()
-            updateFilteredData()
-        }
+        allTransactions = store.fetchAllTransactions()
+        updateFilteredData()
+    }
+
+    /// 可见性感知的刷新入口：只在页面可见且版本号落后时才重算，避免后台白算
+    private func reloadIfStale() {
+        guard isVisible, loadedVersion != store.dataVersion else { return }
+        loadedVersion = store.dataVersion
+        reloadFromStore()
     }
 
     private func updateDonutData() {
@@ -218,47 +246,104 @@ struct AnalyticsView: View {
 
         switch timeRange {
         case .year:
+            // 先按月份边界分桶，再一次性把交易投进桶，O(N)
+            var buckets: [Int: (exp: Double, inc: Double)] = [:]
+            let yearStart = DateComponents(year: selectedYear, month: 1, day: 1)
+            guard let start = calendar.date(from: yearStart),
+                  let yearEnd = calendar.date(from: DateComponents(year: selectedYear + 1, month: 1, day: 1)) else { return [] }
+            for tx in allTransactions where tx.date >= start && tx.date < yearEnd {
+                let month = calendar.component(.month, from: tx.date)
+                var b = buckets[month] ?? (0, 0)
+                if tx.type == .expense {
+                    b.exp += abs(tx.amount)
+                } else if tx.type == .income {
+                    b.inc += abs(tx.amount)
+                }
+                buckets[month] = b
+            }
             for m in 1...12 {
-                guard let date = calendar.date(from: DateComponents(year: selectedYear, month: m)) else { continue }
-                let txs = allTransactions.filter { calendar.isDate($0.date, equalTo: date, toGranularity: .month) }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-                result.append((label: "\(m)月", expense: exp, income: inc, saving: inc - exp))
+                let b = buckets[m] ?? (0, 0)
+                result.append((label: "\(m)月", expense: b.exp, income: b.inc, saving: b.inc - b.exp))
             }
         case .month:
             let range = calendar.range(of: .day, in: .month, for: selectedMonth) ?? 1..<32
             let step = range.count > 20 ? 5 : 1
+            // 预计算桶边界
+            var buckets: [Int: (exp: Double, inc: Double, date: Date)] = [:]
+            var boundaries: [(day: Int, start: Date, end: Date)] = []
             for day in stride(from: range.lowerBound, to: range.upperBound, by: step) {
                 guard let date = calendar.date(from: DateComponents(year: calendar.component(.year, from: selectedMonth), month: calendar.component(.month, from: selectedMonth), day: day)) else { continue }
                 let nextDate = calendar.date(byAdding: .day, value: step, to: date) ?? date
-                let txs = allTransactions.filter { $0.date >= date && $0.date < nextDate }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-                result.append((label: "\(day)日", expense: exp, income: inc, saving: inc - exp))
+                buckets[day] = (0, 0, date)
+                boundaries.append((day, date, nextDate))
+            }
+            for tx in allTransactions {
+                for (day, start, end) in boundaries where tx.date >= start && tx.date < end {
+                    var b = buckets[day] ?? (0, 0, start)
+                    if tx.type == .expense {
+                        b.exp += abs(tx.amount)
+                    } else if tx.type == .income {
+                        b.inc += abs(tx.amount)
+                    }
+                    buckets[day] = b
+                    break
+                }
+            }
+            for day in stride(from: range.lowerBound, to: range.upperBound, by: step) {
+                if let b = buckets[day] {
+                    result.append((label: "\(day)日", expense: b.exp, income: b.inc, saving: b.inc - b.exp))
+                }
             }
         case .week:
+            var buckets: [(label: String, start: Date, end: Date, exp: Double, inc: Double)] = []
             for i in 0..<7 {
                 guard let date = calendar.date(byAdding: .day, value: i, to: selectedWeekStart) else { continue }
                 let nextDate = calendar.date(byAdding: .day, value: 1, to: date) ?? date
-                let txs = allTransactions.filter { $0.date >= date && $0.date < nextDate }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 let weekday = calendar.component(.weekday, from: date) - 1
-                result.append((label: "周\(weekDayNames[weekday])", expense: exp, income: inc, saving: inc - exp))
+                buckets.append(("周\(weekDayNames[weekday])", date, nextDate, 0, 0))
+            }
+            for tx in allTransactions {
+                for (idx, var b) in buckets.enumerated() where tx.date >= b.start && tx.date < b.end {
+                    if tx.type == .expense {
+                        b.exp += abs(tx.amount)
+                    } else if tx.type == .income {
+                        b.inc += abs(tx.amount)
+                    }
+                    buckets[idx] = b
+                    break
+                }
+            }
+            for b in buckets {
+                result.append((label: b.label, expense: b.exp, income: b.inc, saving: b.inc - b.exp))
             }
         case .custom:
             let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: customStartDate), to: calendar.startOfDay(for: customEndDate)).day ?? 1
             let step = days > 60 ? 7 : (days > 20 ? 3 : 1)
+            var buckets: [Date: (exp: Double, inc: Double, label: String)] = [:]
+            var boundaries: [(start: Date, end: Date)] = []
             var current = calendar.startOfDay(for: customStartDate)
             while current <= customEndDate {
                 let next = calendar.date(byAdding: .day, value: step, to: current) ?? customEndDate
-                let txs = allTransactions.filter { $0.date >= current && $0.date < next }
-                let exp = txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-                let inc = txs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
                 let m = calendar.component(.month, from: current)
                 let d = calendar.component(.day, from: current)
-                result.append((label: "\(m)月\(d)日", expense: exp, income: inc, saving: inc - exp))
+                buckets[current] = (0, 0, "\(m)月\(d)日")
+                boundaries.append((current, next))
                 current = next
+            }
+            for tx in allTransactions {
+                for (start, end) in boundaries where tx.date >= start && tx.date < end {
+                    var b = buckets[start] ?? (0, 0, "")
+                    if tx.type == .expense {
+                        b.exp += abs(tx.amount)
+                    } else if tx.type == .income {
+                        b.inc += abs(tx.amount)
+                    }
+                    buckets[start] = b
+                    break
+                }
+            }
+            for (date, b) in buckets.sorted(by: { $0.key < $1.key }) {
+                result.append((label: b.label, expense: b.exp, income: b.inc, saving: b.inc - b.exp))
             }
         }
         return result
@@ -377,13 +462,14 @@ struct AnalyticsView: View {
         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 110) }
         .background(Color.App.backgroundGray.ignoresSafeArea())
         .onAppear {
-            allTransactions = store.fetchAllTransactions()
-            updateFilteredData()
+            isVisible = true
+            reloadIfStale()
         }
-        // 数据源变化时重新计算（用 Task 推迟到下一个 RunLoop，让当前渲染帧先完成）
-        // 同时监听 count（增删）和 monthlyExpense（编辑金额），覆盖所有 CRUD 场景
-        .onChange(of: store.recentTransactions.count) { _, _ in reloadFromStore() }
-        .onChange(of: store.monthlyExpense) { _, _ in reloadFromStore() }
+        .onDisappear {
+            isVisible = false
+        }
+        // dataVersion 统一驱动：在统计页时立即刷新，不在时不白算
+        .onChange(of: store.dataVersion) { _, _ in reloadIfStale() }
         // 时间过滤条件变化
         .onChange(of: timeRange)       { _, _ in updateFilteredData() }
         .onChange(of: selectedMonth)   { _, _ in updateFilteredData() }
@@ -404,7 +490,7 @@ struct AnalyticsView: View {
         .sheet(isPresented: $showCustomRangeSheet) {
             CustomDateRangeSheet(startDate: $customStartDate, endDate: $customEndDate)
         }
-        .navigationDestination(isPresented: $showTrendDetail) {
+        .sheet(isPresented: $showTrendDetail) {
             TrendDetailView(transactions: filteredTransactions, periodLabel: periodDisplayText)
                 .environmentObject(store)
         }

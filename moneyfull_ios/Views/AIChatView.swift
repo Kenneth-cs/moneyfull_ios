@@ -174,11 +174,12 @@ struct AIChatView: View {
     @State private var messages: [ChatMessage] = []
     @State private var isLoading = false
     @State private var isRecording = false
-    @State private var showVoiceInput = false
+    @State private var showVoiceInput = UserDefaults.standard.bool(forKey: "AIChatVoiceInputMode")
     @State private var showPlusMenu = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedImage: UIImage?
     @State private var editingTransaction: Transaction?
+    @State private var editingMessageIndex: Int?   // 记录当前被修改的账单对应的消息位置，用于 dismiss 后同步气泡文本
     @State private var showToast = false
     @State private var toastMessage = ""
     @State private var showBackTapTutorial = false
@@ -333,7 +334,30 @@ struct AIChatView: View {
             messages = []
             editingTransaction = nil
         }
-        .sheet(item: $editingTransaction) { tx in
+        .sheet(item: $editingTransaction, onDismiss: {
+            // EditTransactionView 关闭后，把聊天气泡里的入账文本同步为最新数据
+            if let index = editingMessageIndex,
+               index < messages.count,
+               let tx = messages[index].confirmedTransaction {
+                let prefix = tx.type == .expense ? "-" : "+"
+                // 整数金额不显示小数
+                let amountStr = tx.amount.truncatingRemainder(dividingBy: 1) == 0
+                    ? String(Int(tx.amount))
+                    : String(format: "%.2f", tx.amount)
+                let newContent = "已成功入账 \(prefix)¥\(amountStr)（\(tx.categoryName)）"
+                let oldContent = messages[index].content
+
+                // 1. 更新内存中的气泡文本（当次 session 即时可见）
+                messages[index].content = newContent
+
+                // 2. 同步更新 ChatHistory 数据库记录，避免退出重进后气泡文字回退到旧内容
+                if oldContent != newContent,
+                   let historyID = messages[index].chatHistoryID {
+                    contextManager.updateChatHistoryContent(id: historyID, newContent: newContent)
+                }
+            }
+            editingMessageIndex = nil
+        }) { tx in
             EditTransactionView(transaction: tx)
                 .environmentObject(store)
         }
@@ -482,7 +506,11 @@ struct AIChatView: View {
                             onCancel: { handleTransactionCancelled(message) },
                             onSaveMemory: { handleSaveMemory(keyword: $0, categoryName: $1, projectName: $2) },
                             onCreateProject: { handleCreateProject($0) },
-                            onEdit: { editingTransaction = $0 },
+                            onEdit: { tx in
+                                // 记录被编辑账单所在的消息下标，用于 dismiss 后同步气泡文本
+                                editingMessageIndex = messages.firstIndex { $0.confirmedTransaction?.id == tx.id }
+                                editingTransaction = tx
+                            },
                             onDelete: { handleDeleteTransaction($0, message: message) },
                             onViewInsightDetail: { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 NotificationCenter.default.post(name: .navigateToAnalytics, object: nil)
@@ -649,7 +677,11 @@ struct AIChatView: View {
                                 }
                             }
 
-                            Button(action: { showVoiceInput.toggle(); showPlusMenu = false }) {
+                            Button(action: {
+                                showVoiceInput.toggle()
+                                showPlusMenu = false
+                                UserDefaults.standard.set(showVoiceInput, forKey: "AIChatVoiceInputMode")
+                            }) {
                                 Image(systemName: "mic.fill")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(ChatDesign.onPrimaryContainer)
@@ -667,8 +699,15 @@ struct AIChatView: View {
                         }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                     } else {
-                        Button(action: { withAnimation(.spring(response: 0.25)) { showPlusMenu = true } }) {
-                            Image(systemName: "plus")
+                        Button(action: {
+                            if showVoiceInput {
+                                showVoiceInput = false
+                                UserDefaults.standard.set(false, forKey: "AIChatVoiceInputMode")
+                            } else {
+                                withAnimation(.spring(response: 0.25)) { showPlusMenu = true }
+                            }
+                        }) {
+                            Image(systemName: showVoiceInput ? "keyboard" : "plus")
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(ChatDesign.onPrimaryContainer)
                                 .frame(width: 40, height: 40)
@@ -819,13 +858,14 @@ struct AIChatView: View {
                     ctaAction: config.ctaAction
                 )
             }
-            // 普通文本消息
+            // 普通文本消息（保存 chatHistoryID，便于修改账单后同步更新历史文本）
             return ChatMessage(
                 role: history.role == "user" ? .user : .assistant,
                 content: history.content,
                 timestamp: history.timestamp,
                 usesRichText: history.role == "assistant",
-                isPrescripted: history.isPrescripted
+                isPrescripted: history.isPrescripted,
+                chatHistoryID: history.id
             )
         }
         #if DEBUG
@@ -1023,11 +1063,13 @@ struct AIChatView: View {
         )
         let prefix = cardData.type == "expense" ? "-" : "+"
         let content = "已成功入账 \(prefix)¥\(cardData.amount)（\(cardData.categoryName)）"
+        // 保存 ChatHistory 并获取记录 ID，之后修改账单时可通过此 ID 同步更新历史文本
+        let historyID = try? contextManager.saveChatHistory(role: "assistant", content: content)
         messages.append(ChatMessage(
             role: .assistant, content: content,
-            timestamp: Date(), confirmedTransaction: tx
+            timestamp: Date(), confirmedTransaction: tx,
+            chatHistoryID: historyID
         ))
-        try? contextManager.saveChatHistory(role: "assistant", content: content)
     }
 
     private func handleTransactionCancelled(_ message: ChatMessage) {
@@ -1078,23 +1120,36 @@ struct AIChatView: View {
         await MainActor.run { messages.append(imgMsg); isLoading = true }
         let processingMsg = ChatMessage(role: .assistant, content: "正在识别账单...", timestamp: Date())
         await MainActor.run { messages.append(processingMsg) }
-        do {
-            let ocrText = try await visionService.extractCleanText(from: image)
-            let context = try contextManager.buildContext()
-            let result = try await llmService.parseOCRText(from: ocrText, context: context)
-            await MainActor.run {
-                messages.removeAll { $0.id == processingMsg.id }
-                handleParseResult(result)
-                let aiReply = messages.last(where: { $0.role == .assistant })?.content
-                _ = storeManager.consumeOneCall(userMessage: "📷 [图片] " + ocrText, aiReply: aiReply)
-                isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                messages.removeAll { $0.id == processingMsg.id }
-                messages.append(ChatMessage(role: .assistant,
-                    content: "图片识别失败：\(error.localizedDescription)", timestamp: Date()))
-                isLoading = false
+
+        let maxRetries = 2  // 最多额外重试2次
+        for attempt in 0...maxRetries {
+            do {
+                let ocrText = try await visionService.extractCleanText(from: image)
+                let context = try contextManager.buildContext()
+                let result = try await llmService.parseOCRText(from: ocrText, context: context)
+                await MainActor.run {
+                    messages.removeAll { $0.id == processingMsg.id }
+                    handleParseResult(result)
+                    let aiReply = messages.last(where: { $0.role == .assistant })?.content
+                    _ = storeManager.consumeOneCall(userMessage: "📷 [图片] " + ocrText, aiReply: aiReply)
+                    isLoading = false
+                }
+                return
+            } catch {
+                print("⚠️ 图片识别失败（第\(attempt + 1)次）：\(error.localizedDescription)")
+                if attempt < maxRetries {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                } else {
+                    await MainActor.run {
+                        messages.removeAll { $0.id == processingMsg.id }
+                        messages.append(ChatMessage(
+                            role: .assistant,
+                            content: "图片识别失败（已重试 \(maxRetries) 次），请重新拍照或手动输入。",
+                            timestamp: Date()
+                        ))
+                        isLoading = false
+                    }
+                }
             }
         }
     }
@@ -1117,20 +1172,35 @@ struct AIChatView: View {
 
     private func parseTransaction(from text: String) async {
         isLoading = true
-        do {
-            let context = try contextManager.buildContext()
-            let result = try await llmService.parseTransaction(from: text, context: context)
-            await MainActor.run {
-                handleParseResult(result)
-                let aiReply = messages.last(where: { $0.role == .assistant })?.content
-                _ = storeManager.consumeOneCall(userMessage: text, aiReply: aiReply)
-                isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                messages.append(ChatMessage(role: .assistant,
-                    content: "抱歉，处理消息时出现错误，请重试。", timestamp: Date()))
-                isLoading = false
+        let maxRetries = 2  // 最多额外重试2次，共尝试3次
+
+        for attempt in 0...maxRetries {
+            do {
+                let context = try contextManager.buildContext()
+                let result = try await llmService.parseTransaction(from: text, context: context)
+                await MainActor.run {
+                    handleParseResult(result)
+                    let aiReply = messages.last(where: { $0.role == .assistant })?.content
+                    _ = storeManager.consumeOneCall(userMessage: text, aiReply: aiReply)
+                    isLoading = false
+                }
+                return  // 成功，直接返回，不进入下一次循环
+            } catch {
+                print("⚠️ AI解析失败（第\(attempt + 1)次）：\(error.localizedDescription)")
+                if attempt < maxRetries {
+                    // 等待1秒后重试，让网络短暂恢复
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                } else {
+                    // 全部重试耗尽，告知用户
+                    await MainActor.run {
+                        messages.append(ChatMessage(
+                            role: .assistant,
+                            content: "抱歉，AI 处理出现错误（已自动重试 \(maxRetries) 次），请稍后重新发送。",
+                            timestamp: Date()
+                        ))
+                        isLoading = false
+                    }
+                }
             }
         }
     }
@@ -1141,21 +1211,35 @@ struct AIChatView: View {
                 isLoading = true
                 messages.append(ChatMessage(role: .assistant, content: "正在识别账单...", timestamp: Date()))
             }
-            do {
-                let context = try contextManager.buildContext()
-                let result = try await llmService.parseOCRText(from: ocrText, context: context)
-                await MainActor.run {
-                    messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
-                    handleParseResult(result)
-                    let aiReply = messages.last(where: { $0.role == .assistant })?.content
-                    _ = storeManager.consumeOneCall(userMessage: ocrText, aiReply: aiReply)
-                    isLoading = false
-                }
-            } catch {
-                await MainActor.run {
-                    messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
-                    messages.append(ChatMessage(role: .assistant, content: "识别失败，请重试", timestamp: Date()))
-                    isLoading = false
+
+            let maxRetries = 2  // 最多额外重试2次
+            for attempt in 0...maxRetries {
+                do {
+                    let context = try contextManager.buildContext()
+                    let result = try await llmService.parseOCRText(from: ocrText, context: context)
+                    await MainActor.run {
+                        messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
+                        handleParseResult(result)
+                        let aiReply = messages.last(where: { $0.role == .assistant })?.content
+                        _ = storeManager.consumeOneCall(userMessage: ocrText, aiReply: aiReply)
+                        isLoading = false
+                    }
+                    return
+                } catch {
+                    print("⚠️ OCR文本解析失败（第\(attempt + 1)次）：\(error.localizedDescription)")
+                    if attempt < maxRetries {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    } else {
+                        await MainActor.run {
+                            messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
+                            messages.append(ChatMessage(
+                                role: .assistant,
+                                content: "识别失败（已重试 \(maxRetries) 次），请手动输入账单内容。",
+                                timestamp: Date()
+                            ))
+                            isLoading = false
+                        }
+                    }
                 }
             }
         }
@@ -1334,6 +1418,8 @@ struct ChatMessage: Identifiable {
     var animationItems: [String]? = nil
     var onboardingImageName: String? = nil
     var ctaAction: OnboardingCTAAction? = nil
+    /// 对应 ChatHistory 数据库记录的 ID，用于修改账单后同步更新历史文本
+    var chatHistoryID: UUID? = nil
 
     init(role: ChatRole, content: String, timestamp: Date,
          transactionCard: TransactionCardData? = nil,
@@ -1346,7 +1432,8 @@ struct ChatMessage: Identifiable {
          isPrescripted: Bool = false,
          animationItems: [String]? = nil,
          onboardingImageName: String? = nil,
-         ctaAction: OnboardingCTAAction? = nil) {
+         ctaAction: OnboardingCTAAction? = nil,
+         chatHistoryID: UUID? = nil) {
         self.role = role
         self.content = content
         self.timestamp = timestamp
@@ -1361,6 +1448,7 @@ struct ChatMessage: Identifiable {
         self.animationItems = animationItems
         self.onboardingImageName = onboardingImageName
         self.ctaAction = ctaAction
+        self.chatHistoryID = chatHistoryID
     }
 }
 

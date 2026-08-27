@@ -1,5 +1,364 @@
 import Foundation
 
+// MARK: - 经营看板（V7 Dashboard）一次性聚合统计
+
+/// DashboardProjectStats 把 ProjectDashboardView 所需的所有派生指标收敛到一次遍历，
+/// 消除原计算属性级联（读一次 disposableIncome 底层扫 4~6 遍 transactions）的开销。
+struct DashboardProjectStats {
+    // 基础
+    let totalSpent: Double
+    let totalIncome: Double
+    let availableCash: Double
+
+    // 现金流维度（本月）
+    let monthlyNetCashFlow: Double
+    let operatingCashFlow: Double
+    let personalCashFlow: Double
+    let upcomingFixedCosts: Double
+
+    // 收入维度（本月）
+    let monthlyIncome: Double
+    let totalReceivable: Double
+    let overdueReceivable: Double
+    let overdueRatio: Double
+    let incomeByCategory: [(categoryName: String, amount: Double, percentage: Double)]
+
+    // 成本维度（本月）
+    let directCost: Double
+    let fixedCostMonthly: Double
+    let personalCost: Double
+    let costPercentage: (direct: Double, fixed: Double, personal: Double)
+
+    // 利润维度（本月）
+    let grossProfit: Double
+    let grossMargin: Double
+    let operatingNetProfit: Double
+    let taxReserve: Double
+    let disposableIncome: Double
+}
+
+extension DashboardProjectStats {
+    /// 按指定周期/维度返回趋势数据（用于现金流/收入/成本/利润折线/堆叠图）
+    static func trend(
+        for project: Project,
+        period: ProjectDashboardPeriod,
+        dimension: DashboardDimension
+    ) -> [(date: Date, amount: Double)] {
+        let calendar = Calendar.current
+        let now = Date()
+        var data: [(date: Date, amount: Double)] = []
+        let periodsToShow = 6
+
+        // 辅助：返回某个 Date 所在周期的起始日
+        func startDate(for date: Date) -> Date {
+            switch period {
+            case .month:
+                return calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+            case .quarter:
+                let month = calendar.component(.month, from: date)
+                let quarterStartMonth = ((month - 1) / 3) * 3 + 1
+                return calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: quarterStartMonth, day: 1)) ?? date
+            case .year:
+                return calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: 1, day: 1)) ?? date
+            }
+        }
+
+        func endDate(from start: Date) -> Date {
+            switch period {
+            case .month:
+                return calendar.date(byAdding: .month, value: 1, to: start) ?? start
+            case .quarter:
+                return calendar.date(byAdding: .month, value: 3, to: start) ?? start
+            case .year:
+                return calendar.date(byAdding: .year, value: 1, to: start) ?? start
+            }
+        }
+
+        let transactions = project.transactions ?? []
+        for i in 0..<periodsToShow {
+            let rawDate: Date
+            switch period {
+            case .month:
+                rawDate = calendar.date(byAdding: .month, value: -i, to: now) ?? now
+            case .quarter:
+                rawDate = calendar.date(byAdding: .month, value: -i * 3, to: now) ?? now
+            case .year:
+                rawDate = calendar.date(byAdding: .year, value: -i, to: now) ?? now
+            }
+            let start = startDate(for: rawDate)
+            let end = endDate(from: start)
+
+            var income: Double = 0
+            var expense: Double = 0
+            for tx in transactions where tx.date >= start && tx.date < end {
+                if tx.type == .income {
+                    income += abs(tx.amount)
+                } else if tx.type == .expense {
+                    expense += abs(tx.amount)
+                }
+            }
+
+            let amount: Double
+            switch dimension {
+            case .cashFlow: amount = income - expense
+            case .income:   amount = income
+            case .cost:     amount = expense
+            case .profit:   amount = income - expense
+            }
+            data.append((date: start, amount: amount))
+        }
+        return data.reversed()
+    }
+
+    /// 成本堆叠趋势：直接成本 / 固定成本 / 生活成本
+    static func stackedCostTrend(
+        for project: Project,
+        period: ProjectDashboardPeriod
+    ) -> [(date: Date, type: String, amount: Double)] {
+        let calendar = Calendar.current
+        let now = Date()
+        var data: [(date: Date, type: String, amount: Double)] = []
+        let periodsToShow = 6
+        let fixedCostMonthly = (project.fixedCosts ?? []).filter { $0.isActive }.reduce(0) { $0 + $1.monthlyAmount }
+
+        func startDate(for date: Date) -> Date {
+            switch period {
+            case .month:
+                return calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+            case .quarter:
+                let month = calendar.component(.month, from: date)
+                let quarterStartMonth = ((month - 1) / 3) * 3 + 1
+                return calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: quarterStartMonth, day: 1)) ?? date
+            case .year:
+                return calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: 1, day: 1)) ?? date
+            }
+        }
+        func endDate(from start: Date) -> Date {
+            switch period {
+            case .month:
+                return calendar.date(byAdding: .month, value: 1, to: start) ?? start
+            case .quarter:
+                return calendar.date(byAdding: .month, value: 3, to: start) ?? start
+            case .year:
+                return calendar.date(byAdding: .year, value: 1, to: start) ?? start
+            }
+        }
+
+        let transactions = project.transactions ?? []
+        for i in 0..<periodsToShow {
+            let rawDate: Date
+            switch period {
+            case .month:
+                rawDate = calendar.date(byAdding: .month, value: -i, to: now) ?? now
+            case .quarter:
+                rawDate = calendar.date(byAdding: .month, value: -i * 3, to: now) ?? now
+            case .year:
+                rawDate = calendar.date(byAdding: .year, value: -i, to: now) ?? now
+            }
+            let start = startDate(for: rawDate)
+            let end = endDate(from: start)
+
+            var directCost: Double = 0
+            var personalCost: Double = 0
+            for tx in transactions where tx.date >= start && tx.date < end && tx.type == .expense {
+                if tx.cashFlowType == "operating" {
+                    directCost += abs(tx.amount)
+                } else if tx.cashFlowType == "personal" {
+                    personalCost += abs(tx.amount)
+                }
+            }
+            data.append((date: start, type: "直接成本", amount: directCost))
+            data.append((date: start, type: "固定成本", amount: fixedCostMonthly))
+            data.append((date: start, type: "生活成本", amount: personalCost))
+        }
+        return data.reversed()
+    }
+
+    /// 利润三层趋势：毛利 / 经营净利润 / 可支配收入
+    static func profitTrend(
+        for project: Project,
+        period: ProjectDashboardPeriod
+    ) -> [(date: Date, values: [(type: String, amount: Double)])] {
+        let calendar = Calendar.current
+        let now = Date()
+        var data: [(date: Date, values: [(type: String, amount: Double)])] = []
+        let periodsToShow = 6
+        let fixedCostMonthly = (project.fixedCosts ?? []).filter { $0.isActive }.reduce(0) { $0 + $1.monthlyAmount }
+
+        func startDate(for date: Date) -> Date {
+            switch period {
+            case .month:
+                return calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+            case .quarter:
+                let month = calendar.component(.month, from: date)
+                let quarterStartMonth = ((month - 1) / 3) * 3 + 1
+                return calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: quarterStartMonth, day: 1)) ?? date
+            case .year:
+                return calendar.date(from: DateComponents(year: calendar.component(.year, from: date), month: 1, day: 1)) ?? date
+            }
+        }
+        func endDate(from start: Date) -> Date {
+            switch period {
+            case .month:
+                return calendar.date(byAdding: .month, value: 1, to: start) ?? start
+            case .quarter:
+                return calendar.date(byAdding: .month, value: 3, to: start) ?? start
+            case .year:
+                return calendar.date(byAdding: .year, value: 1, to: start) ?? start
+            }
+        }
+
+        let transactions = project.transactions ?? []
+        for i in 0..<periodsToShow {
+            let rawDate: Date
+            switch period {
+            case .month:
+                rawDate = calendar.date(byAdding: .month, value: -i, to: now) ?? now
+            case .quarter:
+                rawDate = calendar.date(byAdding: .month, value: -i * 3, to: now) ?? now
+            case .year:
+                rawDate = calendar.date(byAdding: .year, value: -i, to: now) ?? now
+            }
+            let start = startDate(for: rawDate)
+            let end = endDate(from: start)
+
+            var income: Double = 0
+            var directCost: Double = 0
+            var personalCost: Double = 0
+            for tx in transactions where tx.date >= start && tx.date < end {
+                if tx.type == .income {
+                    income += abs(tx.amount)
+                } else if tx.type == .expense {
+                    if tx.cashFlowType == "operating" {
+                        directCost += abs(tx.amount)
+                    } else if tx.cashFlowType == "personal" {
+                        personalCost += abs(tx.amount)
+                    }
+                }
+            }
+            let grossProfit = income - directCost
+            let operatingNetProfit = grossProfit - fixedCostMonthly
+            let taxReserve = max(0, operatingNetProfit * project.taxRate)
+            let disposableIncome = operatingNetProfit - personalCost - taxReserve
+            data.append((date: start, values: [
+                (type: "毛利", amount: grossProfit),
+                (type: "经营净利润", amount: operatingNetProfit),
+                (type: "可支配收入", amount: disposableIncome)
+            ]))
+        }
+        return data.reversed()
+    }
+}
+
+extension ProjectStatsCalculator {
+    /// 一次性产出 DashboardProjectStats。内部只做 3 次遍历：transactions、fixedCosts、receivables。
+    static func calculateDashboardStats(project: Project) -> DashboardProjectStats {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
+        let thirtyDaysLater = calendar.date(byAdding: .day, value: 30, to: now) ?? now
+
+        let transactions = project.transactions ?? []
+        let fixedCosts = project.fixedCosts ?? []
+        let receivables = project.receivables ?? []
+
+        // 1. 遍历 transactions：累计总收支 + 本月收支/成本 + 分类收入
+        var totalSpent: Double = 0
+        var totalIncome: Double = 0
+        var monthlyIncome: Double = 0
+        var directCost: Double = 0
+        var personalCost: Double = 0
+        var categoryIncome: [String: Double] = [:]
+
+        for tx in transactions {
+            let amount = abs(tx.amount)
+            if tx.type == .expense {
+                totalSpent += amount
+                if tx.date >= startOfMonth {
+                    if tx.cashFlowType == "operating" {
+                        directCost += amount
+                    } else if tx.cashFlowType == "personal" {
+                        personalCost += amount
+                    }
+                }
+            } else if tx.type == .income {
+                totalIncome += amount
+                if tx.date >= startOfMonth {
+                    monthlyIncome += amount
+                }
+                categoryIncome[tx.categoryName, default: 0] += amount
+            }
+        }
+
+        // 2. 遍历 fixedCosts：月度固定成本 + 未来30天刚性支出
+        var fixedCostMonthly: Double = 0
+        var upcomingFixedCosts: Double = 0
+        for cost in fixedCosts where cost.isActive {
+            fixedCostMonthly += cost.monthlyAmount
+            if let due = cost.nextDueDate, due >= now, due <= thirtyDaysLater {
+                upcomingFixedCosts += cost.monthlyAmount
+            }
+        }
+
+        // 3. 遍历 receivables：待回款 + 逾期
+        var totalReceivable: Double = 0
+        var overdueReceivable: Double = 0
+        for r in receivables where r.status == .pending {
+            totalReceivable += r.amount
+            if r.isOverdue { overdueReceivable += r.amount }
+        }
+
+        // 派生指标
+        let availableCash = totalIncome - totalSpent
+        let monthlyExpense = directCost + personalCost
+        let monthlyNetCashFlow = monthlyIncome - monthlyExpense
+        let operatingCashFlow = -directCost
+        let personalCashFlow = -personalCost
+        let overdueRatio = totalReceivable > 0 ? overdueReceivable / totalReceivable : 0
+
+        let incomeTotalAmount = categoryIncome.values.reduce(0, +)
+        let incomeByCategory: [(categoryName: String, amount: Double, percentage: Double)] = incomeTotalAmount > 0
+            ? categoryIncome.map { (categoryName: $0.key, amount: $0.value, percentage: $0.value / incomeTotalAmount) }
+                .sorted { $0.amount > $1.amount }
+            : []
+
+        let totalCost = directCost + fixedCostMonthly + personalCost
+        let costPercentage: (direct: Double, fixed: Double, personal: Double) = totalCost > 0
+            ? (direct: directCost / totalCost, fixed: fixedCostMonthly / totalCost, personal: personalCost / totalCost)
+            : (direct: 0, fixed: 0, personal: 0)
+
+        let grossProfit = monthlyIncome - directCost
+        let grossMargin = monthlyIncome > 0 ? grossProfit / monthlyIncome : 0
+        let operatingNetProfit = grossProfit - fixedCostMonthly
+        let taxReserve = max(0, operatingNetProfit * project.taxRate)
+        let disposableIncome = operatingNetProfit - personalCost - taxReserve
+
+        return DashboardProjectStats(
+            totalSpent: totalSpent,
+            totalIncome: totalIncome,
+            availableCash: availableCash,
+            monthlyNetCashFlow: monthlyNetCashFlow,
+            operatingCashFlow: operatingCashFlow,
+            personalCashFlow: personalCashFlow,
+            upcomingFixedCosts: upcomingFixedCosts,
+            monthlyIncome: monthlyIncome,
+            totalReceivable: totalReceivable,
+            overdueReceivable: overdueReceivable,
+            overdueRatio: overdueRatio,
+            incomeByCategory: incomeByCategory,
+            directCost: directCost,
+            fixedCostMonthly: fixedCostMonthly,
+            personalCost: personalCost,
+            costPercentage: costPercentage,
+            grossProfit: grossProfit,
+            grossMargin: grossMargin,
+            operatingNetProfit: operatingNetProfit,
+            taxReserve: taxReserve,
+            disposableIncome: disposableIncome
+        )
+    }
+}
+
 // MARK: - 分类预算执行
 
 struct CategoryBudgetExecution {
