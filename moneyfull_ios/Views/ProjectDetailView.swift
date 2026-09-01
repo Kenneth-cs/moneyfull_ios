@@ -432,17 +432,12 @@ struct ProjectDetailView: View {
                                     
                                     LazyVStack(spacing: 10) {
                                         ForEach(group.value) { tx in
-                                            SwipeActionView(
-                                                onEdit: { editingTransaction = tx },
-                                                onDelete: { store.deleteTransaction(tx) }
-                                            ) {
-                                                TimelineTxRow(transaction: tx, accentColor: Color(hex: project.colorHex))
-                                                    .contentShape(Rectangle())
-                                                    .onTapGesture {
-                                                        viewingTransaction = tx
-                                                    }
-                                            }
-                                            .padding(.horizontal, 24)
+                                            TimelineTxRow(transaction: tx, accentColor: Color(hex: project.colorHex))
+                                                .contentShape(Rectangle())
+                                                .onTapGesture {
+                                                    viewingTransaction = tx
+                                                }
+                                                .padding(.horizontal, 24)
                                         }
                                     }
                                     .padding(.bottom, 20)

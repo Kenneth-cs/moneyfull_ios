@@ -417,13 +417,10 @@ private struct HorizontalSwipeGestureView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
-        view.isUserInteractionEnabled = true
+        // 禁用 UIView 交互，让触摸事件穿透到 SwiftUI content 的 onTapGesture
+        // 滑动手势改由 SwiftUI DragGesture 处理（见 SwipeActionView body）
+        view.isUserInteractionEnabled = false
         view.backgroundColor = .clear
-
-        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
-        pan.delegate = context.coordinator
-        pan.cancelsTouchesInView = false
-        view.addGestureRecognizer(pan)
         return view
     }
 
@@ -483,6 +480,8 @@ struct SwipeActionView<Content: View>: View {
     let onDelete: () -> Void
 
     @State private var offset: CGFloat = 0
+    @State private var startOffset: CGFloat = 0
+    @State private var isDragging = false
     @State private var showDeleteConfirm = false
 
     private let actionWidth: CGFloat = 72
@@ -537,8 +536,43 @@ struct SwipeActionView<Content: View>: View {
 
             content
                 .offset(x: offset)
-                .overlay(
-                    HorizontalSwipeGestureView(offset: $offset, totalActionWidth: totalActionWidth)
+                // 用 SwiftUI DragGesture 处理滑动，不再使用 UIView overlay 拦截触摸
+                // minimumDistance:10 避免短点击被识别为拖拽，保证 onTapGesture 正常触发
+                // 内部判断方向：只有水平移动明显大于垂直移动时才响应左滑，保证垂直滚动正常
+                .gesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            let horizontalDistance = abs(value.translation.width)
+                            let verticalDistance = abs(value.translation.height)
+                            
+                            // 水平移动需要明显大于垂直移动（2:1比例），才响应左滑
+                            // 否则让手势"失效"，把控制权还给 ScrollView 的垂直滚动
+                            guard horizontalDistance > verticalDistance * 2 else { return }
+                            
+                            // 首次满足方向条件时记录起始偏移
+                            if !isDragging {
+                                isDragging = true
+                                startOffset = offset
+                            }
+                            
+                            let translation = value.translation.width
+                            let target = startOffset + translation
+                            if target < 0 {
+                                offset = max(target, -totalActionWidth)
+                            } else if offset < 0 {
+                                offset = min(0, target)
+                            }
+                        }
+                        .onEnded { _ in
+                            isDragging = false
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                if offset < -totalActionWidth / 2 {
+                                    offset = -totalActionWidth
+                                } else {
+                                    offset = 0
+                                }
+                            }
+                        }
                 )
         }
         .clipped()

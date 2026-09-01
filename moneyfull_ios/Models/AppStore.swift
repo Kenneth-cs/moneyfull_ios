@@ -48,6 +48,9 @@ class AppStore: ObservableObject {
     private var notificationObserver: NSObjectProtocol?
     private var cloudKitEventObserver: NSObjectProtocol?
     
+    /// 计数器：> 0 时抑制刷新（用于避免某些保存操作触发全量刷新）
+    private var suppressRefreshCount = 0
+    
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
         let ts = UserDefaults.standard.double(forKey: "lastBackupTimestamp")
@@ -86,9 +89,9 @@ class AppStore: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.triggerDebouncedRefresh()
-            }
+            // 直接在主队列检查，避免 Task 调度的时序问题
+            guard let self, self.suppressRefreshCount == 0 else { return }
+            self.triggerDebouncedRefresh()
         }
         
         // 监听 CloudKit 的同步事件（捕获远程数据下载）
@@ -572,8 +575,8 @@ class AppStore: ObservableObject {
         item.project = project
         project.budgetItems = (project.budgetItems ?? []) + [item]
         modelContext.insert(item)
-        save()
-        refreshProjects()
+        // 保存但不触发全量刷新，避免卡顿
+        saveWithoutRefresh()
         bumpDataVersion()
         return item
     }
@@ -587,8 +590,8 @@ class AppStore: ObservableObject {
         if let amt = amount { item.amount = amt }
         if let order = sortOrder { item.sortOrder = order }
         if let threshold = alertThreshold { item.alertThreshold = threshold }
-        save()
-        refreshProjects()
+        // 保存但不触发全量刷新，避免卡顿
+        saveWithoutRefresh()
         bumpDataVersion()
     }
 
@@ -597,8 +600,8 @@ class AppStore: ObservableObject {
             project.budgetItems = (project.budgetItems ?? []).filter { $0.id != item.id }
         }
         modelContext.delete(item)
-        save()
-        refreshProjects()
+        // 保存但不触发全量刷新，避免卡顿
+        saveWithoutRefresh()
         bumpDataVersion()
     }
 
@@ -606,8 +609,8 @@ class AppStore: ObservableObject {
         for (index, item) in items.enumerated() {
             item.sortOrder = index
         }
-        save()
-        refreshProjects()
+        // 保存但不触发全量刷新，避免卡顿
+        saveWithoutRefresh()
         bumpDataVersion()
     }
 
@@ -719,6 +722,16 @@ class AppStore: ObservableObject {
     
     private func save() {
         try? modelContext.save()
+    }
+    
+    /// 保存但不触发刷新（用于不需要重新加载所有数据的场景，如预算分类操作）
+    private func saveWithoutRefresh() {
+        suppressRefreshCount += 1
+        try? modelContext.save()
+        // 延迟递减计数器，确保通知处理器有机会检查到
+        DispatchQueue.main.async { [weak self] in
+            self?.suppressRefreshCount -= 1
+        }
     }
 
     // MARK: - 性能测试数据（仅 Debug 包）

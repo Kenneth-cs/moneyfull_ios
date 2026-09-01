@@ -308,18 +308,6 @@ struct BudgetManagementSheet: View {
         .navigationTitle("预算管理")
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
-        .simultaneousGesture(
-            TapGesture()
-                .onEnded { _ in
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                }
-        )
-        .simultaneousGesture(
-            DragGesture()
-                .onChanged { _ in
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                }
-        )
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()

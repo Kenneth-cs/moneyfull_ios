@@ -260,16 +260,11 @@ struct DashboardView: View {
                     } else {
                         VStack(spacing: 12) {
                             ForEach(store.recentTransactions.prefix(10)) { tx in
-                                SwipeActionView(
-                                    onEdit: { editingTransaction = tx },
-                                    onDelete: { store.deleteTransaction(tx) }
-                                ) {
-                                    TransactionItem(transaction: tx)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            viewingTransaction = tx
-                                        }
-                                }
+                                TransactionItem(transaction: tx)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        viewingTransaction = tx
+                                    }
                             }
                         }
                         .padding(.horizontal, 24)

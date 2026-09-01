@@ -373,16 +373,11 @@ struct AllTransactionsView: View {
                             // 交易记录
                             VStack(spacing: 0) {
                                 ForEach(group.value) { tx in
-                                    SwipeActionView(
-                                        onEdit: { editingTransaction = tx },
-                                        onDelete: { store.deleteTransaction(tx) }
-                                    ) {
-                                        TransactionRow(transaction: tx)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                viewingTransaction = tx
-                                            }
-                                    }
+                                    TransactionRow(transaction: tx)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            viewingTransaction = tx
+                                        }
                                     
                                     if tx.id != group.value.last?.id {
                                         Divider()
