@@ -23,6 +23,12 @@ struct ProfileView: View {
     @State private var showPrivacyPolicy = false
     @State private var showTermsOfService = false
     
+    // 性能测试工具（隐藏入口，点击头像10次显示）
+    #if DEBUG
+    @State private var showPerfTools = false
+    @State private var avatarTapCount = 0
+    #endif
+    
     // 从 AppStore 拿真实统计
     private var activeCount: Int { store.activeProjects.count }
 
@@ -59,6 +65,15 @@ struct ProfileView: View {
                                     .clipShape(Circle())
                                     .padding(8)
                             )
+                            #if DEBUG
+                            .onTapGesture {
+                                avatarTapCount += 1
+                                if avatarTapCount >= 10 {
+                                    showPerfTools = true
+                                    avatarTapCount = 0
+                                }
+                            }
+                            #endif
                         
                         // 编辑按钮
                         Button(action: {
@@ -158,6 +173,38 @@ struct ProfileView: View {
                                                 .font(.system(size: 12))
                                                 .foregroundColor(.gray)
                                         }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.5))
+                                }
+                                .contentShape(Rectangle())
+                                .padding(16)
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 72).opacity(0.5)
+
+                            Button {
+                                _ = store.cleanupOrphanedTransactions()
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Circle()
+                                        .fill(Color.red.opacity(0.15))
+                                        .frame(width: 42, height: 42)
+                                        .overlay(
+                                            Image(systemName: "bandage.fill")
+                                                .foregroundColor(.red.opacity(0.7))
+                                                .font(.system(size: 18, weight: .semibold))
+                                        )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("清理孤儿交易")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text("删除 project 为空的遗留账单")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -332,82 +379,96 @@ struct ProfileView: View {
                 Spacer().frame(height: 16)
 
                 #if DEBUG
-                // MARK: 性能测试入口（Debug 包专属）
-                VStack(spacing: 12) {
-                    Text("性能测试工具")
-                        .font(.system(size: 12, weight: .black))
-                        .foregroundColor(.gray.opacity(0.8))
-                        .kerning(2)
+                // MARK: 性能测试入口（Debug 包专属，点击头像10次显示）
+                if showPerfTools {
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("性能测试工具")
+                                .font(.system(size: 12, weight: .black))
+                                .foregroundColor(.gray.opacity(0.8))
+                                .kerning(2)
+                            
+                            Spacer()
+                            
+                            Button {
+                                showPerfTools = false
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.gray.opacity(0.5))
+                            }
+                        }
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(spacing: 0) {
-                        Button {
-                            store.generatePerfTestTransactions(count: 5000)
-                        } label: {
-                            HStack(spacing: 16) {
-                                Circle()
-                                    .fill(Color.App.lightOrange.opacity(0.4))
-                                    .frame(width: 42, height: 42)
-                                    .overlay(
-                                        Image(systemName: "hare.fill")
-                                            .foregroundColor(Color.App.darkOrange)
-                                            .font(.system(size: 18, weight: .semibold))
-                                    )
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("生成 5000 条测试账单")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(Color.App.textBlack)
-                                    Text("用于复现滚动卡顿问题")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.gray)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.gray.opacity(0.5))
-                            }
-                            .contentShape(Rectangle())
-                            .padding(16)
-                        }
-                        .buttonStyle(.plain)
-
-                        Divider().padding(.leading, 72).opacity(0.5)
-
-                        Button {
-                            _ = store.clearPerfTestTransactions()
-                        } label: {
-                            HStack(spacing: 16) {
-                                Circle()
-                                    .fill(Color.gray.opacity(0.15))
-                                    .frame(width: 42, height: 42)
-                                    .overlay(
-                                        Image(systemName: "trash.fill")
+                        VStack(spacing: 0) {
+                            Button {
+                                store.generatePerfTestTransactions(count: 5000)
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Circle()
+                                        .fill(Color.App.lightOrange.opacity(0.4))
+                                        .frame(width: 42, height: 42)
+                                        .overlay(
+                                            Image(systemName: "hare.fill")
+                                                .foregroundColor(Color.App.darkOrange)
+                                                .font(.system(size: 18, weight: .semibold))
+                                        )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("生成 5000 条测试账单")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text("用于复现滚动卡顿问题")
+                                            .font(.system(size: 12))
                                             .foregroundColor(.gray)
-                                            .font(.system(size: 18, weight: .semibold))
-                                    )
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("清空测试账单")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(Color.App.textBlack)
-                                    Text("按导入批次一键清除")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.5))
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.gray.opacity(0.5))
+                                .contentShape(Rectangle())
+                                .padding(16)
                             }
-                            .contentShape(Rectangle())
-                            .padding(16)
+                            .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 72).opacity(0.5)
+
+                            Button {
+                                _ = store.clearPerfTestTransactions()
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Circle()
+                                        .fill(Color.gray.opacity(0.15))
+                                        .frame(width: 42, height: 42)
+                                        .overlay(
+                                            Image(systemName: "trash.fill")
+                                                .foregroundColor(.gray)
+                                                .font(.system(size: 18, weight: .semibold))
+                                        )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("清空测试账单")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text("按导入批次一键清除")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.5))
+                                }
+                                .contentShape(Rectangle())
+                                .padding(16)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        .background(Color.App.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 28))
+                        .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
                     }
-                    .background(Color.App.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 28))
-                    .shadow(color: Color.black.opacity(0.02), radius: 10, x: 0, y: 5)
+                    .padding(.horizontal, 24)
                 }
-                .padding(.horizontal, 24)
                 #endif
             }
         }

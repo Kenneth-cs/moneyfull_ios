@@ -313,6 +313,58 @@ class AppStore: ObservableObject {
         monthlySaving = monthlyIncome - monthlyExpense
     }
 
+    // MARK: - 预算日历：按日聚合支出
+
+    /// 返回指定年月的 [日序号: 当日支出合计]（只统计 .expense 类型）
+    func dailyExpenses(year: Int, month: Int) -> [Int: Double] {
+        let calendar = Calendar.current
+        guard let startDate = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
+              let endDate = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: startDate),
+              let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: endDate) else {
+            return [:]
+        }
+
+        let descriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate { $0.date >= startDate && $0.date <= endOfDay }
+        )
+        let txs = (try? modelContext.fetch(descriptor)) ?? []
+
+        var result: [Int: Double] = [:]
+        for tx in txs where tx.type == .expense {
+            let day = calendar.component(.day, from: tx.date)
+            result[day, default: 0] += abs(tx.amount)
+        }
+        return result
+    }
+
+    /// 返回今日支出合计（只统计 .expense 类型）
+    func todayExpense() -> Double {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        guard let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: Date()) else { return 0 }
+
+        let descriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate { $0.date >= startOfDay && $0.date <= endOfDay }
+        )
+        let txs = (try? modelContext.fetch(descriptor)) ?? []
+        return txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+    }
+
+    /// 返回指定年月的总支出（只统计 .expense 类型）
+    func monthlyExpense(year: Int, month: Int) -> Double {
+        let calendar = Calendar.current
+        guard let startDate = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
+              let endDate = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: startDate) else {
+            return 0
+        }
+        let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: endDate)!
+        let descriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate { $0.date >= startDate && $0.date <= endOfDay }
+        )
+        let txs = (try? modelContext.fetch(descriptor)) ?? []
+        return txs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+    }
+
     // MARK: - 首页看板多维度统计
     func stats(for period: DashboardPeriod) -> (expense: Double, income: Double, saving: Double) {
         let calendar = Calendar.current
@@ -475,7 +527,12 @@ class AppStore: ObservableObject {
     }
 
     func deleteProject(_ project: Project) {
-        for tx in project.transactions ?? [] {
+        let pid = project.id
+        let txDesc = FetchDescriptor<Transaction>(
+            predicate: #Predicate<Transaction> { $0.project?.id == pid }
+        )
+        let txs = (try? modelContext.fetch(txDesc)) ?? []
+        for tx in txs {
             modelContext.delete(tx)
         }
         modelContext.delete(project)
@@ -790,7 +847,22 @@ class AppStore: ObservableObject {
         return batch.count
     }
     #endif
-    
+
+    /// 清理孤儿交易（project 已被删除但交易未被级联删除的遗留数据）
+    func cleanupOrphanedTransactions() -> Int {
+        let descriptor = FetchDescriptor<Transaction>(
+            predicate: #Predicate<Transaction> { $0.project == nil }
+        )
+        guard let orphans = try? modelContext.fetch(descriptor) else { return 0 }
+        guard !orphans.isEmpty else { return 0 }
+        for tx in orphans {
+            modelContext.delete(tx)
+        }
+        save()
+        refreshFinancialAndBump()
+        return orphans.count
+    }
+
     /// 首次启动时创建默认「日常收支」项目和系统预设分类
     private func setupDefaultDataIfNeeded() {
         let descriptor = FetchDescriptor<Project>()

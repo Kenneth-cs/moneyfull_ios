@@ -353,13 +353,14 @@ struct GreetingBubbleView: View {
                         .offset(x: -28, y: 8)
                 }
             )
-            // frame 放在 background 之后，整体（文字+padding+背景）受约束；不超过 226
-            .frame(maxWidth: 226)
-            .opacity(coordinator.currentQuote.isEmpty || coordinator.isInteracting ? 0 : 1)
-            .animation(.easeInOut, value: coordinator.currentQuote)
+            // frame 放在 background 之后，整体（文字+padding+背景）受约束；不超过 168（更收窄，避免气泡过长）
+            .frame(maxWidth: 168)
             // offset 作用于整个气泡（文字+背景一体），与卡皮同步呼吸
+            // 呼吸动画必须在 opacity 动画之前，避免文案切换时打断呼吸
             .offset(y: coordinator.isBreathing ? -5 : 3)
             .animation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true), value: coordinator.isBreathing)
+            .opacity(coordinator.currentQuote.isEmpty || coordinator.isInteracting ? 0 : 1)
+            .animation(.easeInOut, value: coordinator.currentQuote)
     }
 }
 

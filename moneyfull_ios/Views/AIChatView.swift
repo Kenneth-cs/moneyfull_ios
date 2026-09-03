@@ -1157,8 +1157,12 @@ struct AIChatView: View {
     private func startRecording() {
         Task {
             guard await speechService.requestPermission() else { return }
-            try? speechService.startRecording()
-            isRecording = true
+            do {
+                try speechService.startRecording()
+                await MainActor.run { isRecording = true }
+            } catch {
+                print("[Speech] startRecording failed: \(error)")
+            }
         }
     }
 

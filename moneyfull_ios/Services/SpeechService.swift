@@ -23,7 +23,22 @@ class SpeechService: ObservableObject {
     private init() {}
 
     func requestPermission() async -> Bool {
-        await withCheckedContinuation { continuation in
+        // 先请求麦克风权限（首次使用时系统会弹窗）
+        let micAuthorized: Bool = await withCheckedContinuation { continuation in
+            if #available(iOS 17.0, *) {
+                AVAudioApplication.requestRecordPermission { allowed in
+                    continuation.resume(returning: allowed)
+                }
+            } else {
+                AVAudioSession.sharedInstance().requestRecordPermission { allowed in
+                    continuation.resume(returning: allowed)
+                }
+            }
+        }
+        guard micAuthorized else { return false }
+
+        // 再请求语音识别权限
+        return await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)
             }

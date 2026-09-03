@@ -42,6 +42,26 @@ struct CategoryManagementView: View {
     var body: some View {
         NavigationView {
             List {
+                // 添加自定义分类按钮（第一行）
+                Section {
+                    Button(action: { showAddSheet = true }) {
+                        HStack(spacing: 14) {
+                            Circle()
+                                .fill(Color.App.primaryGreen.opacity(0.3))
+                                .frame(width: 40, height: 40)
+                                .overlay(
+                                    Image(systemName: "plus")
+                                        .foregroundColor(Color.App.darkGreen)
+                                        .font(.system(size: 16, weight: .bold))
+                                )
+                            Text("添加自定义分类")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color.App.darkGreen)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
                 ForEach(groupedCategories, id: \.groupName) { group in
                     Section {
                         ForEach(group.categories, id: \.id) { cat in
@@ -65,45 +85,32 @@ struct CategoryManagementView: View {
                                     }
                                 }
                                 Spacer()
+                                
+                                // 编辑和删除按钮
+                                HStack(spacing: 12) {
+                                    Button {
+                                        editingCategory = cat
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(Color.App.darkGreen)
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Button(role: .destructive) {
+                                        confirmDeleteCategory = cat
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(Color.App.redExpense)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                             .padding(.vertical, 4)
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    editingCategory = cat
-                                } label: {
-                                    Label("编辑", systemImage: "pencil")
-                                }
-                                .tint(.blue)
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    confirmDeleteCategory = cat
-                                } label: {
-                                    Label("删除", systemImage: "trash")
-                                }
-                            }
                         }
                     } header: {
                         Text(group.groupName)
-                    }
-                }
-
-                Section {
-                    Button(action: { showAddSheet = true }) {
-                        HStack(spacing: 14) {
-                            Circle()
-                                .fill(Color.App.primaryGreen.opacity(0.3))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "plus")
-                                        .foregroundColor(Color.App.darkGreen)
-                                        .font(.system(size: 16, weight: .bold))
-                                )
-                            Text("添加自定义分类")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(Color.App.darkGreen)
-                        }
-                        .padding(.vertical, 4)
                     }
                 }
             }
@@ -244,21 +251,7 @@ struct CategoryFormSheet: View {
                         } else {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
-                                    ForEach(availableGroups, id: \.self) { group in
-                                        Button(action: {
-                                            selectedGroupName = group
-                                        }) {
-                                            Text(group)
-                                                .font(.system(size: 14, weight: selectedGroupName == group ? .bold : .medium))
-                                                .foregroundColor(selectedGroupName == group ? Color.App.darkGreen : .gray)
-                                                .padding(.horizontal, 14)
-                                                .padding(.vertical, 8)
-                                                .background(selectedGroupName == group ? Color.App.primaryGreen.opacity(0.3) : Color.App.tabBackground)
-                                                .clipShape(Capsule())
-                                        }
-                                    }
-                                    
-                                    // 自定义新分组按钮
+                                    // 自定义新分组按钮（放在最前面）
                                     Button(action: {
                                         showCustomGroupInput = true
                                     }) {
@@ -273,6 +266,20 @@ struct CategoryFormSheet: View {
                                         .padding(.vertical, 8)
                                         .background(Color.App.primaryGreen.opacity(0.2))
                                         .clipShape(Capsule())
+                                    }
+                                    
+                                    ForEach(availableGroups, id: \.self) { group in
+                                        Button(action: {
+                                            selectedGroupName = group
+                                        }) {
+                                            Text(group)
+                                                .font(.system(size: 14, weight: selectedGroupName == group ? .bold : .medium))
+                                                .foregroundColor(selectedGroupName == group ? Color.App.darkGreen : .gray)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 8)
+                                                .background(selectedGroupName == group ? Color.App.primaryGreen.opacity(0.3) : Color.App.tabBackground)
+                                                .clipShape(Capsule())
+                                        }
                                     }
                                 }
                             }
