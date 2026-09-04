@@ -38,11 +38,19 @@ class SpeechService: ObservableObject {
         guard micAuthorized else { return false }
 
         // 再请求语音识别权限
-        return await withCheckedContinuation { continuation in
+        let speechAuthorized = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)
             }
         }
+        guard speechAuthorized else { return false }
+
+        // ⚠️ 首次授权后，iOS 音频系统需要短暂初始化。
+        // 若立刻调用 startRecording()，audioEngine.inputNode.outputFormat(forBus:0)
+        // 可能返回 sampleRate=0 的无效格式，导致 installTap 触发无法捕获的 NSException。
+        // 等待 300ms 让 AVAudioSession 完成激活，避免首次录音 crash。
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        return true
     }
 
     func startRecording() throws {
@@ -57,6 +65,17 @@ class SpeechService: ObservableObject {
 
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+        // ⚠️ 首次授权后 recordingFormat 可能 sampleRate=0（音频硬件未就绪）。
+        // installTap 对无效格式会抛 NSException（Objective-C 异常，do-catch 拦不住，直接 crash）。
+        // 在这里提前校验，将其转换为可安全捕获的 Swift Error。
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            throw NSError(
+                domain: "SpeechService",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "音频格式未就绪（sampleRate=\(recordingFormat.sampleRate)），请稍后再试"]
+            )
+        }
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.recognitionRequest?.append(buffer)

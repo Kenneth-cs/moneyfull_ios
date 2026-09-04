@@ -1,5 +1,25 @@
 import SwiftUI
 import SwiftData
+
+/// 轻量值类型快照，用于后台线程计算（避免在非主线程访问 SwiftData 模型对象）
+private struct TxSnapshot: Sendable {
+    let date: Date
+    let type: TransactionType
+    let amount: Double
+    let categoryName: String
+    let categoryColorHex: String
+    let categoryIcon: String
+}
+
+/// 后台计算 Task 的持有者。
+/// ⚠️ 必须用 class（@StateObject）而不是 @State 来持有 Task 引用：
+///    Task 是引用类型，@State 用 === 比较，每次赋新 Task 都会触发视图重绘，
+///    在用户滑动期间重绘会打断 ScrollView 的手势识别，导致页面"卡死"。
+///    @StateObject 的非 @Published 属性变更不触发重绘，从根本上解决问题。
+private final class BgTaskHolder: ObservableObject {
+    var computeTask: Task<Void, Never>?
+}
+
 struct ProjectDetailView: View {
     let project: Project
     @EnvironmentObject var store: AppStore
@@ -30,6 +50,8 @@ struct ProjectDetailView: View {
     @State private var _budgetProgress: Double = 0
     // 经营看板入口卡缓存（消除约 25 次级联遍历）
     @State private var _dashboardStats: DashboardProjectStats?
+    // 后台计算任务持有者（class，不触发 SwiftUI 重绘，见 BgTaskHolder 注释）
+    @StateObject private var bgTask = BgTaskHolder()
     
     // MARK: - 静态 DateFormatter（避免 body 每次重渲时重复创建）
     /// 排序用 key：yyyy-MM-dd，保证字符串排序 == 日期排序
@@ -78,14 +100,17 @@ struct ProjectDetailView: View {
     }
 
     private func updateCacheData() {
-        // 直接从 modelContext 查询，避免 SwiftData 懒加载关系返回不完整数据
+        // 取消上一次未完成的后台计算，避免 stale 结果回写
+        bgTask.computeTask?.cancel()
+
+        // ── 主线程：fetch + 快速计算（O(N) / O(N log N)，< 10ms）──
         let pid = project.id
         let descriptor = FetchDescriptor<Transaction>(
             predicate: #Predicate<Transaction> { $0.project?.id == pid }
         )
         let txs = (try? modelContext.fetch(descriptor)) ?? project.transactions ?? []
-        
-        // 0. 概览汇总（一次遍历算出总支出/总收入）
+
+        // 概览汇总
         var totalExp: Double = 0
         var totalInc: Double = 0
         for tx in txs {
@@ -96,10 +121,10 @@ struct ProjectDetailView: View {
         _totalIncome = totalInc
         _budgetProgress = project.budget > 0 ? totalExp / project.budget : 0
 
-        // 经营看板入口卡缓存：一次聚合消除级联计算属性
-        _dashboardStats = ProjectStatsCalculator.calculateDashboardStats(project: project)
-        
-        // 1. 分组交易记录（用 yyyy-MM-dd 做 key 保证排序正确）
+        // 经营看板入口卡缓存：复用已 fetch 的 txs，避免通过 project.transactions 二次全量加载
+        _dashboardStats = ProjectStatsCalculator.calculateDashboardStats(project: project, transactions: txs)
+
+        // 分组交易记录（需要 Transaction 对象供视图 Identifiable 使用）
         let sorted = txs.sorted { $0.date > $1.date }
         var groups: [String: [Transaction]] = [:]
         for tx in sorted {
@@ -107,40 +132,51 @@ struct ProjectDetailView: View {
             groups[key, default: []].append(tx)
         }
         _groupedTransactions = groups.sorted { $0.key > $1.key }
-        
-        // 2. 分类占比
-        let expenses = txs.filter { $0.type == .expense }
-        var dict: [String: (amount: Double, color: String, icon: String)] = [:]
-        for tx in expenses {
-            let name = tx.categoryName
-            let color = tx.categoryColorHex
-            let icon = tx.categoryIcon
-            let current = dict[name]?.amount ?? 0
-            dict[name] = (current + abs(tx.amount), color, icon)
-        }
-        _projectCategorySegments = dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
-        _projectTotalExpense = _projectCategorySegments.reduce(0) { $0 + $1.amount }
-        
-        // 3. 趋势数据
-        let calendar = Calendar.current
-        let ascSorted = txs.sorted { $0.date < $1.date }
-        if let first = ascSorted.first {
-            let startDate = first.date
-            let endDate = Date()
-            var result: [(label: String, expense: Double, income: Double, saving: Double)] = []
-            var current = calendar.date(from: calendar.dateComponents([.year, .month], from: startDate))!
 
-            while current <= endDate {
-                let next = calendar.date(byAdding: .month, value: 1, to: current)!
-                let monthTxs = txs.filter { $0.date >= current && $0.date < next }
-                let exp = monthTxs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
-                let inc = monthTxs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-                result.append((label: Self.monthFormatter.string(from: current), expense: exp, income: inc, saving: inc - exp))
-                current = next
+        // ── 后台线程：分类占比 + 趋势数据（O(N × 月数)，可耗时 10-50ms）──
+        // 先在主线程拍快照，提取标量值，避免后台访问 SwiftData 模型对象
+        let snapshots = txs.map { tx in
+            TxSnapshot(date: tx.date, type: tx.type, amount: tx.amount,
+                       categoryName: tx.categoryName, categoryColorHex: tx.categoryColorHex,
+                       categoryIcon: tx.categoryIcon)
+        }
+
+        bgTask.computeTask = Task.detached(priority: .userInitiated) {
+            // 分类占比
+            let expenses = snapshots.filter { $0.type == .expense }
+            var dict: [String: (amount: Double, color: String, icon: String)] = [:]
+            for tx in expenses {
+                let current = dict[tx.categoryName]?.amount ?? 0
+                dict[tx.categoryName] = (current + abs(tx.amount), tx.categoryColorHex, tx.categoryIcon)
             }
-            _projectTrendData = result
-        } else {
-            _projectTrendData = []
+            let categorySegments = dict.map { (name: $0.key, amount: $0.value.amount, colorHex: $0.value.color, icon: $0.value.icon) }.sorted { $0.amount > $1.amount }
+            let totalExpense = categorySegments.reduce(0) { $0 + $1.amount }
+
+            // 趋势数据（O(N × 月数)，这是最重的计算）
+            let calendar = Calendar.current
+            let monthFmt = DateFormatter()
+            monthFmt.dateFormat = "M月"
+            let ascSorted = snapshots.sorted { $0.date < $1.date }
+            var trendData: [(label: String, expense: Double, income: Double, saving: Double)] = []
+            if let first = ascSorted.first {
+                var current = calendar.date(from: calendar.dateComponents([.year, .month], from: first.date))!
+                let endDate = Date()
+                while current <= endDate {
+                    guard !Task.isCancelled else { return }
+                    let next = calendar.date(byAdding: .month, value: 1, to: current)!
+                    let monthTxs = snapshots.filter { $0.date >= current && $0.date < next }
+                    let exp = monthTxs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
+                    let inc = monthTxs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
+                    trendData.append((label: monthFmt.string(from: current), expense: exp, income: inc, saving: inc - exp))
+                    current = next
+                }
+            }
+
+            await MainActor.run {
+                self._projectCategorySegments = categorySegments
+                self._projectTotalExpense = totalExpense
+                self._projectTrendData = trendData
+            }
         }
     }
 
@@ -522,8 +558,13 @@ struct ProjectDetailView: View {
         .onAppear {
             updateCacheData()
         }
-        // dataVersion 统一驱动：任何写操作后刷新缓存，避免 body 内 fault 关系
+        // dataVersion 统一驱动：80ms 防抖
+        // · 用户删除/修改交易后 UI 响应快（80ms≈1.5帧，几乎感知不到延迟）
+        // · CloudKit 同步连续 bump 时，.task(id:) 自动取消旧任务 + bgTask.computeTask?.cancel()
+        //   两层保护，后台重计算不会重叠；主线程 fetch 会多触发几次，但 fetch 本身很快
         .task(id: store.dataVersion) {
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard !Task.isCancelled else { return }
             updateCacheData()
         }
     }

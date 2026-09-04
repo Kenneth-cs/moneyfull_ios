@@ -253,12 +253,15 @@ extension DashboardProjectStats {
 extension ProjectStatsCalculator {
     /// 一次性产出 DashboardProjectStats。内部只做 3 次遍历：transactions、fixedCosts、receivables。
     static func calculateDashboardStats(project: Project) -> DashboardProjectStats {
+        calculateDashboardStats(project: project, transactions: project.transactions ?? [])
+    }
+
+    /// 复用已 fetch 好的 transactions，避免通过关系 fault 二次加载。
+    static func calculateDashboardStats(project: Project, transactions: [Transaction]) -> DashboardProjectStats {
         let calendar = Calendar.current
         let now = Date()
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? now
         let thirtyDaysLater = calendar.date(byAdding: .day, value: 30, to: now) ?? now
-
-        let transactions = project.transactions ?? []
         let fixedCosts = project.fixedCosts ?? []
         let receivables = project.receivables ?? []
 

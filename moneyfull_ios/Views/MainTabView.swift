@@ -10,6 +10,7 @@ struct MainTabView: View {
     @State private var projectNavResetID = UUID()
     @State private var aiInitialText: String?
     @State private var isFromShortcut: Bool = false
+    @State private var detailProject: Project?
     
     var body: some View {
         NavigationStack {
@@ -17,13 +18,13 @@ struct MainTabView: View {
                 Color.App.backgroundGray.ignoresSafeArea()
                 
                 TabView(selection: $selectedTab) {
-                    DashboardView(selectedTab: $selectedTab, onResetProjectNav: {
+                    DashboardView(selectedTab: $selectedTab, detailProject: $detailProject, onResetProjectNav: {
                         projectNavResetID = UUID()
                     })
                     .tag(0)
                     .toolbar(.hidden, for: .tabBar)
-                    
-                    ProjectsView()
+
+                    ProjectsView(detailProject: $detailProject)
                         .id(projectNavResetID)
                         .tag(1)
                         .toolbar(.hidden, for: .tabBar)
@@ -57,6 +58,11 @@ struct MainTabView: View {
                         aiInitialText = nil
                         isFromShortcut = false
                     }
+            }
+            .navigationDestination(item: $detailProject) { project in
+                ProjectDetailView(project: project)
+                    .environmentObject(store)
+                    .environmentObject(StoreManager.shared)
             }
         }
         .onChange(of: selectedTab) {

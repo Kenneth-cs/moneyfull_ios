@@ -23,6 +23,10 @@ struct ProfileView: View {
     @State private var showPrivacyPolicy = false
     @State private var showTermsOfService = false
     
+    // 手动刷新数据
+    @State private var isRefreshing = false
+    @State private var refreshDone = false
+
     // 性能测试工具（隐藏入口，点击头像10次显示）
     #if DEBUG
     @State private var showPerfTools = false
@@ -183,38 +187,6 @@ struct ProfileView: View {
                                 .padding(16)
                             }
                             .buttonStyle(.plain)
-
-                            Divider().padding(.leading, 72).opacity(0.5)
-
-                            Button {
-                                _ = store.cleanupOrphanedTransactions()
-                            } label: {
-                                HStack(spacing: 16) {
-                                    Circle()
-                                        .fill(Color.red.opacity(0.15))
-                                        .frame(width: 42, height: 42)
-                                        .overlay(
-                                            Image(systemName: "bandage.fill")
-                                                .foregroundColor(.red.opacity(0.7))
-                                                .font(.system(size: 18, weight: .semibold))
-                                        )
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("清理孤儿交易")
-                                            .font(.system(size: 15, weight: .semibold))
-                                            .foregroundColor(Color.App.textBlack)
-                                        Text("删除 project 为空的遗留账单")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.gray)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.gray.opacity(0.5))
-                                }
-                                .contentShape(Rectangle())
-                                .padding(16)
-                            }
-                            .buttonStyle(.plain)
                         }
                         .background(Color.App.cardBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 28))
@@ -353,6 +325,20 @@ struct ProfileView: View {
                                          iconBg: Color.App.lightOrange.opacity(0.4),
                                          iconColor: Color.App.darkOrange,
                                          title: "用户协议") { showTermsOfService = true }
+                            // 刷新数据：重新从本地数据库全量读取，修复 iCloud 后台同步后 UI 未更新的问题
+                            MenuGridItem(
+                                icon: refreshDone ? "checkmark.circle.fill" : "arrow.clockwise.icloud",
+                                iconBg: refreshDone ? Color.green.opacity(0.15) : Color.App.lightGreen.opacity(0.5),
+                                iconColor: refreshDone ? .green : Color.App.darkGreen,
+                                title: refreshDone ? "已刷新 ✓" : "刷新数据"
+                            ) {
+                                store.refresh()
+                                withAnimation(.spring(duration: 0.3)) { refreshDone = true }
+                                Task {
+                                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                                    withAnimation(.spring(duration: 0.3)) { refreshDone = false }
+                                }
+                            }
                         }
                         .padding(.horizontal, 4)
                     }
@@ -450,6 +436,38 @@ struct ProfileView: View {
                                             .font(.system(size: 15, weight: .semibold))
                                             .foregroundColor(Color.App.textBlack)
                                         Text("按导入批次一键清除")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.gray.opacity(0.5))
+                                }
+                                .contentShape(Rectangle())
+                                .padding(16)
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 72).opacity(0.5)
+
+                            Button {
+                                _ = store.cleanupOrphanedTransactions()
+                            } label: {
+                                HStack(spacing: 16) {
+                                    Circle()
+                                        .fill(Color.red.opacity(0.15))
+                                        .frame(width: 42, height: 42)
+                                        .overlay(
+                                            Image(systemName: "bandage.fill")
+                                                .foregroundColor(.red.opacity(0.7))
+                                                .font(.system(size: 18, weight: .semibold))
+                                        )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("清理孤儿交易")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text("删除 project 为空的遗留账单")
                                             .font(.system(size: 12))
                                             .foregroundColor(.gray)
                                     }

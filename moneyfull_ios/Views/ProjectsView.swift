@@ -6,7 +6,7 @@ struct ProjectsView: View {
     @EnvironmentObject var storeManager: StoreManager
     @State private var selectedTab = 0
     @State private var showManage = false
-    @State private var selectedProjectForDetail: Project?
+    @Binding var detailProject: Project?
     
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -82,7 +82,7 @@ struct ProjectsView: View {
                         ForEach(projects) { project in
                             Button {
                                 AnalyticsManager.shared.trackEvent(eventId: "project_view_detail", eventName: "查看项目详情", params: ["project_status": selectedTab == 0 ? "active" : "archived", "source": "project_center"])
-                                selectedProjectForDetail = project
+                                detailProject = project
                             } label: {
                                 ProjectDetailCard(project: project, onToggleActive: { store.toggleActiveProject(project) })
                             }
@@ -135,11 +135,6 @@ struct ProjectsView: View {
         .sheet(isPresented: $showManage) {
             ProjectManageView()
                 .environmentObject(store)
-        }
-        .navigationDestination(item: $selectedProjectForDetail) { project in
-            ProjectDetailView(project: project)
-                .environmentObject(store)
-                .environmentObject(storeManager)
         }
     }
     
@@ -335,7 +330,7 @@ func progressColorPair(for colorHex: String) -> ProgressColorPair {
 
 #Preview {
     NavigationView {
-        ProjectsView()
+        ProjectsView(detailProject: .constant(nil))
             .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
     }
 }

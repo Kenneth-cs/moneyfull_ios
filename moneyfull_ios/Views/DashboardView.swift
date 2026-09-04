@@ -25,8 +25,8 @@ struct DashboardView: View {
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var storeManager: StoreManager
     @Binding var selectedTab: Int
+    @Binding var detailProject: Project?
     var onResetProjectNav: (() -> Void)? = nil
-    @State private var detailProject: Project? = nil
     @State private var editingTransaction: Transaction?
     @State private var viewingTransaction: Transaction?
     @State private var isAddRecordPresented = false
@@ -501,11 +501,6 @@ struct DashboardView: View {
             Color.clear.frame(height: 110)
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
-        .navigationDestination(item: $detailProject) { project in
-            ProjectDetailView(project: project)
-                .environmentObject(store)
-                .environmentObject(storeManager)
-        }
         .fullScreenCover(isPresented: $isAddRecordPresented) {
             AddRecordView()
                 .environmentObject(store)
@@ -535,7 +530,10 @@ struct DashboardView: View {
                 .environmentObject(store)
         }
         // 统计缓存：数据变更（dataVersion）或切换统计维度时重算一次
+        // 300ms 防抖：避免 CloudKit 同步连续 bump dataVersion 时反复在主线程执行 3 次 DB fetch
         .task(id: store.dataVersion) {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
             updateStats()
         }
         .onChange(of: selectedPeriod) {
@@ -823,6 +821,6 @@ extension Date {
 }
 
 #Preview {
-    DashboardView(selectedTab: .constant(0))
+    DashboardView(selectedTab: .constant(0), detailProject: .constant(nil))
         .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
 }

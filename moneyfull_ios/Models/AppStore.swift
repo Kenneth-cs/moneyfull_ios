@@ -47,9 +47,12 @@ class AppStore: ObservableObject {
     private var refreshDebounceTask: Task<Void, Never>?
     private var notificationObserver: NSObjectProtocol?
     private var cloudKitEventObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
     
     /// 计数器：> 0 时抑制刷新（用于避免某些保存操作触发全量刷新）
     private var suppressRefreshCount = 0
+    /// 标志：debounce 窗口内是否收到过需要全量刷新的信号（import 结束事件）
+    private var pendingFullRefresh = false
     
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -80,47 +83,123 @@ class AppStore: ObservableObject {
         if let observer = cloudKitEventObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = foregroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
     
     private func startObservingDataChanges() {
-        // 监听 Core Data 的对象变化（主要捕获本地变化或部分同步变化）
+        // 监听 Core Data 的对象变化（主要捕获 CloudKit 后台批量合并）
+        // 注意：我们自己调用 save() 的通知已被 suppressRefreshCount 机制屏蔽，
+        // 因此能到达这里的通知绝大多数来自 CloudKit 后台导入上下文的合并。
         notificationObserver = NotificationCenter.default.addObserver(
             forName: .NSManagedObjectContextObjectsDidChange,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            // 直接在主队列检查，避免 Task 调度的时序问题
+        ) { [weak self] notification in
             guard let self, self.suppressRefreshCount == 0 else { return }
-            self.triggerDebouncedRefresh()
+            
+            // ── 实体类型过滤 ──────────────────────────────────────────
+            // CloudKit 同步时会更新内部元数据（ckRecordID、ckExportedAtDate 等），
+            // 这些更新也会触发此通知但不涉及财务数据，直接忽略可以显著降低噪音。
+            // 只有 Transaction 或 Project 发生变化时，才有必要刷新 UI。
+            let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
+            let updated  = notification.userInfo?[NSUpdatedObjectsKey]  as? Set<NSManagedObject> ?? []
+            let deleted  = notification.userInfo?[NSDeletedObjectsKey]  as? Set<NSManagedObject> ?? []
+            let allChanged = inserted.union(updated).union(deleted)
+            
+            guard !allChanged.isEmpty else { return }
+            
+            let changedEntityNames = Set(allChanged.compactMap { $0.entity.name })
+            // 财务相关实体：Transaction（交易）、Project（项目）
+            let financialEntities: Set<String> = ["Transaction", "Project"]
+            guard !changedEntityNames.isDisjoint(with: financialEntities) else {
+                // 仅 Category / AppNotice / BudgetItem 等辅助数据变化，无需扫描项目收支
+                return
+            }
+            
+            // CloudKit 批量导入期间：触发轻量刷新（跳过全量 refreshProjects() 扫描）
+            // 导入结束时由下方 cloudKitEventObserver 触发一次全量刷新，确保数据最终正确
+            self.triggerDebouncedRefresh(fullRefresh: false)
         }
         
-        // 监听 CloudKit 的同步事件（捕获远程数据下载）
+        // 监听 CloudKit 的同步完成事件（import 操作结束，触发一次全量刷新）
         cloudKitEventObserver = NotificationCenter.default.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            // 确保是 import 结束事件
             if let event = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event {
                 if event.type == .import && event.endDate != nil {
+                    // import 完成：全量刷新，补齐批量同步期间跳过的 projectSummaries 扫描
                     Task { @MainActor [weak self] in
-                        self?.triggerDebouncedRefresh()
+                        self?.triggerDebouncedRefresh(fullRefresh: true)
                     }
                 }
             }
         }
+
+        // ── 前台回来自动全量刷新 ────────────────────────────────────────
+        // 修补"后台同步完成但 UI 未更新"漏洞：
+        // App 退到后台时 CloudKit 可能在后台完成了同步，此时不会再发
+        // eventChangedNotification，导致回到前台后项目卡片等数据仍显示旧值。
+        // 监听 willEnterForeground，每次回到前台都触发一次全量刷新（有 500ms 防抖）。
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.triggerDebouncedRefresh(fullRefresh: true)
+            }
+        }
     }
     
-    private func triggerDebouncedRefresh() {
+    /// 触发防抖刷新。
+    ///
+    /// - Parameter fullRefresh: 传 `true` 时，debounce 结束后执行**全量刷新**（包含
+    ///   扫描所有项目 transactions 的 `refreshProjects()`）；传 `false`（默认）时执行
+    ///   **轻量刷新**（跳过 refreshProjects()，只更新近期交易、月度统计、分类等）。
+    ///
+    /// 典型用法：
+    /// - CloudKit 批量导入期间每个批次合并 → `fullRefresh: false`，避免每几百毫秒扫一遍 5000 条交易
+    /// - CloudKit import 操作**结束**时 → `fullRefresh: true`，补齐项目卡片的收支汇总
+    private func triggerDebouncedRefresh(fullRefresh: Bool = false) {
+        // 一旦收到 fullRefresh 信号，在本 debounce 窗口内始终保持全量标志
+        if fullRefresh { pendingFullRefresh = true }
+        
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.refreshDebounceTask?.cancel()
             self.refreshDebounceTask = Task { @MainActor [weak self] in
+                // 500ms 防抖：窗口内最后一次通知到达后再等 0.5s 才真正执行
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard !Task.isCancelled, let self else { return }
+                
+                // 消费并重置全量标志
+                let needsFull = self.pendingFullRefresh
+                self.pendingFullRefresh = false
+                
                 self.deduplicateDefaultProjects()
                 self.deduplicateCategories()
-                self.refresh()
+                
+                if needsFull {
+                    // ── 全量刷新路径 ──────────────────────────────────
+                    // App 启动、CloudKit import 完成、或其他需要重算所有项目收支的场景
+                    self.refresh()
+                } else {
+                    // ── 轻量刷新路径 ──────────────────────────────────
+                    // CloudKit 批量导入进行中：每批合并通知到这里，
+                    // 跳过代价高昂的 refreshProjects()（O(所有交易数)），
+                    // 只刷新最近 50 条交易列表、月度统计和分类，让首页数据基本实时更新。
+                    // projectSummaries（项目卡片上的"已花费"数字）会在 import 结束时
+                    // 由 cloudKitEventObserver 触发的全量刷新一次补齐。
+                    self.refreshTransactions()
+                    self.refreshCategories()
+                    self.refreshNotices()
+                    self.calcMonthlyStats()
+                    self.bumpDataVersion()
+                }
             }
         }
     }
@@ -139,7 +218,25 @@ class AppStore: ObservableObject {
 
     // MARK: - 分域刷新（避免任意 @Published 变化触发全屏重绘）
 
+    /// 全量刷新项目相关数据：重新分组排序 + 重算**所有项目**的收支汇总。
+    /// 代价是 O(全部项目的全部交易数)，只应在无法精确定位受影响项目的场景使用
+    /// （App 启动、CloudKit 远程同步合并）。日常写操作请调用下面的 `recomputeSummary(for:)`
+    /// 做增量更新，避免每次记一笔账都要把所有项目的交易重新扫一遍。
     private func refreshProjects() {
+        refreshProjectLists()
+
+        let all = activeProjects + archivedProjects
+        var summaries: [UUID: ProjectSummary] = [:]
+        summaries.reserveCapacity(all.count)
+        for project in all {
+            summaries[project.id] = computeSummary(for: project)
+        }
+        assignIfChanged(\.projectSummaries, summaries)
+    }
+
+    /// 只重新拉取并排序项目列表（active/archived 分组 + 置顶/排序），不触碰 transactions
+    /// 关系，代价是 O(项目数)。归档状态、置顶、排序变化时用这个即可，不需要重算收支汇总。
+    private func refreshProjectLists() {
         let descriptor = FetchDescriptor<Project>()
         let all = (try? modelContext.fetch(descriptor)) ?? []
         let newActive = all
@@ -153,28 +250,51 @@ class AppStore: ObservableObject {
             .filter { $0.isArchived }
             .sorted { $0.createdAt > $1.createdAt }
 
-        // 一次遍历产出全部项目的收支汇总，渲染路径（项目卡片）查表而非各自遍历关系
-        var summaries: [UUID: ProjectSummary] = [:]
-        summaries.reserveCapacity(all.count)
-        for project in all {
-            var spent: Double = 0
-            var income: Double = 0
-            for tx in project.transactions ?? [] {
-                if tx.type == .expense {
-                    spent += abs(tx.amount)
-                } else if tx.type == .income {
-                    income += abs(tx.amount)
-                }
-            }
-            summaries[project.id] = ProjectSummary(
-                totalSpent: spent,
-                totalIncome: income,
-                budgetProgress: project.budget > 0 ? spent / project.budget : 0
-            )
-        }
-
         assignIfChanged(\.activeProjects, newActive)
         assignIfChanged(\.archivedProjects, newArchived)
+    }
+
+    /// 遍历单个项目的 transactions 关系算出收支汇总，代价是 O(该项目的交易数)
+    private func computeSummary(for project: Project) -> ProjectSummary {
+        var spent: Double = 0
+        var income: Double = 0
+        for tx in project.transactions ?? [] {
+            if tx.type == .expense {
+                spent += abs(tx.amount)
+            } else if tx.type == .income {
+                income += abs(tx.amount)
+            }
+        }
+        return ProjectSummary(
+            totalSpent: spent,
+            totalIncome: income,
+            budgetProgress: project.budget > 0 ? spent / project.budget : 0
+        )
+    }
+
+    /// 增量重算单个项目的汇总并合并进 projectSummaries，不影响其他项目的缓存值。
+    /// 这是写操作后应该调用的方法——只重算真正变化的那个项目。
+    private func recomputeSummary(for project: Project) {
+        var summaries = projectSummaries
+        summaries[project.id] = computeSummary(for: project)
+        assignIfChanged(\.projectSummaries, summaries)
+    }
+
+    /// 批量增量重算多个项目的汇总（例如撤销一批导入可能横跨多个项目），
+    /// 一次性合并赋值，避免多次触发 objectWillChange
+    private func recomputeSummaries(for projects: [Project]) {
+        guard !projects.isEmpty else { return }
+        var summaries = projectSummaries
+        for project in projects {
+            summaries[project.id] = computeSummary(for: project)
+        }
+        assignIfChanged(\.projectSummaries, summaries)
+    }
+
+    /// 项目被删除时，直接从汇总表摘除对应条目，不需要重算
+    private func removeSummary(for projectID: UUID) {
+        var summaries = projectSummaries
+        guard summaries.removeValue(forKey: projectID) != nil else { return }
         assignIfChanged(\.projectSummaries, summaries)
     }
 
@@ -213,14 +333,6 @@ class AppStore: ObservableObject {
     /// dataVersion 只在金额相关模型变更时自增
     private func bumpDataVersion() {
         dataVersion += 1
-    }
-
-    /// 刷新与金额/项目汇总相关的域，并 bump dataVersion
-    private func refreshFinancialAndBump() {
-        refreshProjects()
-        refreshTransactions()
-        calcMonthlyStats()
-        bumpDataVersion()
     }
 
     /// 消息中心未读数量，用于首页铃铛角标
@@ -420,7 +532,10 @@ class AppStore: ObservableObject {
         project.transactions = (project.transactions ?? []) + [tx]
         modelContext.insert(tx)
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        recomputeSummary(for: project)   // 只重算这一个项目，不扫描其他项目的交易
+        bumpDataVersion()
 
         // 预算预警检查
         BudgetAlertService.shared.check(after: tx, in: project)
@@ -440,7 +555,8 @@ class AppStore: ObservableObject {
                               targetIncome: targetIncome, defaultRate: defaultRate)
         modelContext.insert(project)
         save()
-        refreshProjects()
+        refreshProjectLists()
+        recomputeSummary(for: project)   // 新项目还没有交易，结果是 0，代价可忽略
         bumpDataVersion()
         return project
     }
@@ -459,6 +575,8 @@ class AppStore: ObservableObject {
         let descriptor = FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == txID })
         let target = (try? modelContext.fetch(descriptor))?.first ?? tx
 
+        let oldProject = target.project   // 改动前所属项目，用于判断是否跨项目移动
+
         target.amount = amount
         target.rawType = type.rawValue  // 底层存储属性，CloudKit 不支持枚举
         target.categoryName = categoryName
@@ -473,7 +591,15 @@ class AppStore: ObservableObject {
             target.cashFlowType = cashFlowType
         }
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        // 只重算受影响的项目：一般是同一个项目，改到别的项目时新旧两个都要重算
+        let affected = Dictionary(
+            [oldProject, target.project].compactMap { $0 }.map { ($0.id, $0) },
+            uniquingKeysWith: { a, _ in a }
+        ).values
+        recomputeSummaries(for: Array(affected))
+        bumpDataVersion()
 
         // 预算预警检查
         if let project = target.project {
@@ -486,7 +612,9 @@ class AppStore: ObservableObject {
         let wasArchived = project.isArchived
         project.isArchived.toggle()
         save()
-        refreshFinancialAndBump()
+        // 归档状态只影响 active/archived 分组，不影响交易汇总，不需要重算 projectSummaries
+        refreshProjectLists()
+        bumpDataVersion()
 
         if !wasArchived {
             AnalyticsManager.shared.trackEvent(
@@ -514,16 +642,23 @@ class AppStore: ObservableObject {
             project.isActiveProject = true
         }
         save()
-        refreshProjects()
+        // isActiveProject 不影响列表分组/排序也不影响交易汇总，Project 是 SwiftData 的
+        // 引用类型模型，视图直接读取该属性即会响应，这里只需要 bump 一下缓存失效信号
         bumpDataVersion()
     }
 
     // MARK: - 删除数据
 
     func deleteTransaction(_ tx: Transaction) {
+        let project = tx.project   // 删除前记录所属项目，用于增量重算
         modelContext.delete(tx)
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        if let project = project {
+            recomputeSummary(for: project)
+        }
+        bumpDataVersion()
     }
 
     func deleteProject(_ project: Project) {
@@ -537,13 +672,17 @@ class AppStore: ObservableObject {
         }
         modelContext.delete(project)
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        refreshProjectLists()
+        removeSummary(for: pid)   // 项目已删除，直接摘除缓存条目，不需要重算
+        bumpDataVersion()
     }
 
     func updateProjectColor(_ project: Project, colorHex: String) {
         project.colorHex = colorHex
         save()
-        refreshProjects()
+        // colorHex 不影响列表排序/汇总，Project 是引用类型，视图会直接感知变化
         bumpDataVersion()
     }
 
@@ -567,7 +706,9 @@ class AppStore: ObservableObject {
         if let income = targetIncome { project.targetIncome = income }
         if let rate = defaultRate { project.defaultRate = rate }
         save()
-        refreshFinancialAndBump()
+        refreshProjectLists()
+        recomputeSummary(for: project)   // 预算变化会影响 budgetProgress，只重算这一个项目
+        bumpDataVersion()
 
         // 预算金额变更时重置检查点
         if budgetChanged {
@@ -580,7 +721,7 @@ class AppStore: ObservableObject {
             project.sortOrder = index
         }
         save()
-        refreshProjects()
+        refreshProjectLists()   // 只有排序变了，汇总数字不受影响
         bumpDataVersion()
     }
 
@@ -682,7 +823,8 @@ class AppStore: ObservableObject {
         project.timeEntries = (project.timeEntries ?? []) + [entry]
         modelContext.insert(entry)
         save()
-        refreshProjects()
+        // TimeEntry 不影响 projectSummaries（只统计 transactions）也不影响列表分组，
+        // Project 是引用类型模型，视图直接读取 project.timeEntries 即会响应
         bumpDataVersion()
         return entry
     }
@@ -693,7 +835,6 @@ class AppStore: ObservableObject {
         }
         modelContext.delete(entry)
         save()
-        refreshProjects()
         bumpDataVersion()
     }
     
@@ -705,9 +846,10 @@ class AppStore: ObservableObject {
     }
     
     func dataStats() -> (projectCount: Int, transactionCount: Int, categoryCount: Int) {
-        let projectCount = (try? modelContext.fetch(FetchDescriptor<Project>()).count) ?? 0
-        let txCount = (try? modelContext.fetch(FetchDescriptor<Transaction>()).count) ?? 0
-        let catCount = (try? modelContext.fetch(FetchDescriptor<Category>()).count) ?? 0
+        // fetchCount 只让数据库返回行数，不会把所有记录物化加载进内存
+        let projectCount = (try? modelContext.fetchCount(FetchDescriptor<Project>())) ?? 0
+        let txCount = (try? modelContext.fetchCount(FetchDescriptor<Transaction>())) ?? 0
+        let catCount = (try? modelContext.fetchCount(FetchDescriptor<Category>())) ?? 0
         return (projectCount, txCount, catCount)
     }
     
@@ -730,7 +872,8 @@ class AppStore: ObservableObject {
         )
         modelContext.insert(project)
         save()
-        refreshProjects()
+        refreshProjectLists()
+        recomputeSummary(for: project)   // 新项目还没有交易，结果是 0
         return project
     }
 
@@ -756,7 +899,10 @@ class AppStore: ObservableObject {
             count += 1
         }
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        recomputeSummary(for: project)   // 一批导入只属于历史账单这一个项目，只重算它
+        bumpDataVersion()
         return count
     }
 
@@ -767,28 +913,42 @@ class AppStore: ObservableObject {
         guard let allImported = try? modelContext.fetch(descriptor) else { return 0 }
 
         let batch = allImported.filter { $0.importBatchID == batchID }
+        // 提前记录受影响的项目（正常只会是历史账单一个，保险起见按去重集合处理）
+        let affectedProjects = Array(Dictionary(
+            batch.compactMap { $0.project }.map { ($0.id, $0) },
+            uniquingKeysWith: { a, _ in a }
+        ).values)
+
         for tx in batch {
             modelContext.delete(tx)
         }
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        recomputeSummaries(for: affectedProjects)
+        bumpDataVersion()
         return batch.count
     }
     
     // MARK: - 私有工具
     
+    /// 保存上下文。
+    /// 通过 suppressRefreshCount 抑制本次 save 触发的 NSManagedObjectContextObjectsDidChange
+    /// 通知，避免在写方法（addTransaction / deleteTransaction 等）已经做完增量刷新之后，
+    /// 500ms 后又无谓地触发一次全量 refreshProjects()。
+    /// 只有来自 CloudKit 后台导入的"外部"通知（suppressRefreshCount == 0 时）才会真正触发刷新。
     private func save() {
-        try? modelContext.save()
-    }
-    
-    /// 保存但不触发刷新（用于不需要重新加载所有数据的场景，如预算分类操作）
-    private func saveWithoutRefresh() {
         suppressRefreshCount += 1
         try? modelContext.save()
-        // 延迟递减计数器，确保通知处理器有机会检查到
+        // 延迟递减，确保通知处理器在本轮 RunLoop 结束前拿到 suppressRefreshCount > 0
         DispatchQueue.main.async { [weak self] in
             self?.suppressRefreshCount -= 1
         }
+    }
+    
+    /// 保存但不触发刷新（语义同 save()，保留以维持调用点的可读性）
+    private func saveWithoutRefresh() {
+        save()
     }
 
     // MARK: - 性能测试数据（仅 Debug 包）
@@ -828,7 +988,10 @@ class AppStore: ObservableObject {
             modelContext.insert(tx)
         }
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        recomputeSummary(for: project)   // 只重算测试数据所在的这一个项目
+        bumpDataVersion()
     }
 
     /// 一键清除全部性能测试账单，返回清除条数
@@ -839,11 +1002,18 @@ class AppStore: ObservableObject {
         )
         guard let allImported = try? modelContext.fetch(descriptor) else { return 0 }
         let batch = allImported.filter { $0.importBatchID == Self.perfTestBatchID }
+        let affectedProjects = Array(Dictionary(
+            batch.compactMap { $0.project }.map { ($0.id, $0) },
+            uniquingKeysWith: { a, _ in a }
+        ).values)
         for tx in batch {
             modelContext.delete(tx)
         }
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        recomputeSummaries(for: affectedProjects)
+        bumpDataVersion()
         return batch.count
     }
     #endif
@@ -859,7 +1029,10 @@ class AppStore: ObservableObject {
             modelContext.delete(tx)
         }
         save()
-        refreshFinancialAndBump()
+        refreshTransactions()
+        calcMonthlyStats()
+        // 孤儿交易没有所属项目（project == nil），不影响任何 projectSummaries
+        bumpDataVersion()
         return orphans.count
     }
 
@@ -1545,8 +1718,8 @@ class AppStore: ObservableObject {
         receivable.project = project
         project.receivables = (project.receivables ?? []) + [receivable]
         modelContext.insert(receivable)
+        // Receivable 不计入 projectSummaries（只统计 transactions），不需要 refreshProjects
         save()
-        refreshProjects()
         bumpDataVersion()
         return receivable
     }
@@ -1560,7 +1733,6 @@ class AppStore: ObservableObject {
         if let date = expectedDate { receivable.expectedDate = date }
         if let n = note { receivable.note = n }
         save()
-        refreshProjects()
         bumpDataVersion()
     }
 
@@ -1573,7 +1745,6 @@ class AppStore: ObservableObject {
             receivable.receivedDate = nil
         }
         save()
-        refreshProjects()
         bumpDataVersion()
     }
 
@@ -1583,7 +1754,6 @@ class AppStore: ObservableObject {
         }
         modelContext.delete(receivable)
         save()
-        refreshProjects()
         bumpDataVersion()
     }
 
@@ -1598,8 +1768,8 @@ class AppStore: ObservableObject {
         fixedCost.project = project
         project.fixedCosts = (project.fixedCosts ?? []) + [fixedCost]
         modelContext.insert(fixedCost)
+        // FixedCost 同样不计入 projectSummaries，不需要 refreshProjects
         save()
-        refreshProjects()
         bumpDataVersion()
         return fixedCost
     }
@@ -1613,14 +1783,12 @@ class AppStore: ObservableObject {
         if let cat = category { fixedCost.category = cat }
         if let date = nextDueDate { fixedCost.nextDueDate = date }
         save()
-        refreshProjects()
         bumpDataVersion()
     }
 
     func toggleFixedCost(_ fixedCost: FixedCost) {
         fixedCost.isActive.toggle()
         save()
-        refreshProjects()
         bumpDataVersion()
     }
 
@@ -1630,7 +1798,6 @@ class AppStore: ObservableObject {
         }
         modelContext.delete(fixedCost)
         save()
-        refreshProjects()
         bumpDataVersion()
     }
 }

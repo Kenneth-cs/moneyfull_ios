@@ -67,6 +67,12 @@ struct AnalyticsView: View {
     @State private var _allTxDaysCount: Int = 0
     @State private var _budgetProjects: [Project] = []
     @State private var _activeProjects: [Project] = []
+    // 预算健康卡 & 洞察卡用到的聚合数字（body 里一律读缓存，不做 O(N) 内联计算）
+    @State private var _periodTotalExpense: Double = 0
+    @State private var _periodTotalIncome: Double = 0
+    @State private var _avgDailyExpense: Double = 0
+    @State private var _maxSingleExpense: Double = 0
+    @State private var _oldestFilteredDate: Date? = nil
 
     // MARK: - 计算属性代理（body 直接读缓存，零计算开销）
     private var filteredTransactions: [Transaction] { _filteredTransactions }
@@ -80,9 +86,16 @@ struct AnalyticsView: View {
     private var expenseChangeDiff: Double { _expenseChangeDiff }
     private var previousPeriodExpense: Double { _previousPeriodExpense }
     private var budgetProjects: [Project] { _budgetProjects }
+    private var periodTotalExpense: Double { _periodTotalExpense }
+    private var periodTotalIncome: Double { _periodTotalIncome }
+    private var avgDailyExpense: Double { _avgDailyExpense }
+    private var maxSingleExpense: Double { _maxSingleExpense }
 
     // MARK: - 核心统计刷新（仅在过滤条件变化时调用，不在 body 里计算）
     private func updateFilteredData() {
+#if DEBUG
+        let debugStartedAt = CFAbsoluteTimeGetCurrent()
+#endif
         let calendar = Calendar.current
 
         // 1. 过滤当期交易：预先算好区间边界，用简单 Date 比较替代 calendar.isDate
@@ -113,6 +126,10 @@ struct AnalyticsView: View {
             filtered = allTransactions.filter { $0.date >= customStartDate && $0.date <= customEndDate }
         }
         _filteredTransactions = filtered
+        // 后续遍历 allTransactions 时需要判断“是否属于本期”。
+        // 原先 filtered.contains(tx) 是线性查找，外层再遍历全部交易会退化成 O(N²)；
+        // 5000 条测试数据时可能产生数千万次比较并阻塞主线程数秒。
+        let filteredIDs = Set(filtered.map(\.id))
 
         // 收支汇总：一次遍历同时算出当期支出/收入/上期支出/记账天数
         var currentExp: Double = 0
@@ -145,16 +162,31 @@ struct AnalyticsView: View {
                 if let s = prevStart, let e = prevEnd, tx.date >= s && tx.date < e {
                     prevExpense += amount
                 }
-                if filtered.contains(tx) { currentExp += amount }
+                if filteredIDs.contains(tx.id) { currentExp += amount }
             } else if tx.type == .income {
-                if filtered.contains(tx) { currentInc += amount }
+                if filteredIDs.contains(tx.id) { currentInc += amount }
             }
         }
         _previousPeriodExpense = prevExpense
-        _periodExpenseTxs = filtered.filter { $0.type == .expense }
-        _periodIncomeTxs  = filtered.filter { $0.type == .income }
+        let expTxs = filtered.filter { $0.type == .expense }
+        let incTxs = filtered.filter { $0.type == .income }
+        _periodExpenseTxs = expTxs
+        _periodIncomeTxs  = incTxs
         _expenseChangeDiff = currentExp - prevExpense
         _savingRate = currentInc > 0 ? (currentInc - currentExp) / currentInc : 0
+
+        // 3b. 洞察/汇总卡缓存——一次遍历，避免 body 里反复 O(N) reduce
+        _periodTotalExpense = currentExp
+        _periodTotalIncome  = currentInc
+        _oldestFilteredDate = filtered.map(\.date).min()
+        let daysInPeriod = max(1, {
+            if let oldest = _oldestFilteredDate {
+                return Calendar.current.dateComponents([.day], from: oldest, to: Date()).day ?? 1
+            }
+            return 1
+        }())
+        _avgDailyExpense    = expTxs.isEmpty ? 0 : currentExp / Double(daysInPeriod)
+        _maxSingleExpense   = expTxs.map { abs($0.amount) }.max() ?? 0
 
         // 4. 健康分（静态60 + 动态40）
         var staticScore: Double = 60
@@ -189,11 +221,22 @@ struct AnalyticsView: View {
         // 8. 项目列表缓存（避免 body 直接持有 store.activeProjects 依赖）
         _activeProjects = store.activeProjects
         _budgetProjects = store.activeProjects.filter { $0.budget > 0 }
+#if DEBUG
+        let elapsedMS = (CFAbsoluteTimeGetCurrent() - debugStartedAt) * 1_000
+        print("📊 [AnalyticsPerf] updateFilteredData \(String(format: "%.1f", elapsedMS))ms | all=\(allTransactions.count), filtered=\(filtered.count), range=\(timeRange.rawValue), version=\(store.dataVersion)")
+#endif
     }
 
     /// store 数据变化时调用：重新抓取所有账单并刷新缓存
     private func reloadFromStore() {
+#if DEBUG
+        let fetchStartedAt = CFAbsoluteTimeGetCurrent()
+#endif
         allTransactions = store.fetchAllTransactions()
+#if DEBUG
+        let fetchMS = (CFAbsoluteTimeGetCurrent() - fetchStartedAt) * 1_000
+        print("📊 [AnalyticsPerf] fetchAllTransactions \(String(format: "%.1f", fetchMS))ms | count=\(allTransactions.count), version=\(store.dataVersion)")
+#endif
         updateFilteredData()
     }
 
@@ -451,8 +494,8 @@ struct AnalyticsView: View {
                 // MARK: 豚言豚语
                 InsightCardView(
                     transactions: filteredTransactions,
-                    expense: periodExpenseTransactions.reduce(0) { $0 + $1.amount },
-                    income: periodIncomeTransactions.reduce(0) { $0 + $1.amount }
+                    expense: periodTotalExpense,   // 缓存值，避免 body 里 O(N) reduce
+                    income: periodTotalIncome
                 )
                 .padding(.horizontal, 24)
 
@@ -469,7 +512,12 @@ struct AnalyticsView: View {
             isVisible = false
         }
         // dataVersion 统一驱动：在统计页时立即刷新，不在时不白算
-        .onChange(of: store.dataVersion) { _, _ in reloadIfStale() }
+        .onChange(of: store.dataVersion) { oldVersion, newVersion in
+#if DEBUG
+            print("📊 [AnalyticsPerf] dataVersion \(oldVersion) → \(newVersion), visible=\(isVisible)")
+#endif
+            reloadIfStale()
+        }
         // 时间过滤条件变化
         .onChange(of: timeRange)       { _, _ in updateFilteredData() }
         .onChange(of: selectedMonth)   { _, _ in updateFilteredData() }
@@ -853,7 +901,12 @@ struct AnalyticsView: View {
 
             VStack(spacing: 12) {
                 ForEach(budgetProjects.prefix(3)) { project in
-                    BudgetHealthBar(project: project, periodSpent: nil) // 传入 nil 触发跨月全局累计逻辑
+                    // 用 store.projectSummaries 里已缓存的 totalSpent（O(1) 字典查找），
+                    // 而非 project.totalSpent（每次触发 SwiftData 关系加载 O(N)）。
+                    // 这同时断开了 BudgetHealthBar 对 project.transactions 的 Observation 订阅，
+                    // 避免 CloudKit 同步期间每写入一笔账就重渲一次统计页。
+                    BudgetHealthBar(project: project,
+                                    periodSpent: store.projectSummaries[project.id]?.totalSpent ?? 0)
                 }
             }
             .padding(.top, 4)
@@ -871,14 +924,11 @@ struct AnalyticsView: View {
                 .font(.system(size: 13, weight: .heavy))
                 .foregroundColor(Color.App.textBlack)
             
-            let daysInPeriod = max(1, Calendar.current.dateComponents([.day], from: filteredTransactions.map{$0.date}.min() ?? Date(), to: Date()).day ?? 1)
-            let avgDaily = periodExpenseTransactions.reduce(0){$0 + $1.amount} / Double(daysInPeriod)
-            let maxExpense = periodExpenseTransactions.map{$0.amount}.max() ?? 0
-            
+            // 直接读缓存，不在 body 里做 O(N) 的 map/reduce
             VStack(alignment: .leading, spacing: 8) {
                 SummaryRow(icon: "list.bullet.rectangle.portrait", color: Color.App.darkGreen, title: "本期共支出", value: "\(periodExpenseTransactions.count) 笔")
-                SummaryRow(icon: "calendar", color: Color.App.darkGreen, title: "平均每天支出", value: "¥\(Int(avgDaily))")
-                SummaryRow(icon: "cup.and.saucer", color: Color.App.darkGreen, title: "最高一笔支出", value: "¥\(Int(maxExpense))")
+                SummaryRow(icon: "calendar", color: Color.App.darkGreen, title: "平均每天支出", value: "¥\(Int(avgDailyExpense))")
+                SummaryRow(icon: "cup.and.saucer", color: Color.App.darkGreen, title: "最高一笔支出", value: "¥\(Int(maxSingleExpense))")
                 SummaryRow(icon: "clock", color: Color.App.darkGreen, title: "累计记账", value: "\(_allTxDaysCount) 天")
             }
             Spacer(minLength: 0)
@@ -1347,6 +1397,11 @@ struct AreaChartView: View {
                         switch value {
                         case .second(true, let drag):
                             if let location = drag?.location {
+#if DEBUG
+                                if selectedIndex == nil {
+                                    print("📊 [AnalyticsGesture] chart long-press drag began")
+                                }
+#endif
                                 let step = w / CGFloat(count - 1)
                                 let idx = Int(round(location.x / step))
                                 selectedIndex = max(0, min(idx, data.count - 1))
@@ -1355,6 +1410,11 @@ struct AreaChartView: View {
                         }
                     }
                     .onEnded { _ in
+#if DEBUG
+                        if selectedIndex != nil {
+                            print("📊 [AnalyticsGesture] chart long-press drag ended")
+                        }
+#endif
                         withAnimation(.easeOut(duration: 0.15)) { selectedIndex = nil }
                     }
             )
