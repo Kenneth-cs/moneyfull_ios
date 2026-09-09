@@ -3,46 +3,50 @@ import SwiftData
 
 struct CategoryManagementView: View {
     @EnvironmentObject var store: AppStore
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     @State private var showAddSheet = false
     @State private var editingCategory: Category?
     @State private var confirmDeleteCategory: Category?
+    @State private var isReordering = false
+    // 排序模式状态：按组名有序存储（保留组顺序和组内顺序）
+    @State private var sortGroupNames: [String] = []
+    @State private var sortCatsByGroup: [String: [Category]] = [:]
 
     private let iconOptions = CategoryIconLibrary.all
-    
+
     // 按 groupName 分组的分类数据
     private var groupedCategories: [(groupName: String, categories: [Category])] {
         let allCats = store.categories
-        
+
         // 核心预设分组顺序
         let coreGroups = ["吃喝", "居家", "出行", "娱乐", "成长", "人情", "其他", "工资", "额外", "临时"]
-        
+
         // 按 groupName 分组
         var groups = [String: [Category]]()
         for cat in allCats {
             let group = cat.groupName.isEmpty ? "其他" : cat.groupName
             groups[group, default: []].append(cat)
         }
-        
-        // 排序：核心分组按顺序，自定义分组按字母排序
+
+        // 排序：核心分组按顺序，自定义分组按字母排序；组内按 sortOrder / createdAt 排序
         let coreResult = coreGroups.compactMap { group -> (groupName: String, categories: [Category])? in
             guard let cats = groups[group], !cats.isEmpty else { return nil }
-            return (groupName: group, categories: cats.sorted { $0.createdAt < $1.createdAt })
+            return (groupName: group, categories: cats.sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) })
         }
-        
+
         let customGroups = groups.keys.filter { !coreGroups.contains($0) }.sorted()
         let customResult = customGroups.compactMap { group -> (groupName: String, categories: [Category])? in
             guard let cats = groups[group], !cats.isEmpty else { return nil }
-            return (groupName: group, categories: cats.sorted { $0.createdAt < $1.createdAt })
+            return (groupName: group, categories: cats.sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) })
         }
-        
+
         return coreResult + customResult
     }
 
     var body: some View {
-        NavigationView {
-            List {
-                // 添加自定义分类按钮（第一行）
+        List {
+            // 添加自定义分类按钮（仅在非排序模式显示）
+            if !isReordering {
                 Section {
                     Button(action: { showAddSheet = true }) {
                         HStack(spacing: 14) {
@@ -61,82 +65,52 @@ struct CategoryManagementView: View {
                         .padding(.vertical, 4)
                     }
                 }
+            }
 
-                ForEach(groupedCategories, id: \.groupName) { group in
-                    Section {
-                        ForEach(group.categories, id: \.id) { cat in
-                            HStack(spacing: 14) {
-                                Circle()
-                                    .fill(Color(hex: cat.colorHex))
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Image(systemName: cat.icon)
-                                            .foregroundColor(Color.App.textBlack.opacity(0.7))
-                                            .font(.system(size: 16))
-                                    )
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(cat.name)
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(Color.App.textBlack)
-                                    if !cat.isGlobal {
-                                        Text("自定义")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(.gray)
-                                    }
-                                }
-                                Spacer()
-                                
-                                // 编辑和删除按钮
-                                HStack(spacing: 12) {
-                                    Button {
-                                        editingCategory = cat
-                                    } label: {
-                                        Image(systemName: "pencil")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(Color.App.darkGreen)
-                                    }
-                                    .buttonStyle(.plain)
-                                    
-                                    Button(role: .destructive) {
-                                        confirmDeleteCategory = cat
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(Color.App.redExpense)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.vertical, 4)
+            if isReordering {
+                reorderingContent
+            } else {
+                groupedContent
+            }
+        }
+        .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
+        .navigationTitle("分类管理")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(isReordering ? "完成" : "排序") {
+                    if isReordering {
+                        // 按组顺序扁平化，保存全局排序
+                        let ordered = sortGroupNames.flatMap { sortCatsByGroup[$0] ?? [] }
+                        store.updateCategorySortOrder(ordered)
+                    }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isReordering.toggle()
+                        if isReordering {
+                            // 进入排序模式：从当前分组数据初始化排序状态
+                            let groups = groupedCategories
+                            sortGroupNames = groups.map { $0.groupName }
+                            sortCatsByGroup = Dictionary(uniqueKeysWithValues: groups.map { ($0.groupName, $0.categories) })
                         }
-                    } header: {
-                        Text(group.groupName)
                     }
                 }
+                .font(.system(size: 16, weight: .bold))
             }
-            .navigationTitle("分类管理")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { presentationMode.wrappedValue.dismiss() }
-                        .font(.system(size: 16, weight: .bold))
-                }
-            }
-            .alert("确认删除", isPresented: Binding(
-                get: { confirmDeleteCategory != nil },
-                set: { if !$0 { confirmDeleteCategory = nil } }
-            )) {
-                Button("取消", role: .cancel) { confirmDeleteCategory = nil }
-                Button("删除", role: .destructive) {
-                    if let cat = confirmDeleteCategory {
-                        store.deleteCategory(cat)
-                    }
-                    confirmDeleteCategory = nil
-                }
-            } message: {
+        }
+        .alert("确认删除", isPresented: Binding(
+            get: { confirmDeleteCategory != nil },
+            set: { if !$0 { confirmDeleteCategory = nil } }
+        )) {
+            Button("取消", role: .cancel) { confirmDeleteCategory = nil }
+            Button("删除", role: .destructive) {
                 if let cat = confirmDeleteCategory {
-                    Text("确定要删除「\(cat.name)」吗？删除后可在此重新添加。")
+                    store.deleteCategory(cat)
                 }
+                confirmDeleteCategory = nil
+            }
+        } message: {
+            if let cat = confirmDeleteCategory {
+                Text("确定要删除「\(cat.name)」吗？删除后可在此重新添加。")
             }
         }
         .sheet(isPresented: $showAddSheet) {
@@ -158,6 +132,101 @@ struct CategoryManagementView: View {
                     store.updateCategory(cat, name: name, icon: icon, colorHex: colorHex, groupName: groupName)
                 }
             )
+        }
+    }
+
+    // MARK: - 正常分组展示
+    private var groupedContent: some View {
+        ForEach(groupedCategories, id: \.groupName) { group in
+            Section {
+                ForEach(group.categories, id: \.id) { cat in
+                    categoryRow(cat: cat)
+                        .padding(.vertical, 4)
+                }
+            } header: {
+                Text(group.groupName)
+            }
+        }
+    }
+
+    // MARK: - 排序模式：保留分组，组内可拖拽
+    @ViewBuilder
+    private var reorderingContent: some View {
+        Section {
+            Text("长按并拖动右侧 ≡ 可调整同组内排序")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.gray)
+                .padding(.vertical, 2)
+        }
+        ForEach(sortGroupNames, id: \.self) { groupName in
+            Section {
+                ForEach(sortCatsByGroup[groupName] ?? [], id: \.id) { cat in
+                    HStack(spacing: 14) {
+                        Circle()
+                            .fill(Color(hex: cat.colorHex))
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                Image(systemName: cat.icon)
+                                    .foregroundColor(Color.App.textBlack.opacity(0.7))
+                                    .font(.system(size: 16))
+                            )
+                        Text(cat.name)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(Color.App.textBlack)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onMove { source, destination in
+                    sortCatsByGroup[groupName]?.move(fromOffsets: source, toOffset: destination)
+                }
+            } header: {
+                Text(groupName)
+            }
+        }
+    }
+
+    private func categoryRow(cat: Category) -> some View {
+        HStack(spacing: 14) {
+            Circle()
+                .fill(Color(hex: cat.colorHex))
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Image(systemName: cat.icon)
+                        .foregroundColor(Color.App.textBlack.opacity(0.7))
+                        .font(.system(size: 16))
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(cat.name)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(Color.App.textBlack)
+                if !cat.isGlobal {
+                    Text("自定义")
+                        .font(.system(size: 11))
+                        .foregroundColor(.gray)
+                }
+            }
+            Spacer()
+
+            // 编辑和删除按钮
+            HStack(spacing: 12) {
+                Button {
+                    editingCategory = cat
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14))
+                        .foregroundColor(Color.App.darkGreen)
+                }
+                .buttonStyle(.plain)
+
+                Button(role: .destructive) {
+                    confirmDeleteCategory = cat
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14))
+                        .foregroundColor(Color.App.redExpense)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
@@ -187,13 +256,13 @@ struct CategoryFormSheet: View {
         _name = State(initialValue: editingCategory?.name ?? "")
         _selectedIcon = State(initialValue: editingCategory?.icon ?? "fork.knife")
         _selectedColor = State(initialValue: editingCategory?.colorHex ?? "#A8E0C2")
-        
+
         let initialGroup = editingCategory?.groupName ?? ""
         _selectedGroupName = State(initialValue: initialGroup.isEmpty ? "其他" : initialGroup)
         _showCustomGroupInput = State(initialValue: false)
         _customGroupName = State(initialValue: "")
     }
-    
+
     // 动态获取所有已存在的分组名
     private var existingGroupNames: [String] {
         let allGroups = Set(allCategories.compactMap { cat -> String? in
@@ -201,7 +270,7 @@ struct CategoryFormSheet: View {
         })
         return Array(allGroups).sorted()
     }
-    
+
     // 获取所有可用分组（核心 + 动态）
     private var availableGroups: [String] {
         let dynamic = existingGroupNames.filter { !coreGroups.contains($0) }
@@ -230,7 +299,7 @@ struct CategoryFormSheet: View {
                         Text("所属分组")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(Color.App.textBlack.opacity(0.7))
-                        
+
                         if showCustomGroupInput {
                             HStack {
                                 TextField("输入新分组名称", text: $customGroupName)
@@ -238,7 +307,7 @@ struct CategoryFormSheet: View {
                                     .background(Color.App.tabBackground)
                                     .clipShape(RoundedRectangle(cornerRadius: 16))
                                     .font(.system(size: 16))
-                                
+
                                 Button(action: {
                                     showCustomGroupInput = false
                                     customGroupName = ""
@@ -267,7 +336,7 @@ struct CategoryFormSheet: View {
                                         .background(Color.App.primaryGreen.opacity(0.2))
                                         .clipShape(Capsule())
                                     }
-                                    
+
                                     ForEach(availableGroups, id: \.self) { group in
                                         Button(action: {
                                             selectedGroupName = group

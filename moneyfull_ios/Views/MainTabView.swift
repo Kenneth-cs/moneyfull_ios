@@ -11,6 +11,7 @@ struct MainTabView: View {
     @State private var aiInitialText: String?
     @State private var isFromShortcut: Bool = false
     @State private var detailProject: Project?
+    @State private var showCategoryManagement = false
     
     var body: some View {
         NavigationStack {
@@ -37,7 +38,7 @@ struct MainTabView: View {
                         .tag(3)
                         .toolbar(.hidden, for: .tabBar)
                     
-                    ProfileView()
+                    ProfileView(showCategoryManagement: $showCategoryManagement)
                         .tag(4)
                         .toolbar(.hidden, for: .tabBar)
                 }
@@ -63,6 +64,10 @@ struct MainTabView: View {
                 ProjectDetailView(project: project)
                     .environmentObject(store)
                     .environmentObject(StoreManager.shared)
+            }
+            .navigationDestination(isPresented: $showCategoryManagement) {
+                CategoryManagementView()
+                    .environmentObject(store)
             }
         }
         .onChange(of: selectedTab) {

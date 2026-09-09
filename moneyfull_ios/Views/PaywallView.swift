@@ -226,16 +226,12 @@ private struct PaywallHeaderSection: View {
                 .blur(radius: 50)
 
             VStack(spacing: 12) {
-                // Capybara with crown
-                ZStack(alignment: .top) {
-                    CapybaraView(size: 88)
-                    Text("👑")
-                        .font(.system(size: 24))
-                        .offset(y: -18)
-                        .scaleEffect(sparkle ? 1.1 : 1.0)
-                        .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: sparkle)
-                }
-                .padding(.top, 78)
+                // Crown emoji only
+                Text("👑")
+                    .font(.system(size: 52))
+                    .scaleEffect(sparkle ? 1.12 : 1.0)
+                    .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: sparkle)
+                    .padding(.top, 78)
 
                 // Badge
                 HStack(spacing: 6) {

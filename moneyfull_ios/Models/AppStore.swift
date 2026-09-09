@@ -763,6 +763,17 @@ class AppStore: ObservableObject {
         save()
         refreshCategories()
     }
+
+    func updateCategorySortOrder(_ orderedCategories: [Category]) {
+        for (index, cat) in orderedCategories.enumerated() {
+            cat.sortOrder = index
+        }
+        save()
+        // refreshCategories 的 assignIfChanged 会比较同一批 SwiftData 对象引用（内容不变），
+        // 导致跳过赋值 → SwiftUI 不重绘。此处手动通知，确保视图更新。
+        objectWillChange.send()
+        refreshCategories()
+    }
     
     // MARK: - BudgetItem CRUD
     

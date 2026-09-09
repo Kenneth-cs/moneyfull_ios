@@ -5,11 +5,11 @@ struct ProfileView: View {
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var storeManager: StoreManager
     @EnvironmentObject var theme: ThemeManager
+    @Binding var showCategoryManagement: Bool
     @State private var showBudgetSetting = false
     @State private var showExportSheet = false
     @State private var showImportSheet = false
     @State private var showThemePicker = false
-    @State private var showCategoryManagement = false
     @State private var showProjectSorting = false
     @State private var showBackTapTutorial = false
     @State private var showMemoryManagement = false
@@ -521,10 +521,6 @@ struct ProfileView: View {
         // 预算设置页面
         .sheet(isPresented: $showBudgetSetting) {
             BudgetSettingView()
-        }
-        // 分类管理页面
-        .sheet(isPresented: $showCategoryManagement) {
-            CategoryManagementView()
         }
         // 主题选择弹窗
         .sheet(isPresented: $showThemePicker) {
@@ -1213,7 +1209,7 @@ struct FeedbackSheetView: View {
 }
 
 #Preview {
-    ProfileView()
+    ProfileView(showCategoryManagement: .constant(false))
         .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
         .environmentObject(StoreManager.shared)
         .environmentObject(ThemeManager())
