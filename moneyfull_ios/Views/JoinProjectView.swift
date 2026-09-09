@@ -123,15 +123,15 @@ struct JoinProjectView: View {
                 }
 
                 Section {
-                    Button {
-                        Task {
-                            if isPreviewMode {
-                                await joinProject()
-                            } else {
-                                await fetchPreview()
-                            }
+                Button {
+                    Task {
+                        if joinedProject != nil || isPreviewMode {
+                            await joinProject()
+                        } else {
+                            await fetchPreview()
                         }
-                    } label: {
+                    }
+                } label: {
                         if isLoading || isFetchingPreview {
                             ProgressView()
                                 .frame(maxWidth: .infinity)

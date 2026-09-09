@@ -12,6 +12,7 @@ struct MainTabView: View {
     @State private var isFromShortcut: Bool = false
     @State private var detailProject: Project?
     @State private var showCategoryManagement = false
+    @State private var deepLinkSharedProject: JoinedSharedProject?
     
     var body: some View {
         NavigationStack {
@@ -65,6 +66,9 @@ struct MainTabView: View {
                     .environmentObject(store)
                     .environmentObject(StoreManager.shared)
             }
+            .navigationDestination(item: $deepLinkSharedProject) { project in
+                SharedProjectDetailView(project: project)
+            }
             .navigationDestination(isPresented: $showCategoryManagement) {
                 CategoryManagementView()
                     .environmentObject(store)
@@ -80,6 +84,15 @@ struct MainTabView: View {
                 .environmentObject(store)
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onReceive(NotificationCenter.default.publisher(for: .sharedProjectJoinedFromDeepLink)) { notification in
+            if let project = notification.userInfo?["project"] as? JoinedSharedProject {
+                // 切到项目 Tab，稍后触发导航（避免 sheet 未完全关闭就 push 导致 SwiftUI 冲突）
+                selectedTab = 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    deepLinkSharedProject = project
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToOnboardingChat)) { _ in
             aiInitialText = nil
             isFromShortcut = false

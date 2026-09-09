@@ -240,7 +240,31 @@ struct ContentView: View {
         #if DEBUG
         print("📱 Deep Link received: \(url)")
         #endif
-        
+
+        // 优先处理加入共享账本的 deep link，避免被 AI 逻辑拦截
+        if url.scheme == "moneyfull", url.host == "join" {
+            var code: String? = nil
+            if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let q = comps.queryItems?.first(where: { $0.name == "code" })?.value,
+               !q.isEmpty {
+                code = q.uppercased()
+            } else {
+                let p = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                if !p.isEmpty { code = p.uppercased() }
+            }
+            if let code = code {
+                #if DEBUG
+                print("✅ Deep Link: join code = \(code)")
+                #endif
+                NotificationCenter.default.post(name: .openJoinProjectFromDeepLink, object: code)
+            } else {
+                #if DEBUG
+                print("❌ Deep Link: join URL 解析不到 code")
+                #endif
+            }
+            return
+        }
+
         guard url.scheme == "moneyfull",
               url.host == "ai",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -325,6 +349,8 @@ extension Notification.Name {
     static let navigateToOnboardingChat = Notification.Name("navigateToOnboardingChat")
     /// 老用户会员福利发放成功时广播，StoreManager 借此重新计算 isPremium
     static let legacyGiftGranted = Notification.Name("legacyGiftGranted")
+    /// ContentView 解析到 moneyfull://join?code=... 后广播，App 层监听以弹出加入弹窗
+    static let openJoinProjectFromDeepLink = Notification.Name("openJoinProjectFromDeepLink")
 }
 
 #Preview {

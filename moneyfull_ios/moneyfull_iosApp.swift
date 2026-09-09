@@ -122,12 +122,19 @@ struct moneyfull_iosApp: App {
                 }
                 .sheet(isPresented: $showJoinFromDeepLink) {
                     JoinProjectView(prefilledCode: deepLinkInviteCode) { project in
-                        // 加入成功后通知 SharedProjectListView 导航到详情页
+                        // 加入成功后通知 MainTabView 导航到详情页
                         NotificationCenter.default.post(
                             name: .sharedProjectJoinedFromDeepLink,
                             object: nil,
                             userInfo: ["project": project]
                         )
+                    }
+                }
+                // 监听 ContentView 转发的 join deep link（ContentView 的 onOpenURL 是最内层，会先于此处触发）
+                .onReceive(NotificationCenter.default.publisher(for: .openJoinProjectFromDeepLink)) { notification in
+                    if let code = notification.object as? String {
+                        deepLinkInviteCode = code
+                        showJoinFromDeepLink = true
                     }
                 }
         }

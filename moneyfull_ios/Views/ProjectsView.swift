@@ -179,7 +179,14 @@ struct ProjectsView: View {
                 .environmentObject(store)
         }
         .sheet(isPresented: $showJoinSheet) {
-            JoinProjectView()
+            JoinProjectView(onJoined: { project in
+                // 复用同一套通知机制，MainTabView 监听后负责导航到详情
+                NotificationCenter.default.post(
+                    name: .sharedProjectJoinedFromDeepLink,
+                    object: nil,
+                    userInfo: ["project": project]
+                )
+            })
         }
         // 共享记账入口选择弹层
         .sheet(isPresented: $showSharedEntrySheet) {
