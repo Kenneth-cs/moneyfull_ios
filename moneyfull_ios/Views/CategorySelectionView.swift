@@ -249,6 +249,7 @@ struct CategorySelectionView: View {
             let isPrimary0 = $0.name == primaryName || (group == "其他" && $0.name == "其它")
             let isPrimary1 = $1.name == primaryName || (group == "其他" && $1.name == "其它")
             if isPrimary0 != isPrimary1 { return isPrimary0 }
+            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
             return $0.createdAt < $1.createdAt
         }
     }
