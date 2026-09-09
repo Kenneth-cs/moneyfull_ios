@@ -1,8 +1,12 @@
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 const db = require('../db');
 const { generateUniqueCode } = require('../utils/inviteCode');
 const { joinLimiter, writeLimiter } = require('../utils/rateLimit');
+
+// 静态资源（Logo 等图片）—— 放在 /shared-api/assets/ 路径下
+router.use('/assets', express.static(path.join(__dirname, '../../assets')));
 
 // 3.1 创建共享项目
 router.post('/', async (req, res) => {
@@ -580,7 +584,7 @@ router.get('/:inviteCode/report', async (req, res) => {
   <title>「${proj.name}」共享账单</title>
   <meta property="og:title" content="「${proj.name}」共享账单">
   <meta property="og:description" content="${memberCount} 位成员 · 共支出 ¥${totalSpent.toFixed(2)}">
-  <meta property="og:image" content="https://originapex.cn/assets/logo.png">
+  <meta property="og:image" content="https://originapex.cn/shared-api/assets/logo.png">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;background:#f2f4f6;min-height:100vh;padding:20px 16px 40px}
@@ -733,7 +737,7 @@ router.get('/join-page/:inviteCode', async (req, res) => {
   <title>和「重要的人」一起记账更有动力！</title>
   <meta property="og:title" content="和「重要的人」一起记账更有动力！">
   <meta property="og:description" content="${creatorName} 在钱小满创建了一个共享账本，邀请你一起记录共同开支">
-  <meta property="og:image" content="https://originapex.cn/assets/logo.png">
+  <meta property="og:image" content="https://originapex.cn/shared-api/assets/logo.png">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;background:linear-gradient(160deg,#eaf6f0 0%,#f5f5f7 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px}
