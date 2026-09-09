@@ -796,7 +796,7 @@ struct AIChatView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in if !isRecording { startRecording() } }
-                .onEnded   { _ in if  isRecording { stopRecording()  } }
+                .onEnded { _ in stopRecording() }
         )
     }
 
@@ -923,7 +923,7 @@ struct AIChatView: View {
                     messages.append(msg)
 
                     // 持久化预制消息
-                    try? contextManager.saveChatHistory(
+                    _ = try? contextManager.saveChatHistory(
                         role: "assistant", content: config.text, isPrescripted: true
                     )
 
@@ -971,7 +971,7 @@ struct AIChatView: View {
         // 快速写入所有预制消息（不逐条显示）
         let scripts = PersonaOnboardingScript.messages(for: persona)
         for config in scripts {
-            try? contextManager.saveChatHistory(
+        _ = try? contextManager.saveChatHistory(
                 role: "assistant", content: config.text, isPrescripted: true
             )
         }
@@ -1076,7 +1076,7 @@ struct AIChatView: View {
         if let idx = messages.firstIndex(where: { $0.id == message.id }) {
             messages[idx] = ChatMessage(role: .assistant, content: "已取消入账", timestamp: Date())
         }
-        try? contextManager.saveChatHistory(role: "assistant", content: "已取消入账")
+        _ = try? contextManager.saveChatHistory(role: "assistant", content: "已取消入账")
     }
 
     private func handleDeleteTransaction(_ tx: Transaction, message: ChatMessage) {
@@ -1085,11 +1085,11 @@ struct AIChatView: View {
             messages[idx].isDeleted = true
             messages[idx].confirmedTransaction = nil
         }
-        try? contextManager.saveChatHistory(role: "assistant", content: "🗑️ 已删除")
+        _ = try? contextManager.saveChatHistory(role: "assistant", content: "🗑️ 已删除")
     }
 
     private func handleSaveMemory(keyword: String, categoryName: String, projectName: String?) {
-        try? contextManager.saveMemoryRule(
+    _ = try? contextManager.saveMemoryRule(
             keyword: keyword, categoryName: categoryName, projectName: projectName
         )
     }
@@ -1101,7 +1101,7 @@ struct AIChatView: View {
         )
         let content = "已成功创建项目「\(projectData.projectName)」"
         messages.append(ChatMessage(role: .assistant, content: content, timestamp: Date()))
-        try? contextManager.saveChatHistory(role: "assistant", content: content)
+        _ = try? contextManager.saveChatHistory(role: "assistant", content: content)
     }
 
     private func sendMessage() {
@@ -1111,7 +1111,7 @@ struct AIChatView: View {
         messageText = ""
         isInputFocused = false
         showPlusMenu = false
-        try? contextManager.saveChatHistory(role: "user", content: text)
+        _ = try? contextManager.saveChatHistory(role: "user", content: text)
         Task { await parseTransaction(from: text) }
     }
 
@@ -1138,7 +1138,7 @@ struct AIChatView: View {
             } catch {
                 print("⚠️ 图片识别失败（第\(attempt + 1)次）：\(error.localizedDescription)")
                 if attempt < maxRetries {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    _ = try? await Task.sleep(nanoseconds: 1_000_000_000)
                 } else {
                     await MainActor.run {
                         messages.removeAll { $0.id == processingMsg.id }
@@ -1155,18 +1155,34 @@ struct AIChatView: View {
     }
 
     private func startRecording() {
-        Task {
-            guard await speechService.requestPermission() else { return }
+        // 必须同步占住状态：DragGesture.onChanged 会在按住期间连续回调。
+        // 若等权限/引擎就绪后再置 true，会并发多次 startRecording，
+        // 第二次 installTap 会抛无法捕获的 NSException 导致闪退。
+        guard !isRecording else { return }
+        isRecording = true
+        Task { @MainActor in
+            let granted = await speechService.requestPermission()
+            guard isRecording else {
+                speechService.cancelRecording()
+                return
+            }
+            guard granted else {
+                isRecording = false
+                return
+            }
             do {
-                try speechService.startRecording()
-                await MainActor.run { isRecording = true }
+                try await speechService.startRecording()
             } catch {
                 print("[Speech] startRecording failed: \(error)")
+                if isRecording {
+                    isRecording = false
+                }
             }
         }
     }
 
     private func stopRecording() {
+        guard isRecording else { return }
         isRecording = false
         speechService.stopRecording {
             let t = self.speechService.transcribedText
@@ -1193,7 +1209,7 @@ struct AIChatView: View {
                 print("⚠️ AI解析失败（第\(attempt + 1)次）：\(error.localizedDescription)")
                 if attempt < maxRetries {
                     // 等待1秒后重试，让网络短暂恢复
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    _ = try? await Task.sleep(nanoseconds: 1_000_000_000)
                 } else {
                     // 全部重试耗尽，告知用户
                     await MainActor.run {
@@ -1232,7 +1248,7 @@ struct AIChatView: View {
                 } catch {
                     print("⚠️ OCR文本解析失败（第\(attempt + 1)次）：\(error.localizedDescription)")
                     if attempt < maxRetries {
-                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        _ = try? await Task.sleep(nanoseconds: 1_000_000_000)
                     } else {
                         await MainActor.run {
                             messages.removeAll { $0.role == .assistant && $0.content == "正在识别账单..." }
@@ -1271,7 +1287,7 @@ struct AIChatView: View {
                         usesRichText: true
                     )
                     messages.append(msg)
-                    try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
+                    _ = try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
                 } else {
                     let msg = ChatMessage(
                         role: .assistant,
@@ -1279,7 +1295,7 @@ struct AIChatView: View {
                         timestamp: Date()
                     )
                     messages.append(msg)
-                    try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
+                    _ = try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
                 }
             } else {
                 // 普通交易记录
@@ -1299,7 +1315,7 @@ struct AIChatView: View {
                     )
                 )
                 messages.append(card)
-                try? contextManager.saveChatHistory(role: "assistant", content: "交易确认卡片")
+                _ = try? contextManager.saveChatHistory(role: "assistant", content: "交易确认卡片")
             }
 
         } else if result.status == "suggest_new_category" {
@@ -1322,7 +1338,7 @@ struct AIChatView: View {
                 )
             )
             messages.append(card)
-            try? contextManager.saveChatHistory(role: "assistant", content: "新分类建议卡片")
+            _ = try? contextManager.saveChatHistory(role: "assistant", content: "新分类建议卡片")
 
         } else if result.status == "insight" {
             // 消费洞察：AI 回复文案 + 本地计算卡片数据
@@ -1361,10 +1377,10 @@ struct AIChatView: View {
                 // 持久化（折中方案：JSON 编码存入 ChatHistory）
                 if let encoded = try? JSONEncoder().encode(data),
                    let jsonStr = String(data: encoded, encoding: .utf8) {
-                    try? contextManager.saveChatHistory(role: "assistant", content: "__INSIGHT__:\(jsonStr)")
+                   _ = try? contextManager.saveChatHistory(role: "assistant", content: "__INSIGHT__:\(jsonStr)")
                 }
             }
-            try? contextManager.saveChatHistory(role: "assistant", content: reply)
+            _ = try? contextManager.saveChatHistory(role: "assistant", content: reply)
 
         } else if result.status == "need_clarification" {
             let msg = ChatMessage(
@@ -1372,7 +1388,7 @@ struct AIChatView: View {
                 timestamp: Date(), usesRichText: true
             )
             messages.append(msg)
-            try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
+            _ = try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
 
         } else if result.status == "chat" {
             let msg = ChatMessage(
@@ -1381,7 +1397,7 @@ struct AIChatView: View {
                 timestamp: Date(), usesRichText: true
             )
             messages.append(msg)
-            try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
+            _ = try? contextManager.saveChatHistory(role: "assistant", content: msg.content)
 
         } else if result.status == "project_creation_requested" {
             let name = result.projectName ?? "新项目"
@@ -1392,7 +1408,7 @@ struct AIChatView: View {
                 projectCreation: ProjectCreationData(projectName: name)
             )
             messages.append(msg)
-            try? contextManager.saveChatHistory(role: "assistant", content: "已创建项目：\(name)")
+            _ = try? contextManager.saveChatHistory(role: "assistant", content: "已创建项目：\(name)")
         }
     }
 }
@@ -1760,7 +1776,7 @@ struct OnboardingImageThumbnail: View {
             .resizable()
             .scaledToFill()
             .frame(maxWidth: UIScreen.main.bounds.width - 120)
-            .frame(height: 180)
+            .frame(height: 110)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
             .onTapGesture { showFullScreen = true }

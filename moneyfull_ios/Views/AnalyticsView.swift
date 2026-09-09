@@ -188,24 +188,34 @@ struct AnalyticsView: View {
         _avgDailyExpense    = expTxs.isEmpty ? 0 : currentExp / Double(daysInPeriod)
         _maxSingleExpense   = expTxs.map { abs($0.amount) }.max() ?? 0
 
-        // 4. 健康分（静态60 + 动态40）
-        var staticScore: Double = 60
+        // 4. 健康分（静态分 + 动态分，满分 100）
+        // 静态分（0-70）：基于收支比或支出控制
+        var staticScore: Double
         if currentInc == 0 {
-            if currentExp > 0 { staticScore = 30 }
+            // 纯支出型（未录入收入）：给合理基础分，不过度惩罚
+            // 有支出给55，完全无记录给60（欢迎状态）
+            staticScore = currentExp == 0 ? 60 : 55
         } else {
+            // 收支比：储蓄率越高分越高
             let ratio = currentExp / currentInc
-            if ratio <= 1 { staticScore = 60 }
-            else if ratio <= 1.2 { staticScore = 50 }
-            else if ratio <= 1.5 { staticScore = 40 }
-            else { staticScore = 20 }
+            if      ratio <= 0.5  { staticScore = 70 }   // 储蓄率≥50%，优秀
+            else if ratio <= 0.7  { staticScore = 65 }   // 储蓄率 30-50%，良好
+            else if ratio <= 1.0  { staticScore = 60 }   // 收支平衡或略盈余
+            else if ratio <= 1.2  { staticScore = 45 }   // 轻微超支
+            else if ratio <= 1.5  { staticScore = 30 }   // 中度超支
+            else                  { staticScore = 15 }   // 严重超支
         }
-        var dynamicScore: Double = 20
+
+        // 动态分（0-30）：基于本期 vs 上期支出趋势
+        // 无历史数据时给15分（中性，新用户不惩罚）
+        var dynamicScore: Double = 15
         if prevExpense > 0 {
-            if currentExp < prevExpense {
-                dynamicScore += min((prevExpense - currentExp) / prevExpense * 20, 20)
-            } else if currentExp > prevExpense {
-                dynamicScore -= min((currentExp - prevExpense) / prevExpense * 20, 20)
-            }
+            let changeRate = (currentExp - prevExpense) / prevExpense
+            if      changeRate < -0.2 { dynamicScore = 30 }  // 支出下降>20%，显著改善
+            else if changeRate < 0    { dynamicScore = 20 }  // 支出小幅下降
+            else if changeRate < 0.1  { dynamicScore = 15 }  // 基本持平
+            else if changeRate < 0.3  { dynamicScore = 5  }  // 小幅上涨，需关注
+            else                      { dynamicScore = 0  }  // 支出明显上涨
         }
         _healthScore = max(0, min(Int(staticScore + dynamicScore), 100))
 
@@ -385,7 +395,7 @@ struct AnalyticsView: View {
                     break
                 }
             }
-            for (date, b) in buckets.sorted(by: { $0.key < $1.key }) {
+            for (_, b) in buckets.sorted(by: { $0.key < $1.key }) {
                 result.append((label: b.label, expense: b.exp, income: b.inc, saving: b.inc - b.exp))
             }
         }
@@ -395,11 +405,10 @@ struct AnalyticsView: View {
     // MARK: - IP 形象联动
     private var ipImageName: String {
         switch healthScore {
-        case 80...100: return "ip_bear"      // 开心悠闲
-        case 60..<80: return "ip_bear"       // 正常状态
-        case 40..<60: return "ip_sweat"      // 流汗紧张
-        case 20..<40: return "ip_eat_dirt"   // 吃土状态
-        default: return "ip_shocked"         // 震惊崩溃 (0-19)
+        case 80...100: return "ip_bear"        // 开心悠闲
+        case 60..<80:  return "ip_sweat"       // 有点紧张，需注意
+        case 40..<60:  return "ip_eat_dirt"    // 吃土状态
+        default:       return "ip_shocked"     // 震惊崩溃 (0-39)
         }
     }
 

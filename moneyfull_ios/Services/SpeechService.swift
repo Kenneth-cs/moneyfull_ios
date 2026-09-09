@@ -5,6 +5,7 @@ class SpeechService: ObservableObject {
     static let shared = SpeechService()
 
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+        ?? SFSpeechRecognizer()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
@@ -18,12 +19,24 @@ class SpeechService: ObservableObject {
     private var lastTextUpdateTime: Date?
     private let silenceTimeout: TimeInterval = 5
     private var isStopping = false
+    private var wantsRecording = false
     private var onStopCompletion: (() -> Void)?
+    private var stopTimeoutWork: DispatchWorkItem?
+    private var tapInstalled = false
+    private var consecutiveRecognitionErrors = 0
+
+    /// flushing: 松手后仍继续喂音频，让识别跟上最后几个字
+    /// waitingFinal: 已 endAudio，等最终结果
+    private enum StopPhase { case idle, flushing, waitingFinal }
+    private var stopPhase: StopPhase = .idle
+
+    /// 每次 start/cancel 更换；stop 过程中保持不变，否则会丢掉最后几段识别结果。
+    private var sessionID = UUID()
+    private var recognitionGeneration = 0
 
     private init() {}
 
     func requestPermission() async -> Bool {
-        // 先请求麦克风权限（首次使用时系统会弹窗）
         let micAuthorized: Bool = await withCheckedContinuation { continuation in
             if #available(iOS 17.0, *) {
                 AVAudioApplication.requestRecordPermission { allowed in
@@ -37,146 +50,333 @@ class SpeechService: ObservableObject {
         }
         guard micAuthorized else { return false }
 
-        // 再请求语音识别权限
         let speechAuthorized = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)
             }
         }
-        guard speechAuthorized else { return false }
-
-        // ⚠️ 首次授权后，iOS 音频系统需要短暂初始化。
-        // 若立刻调用 startRecording()，audioEngine.inputNode.outputFormat(forBus:0)
-        // 可能返回 sampleRate=0 的无效格式，导致 installTap 触发无法捕获的 NSException。
-        // 等待 300ms 让 AVAudioSession 完成激活，避免首次录音 crash。
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        return true
+        return speechAuthorized
     }
 
-    func startRecording() throws {
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        accumulatedText = ""
-        lastTextUpdateTime = Date()
-
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-
-        // ⚠️ 首次授权后 recordingFormat 可能 sampleRate=0（音频硬件未就绪）。
-        // installTap 对无效格式会抛 NSException（Objective-C 异常，do-catch 拦不住，直接 crash）。
-        // 在这里提前校验，将其转换为可安全捕获的 Swift Error。
-        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
-            throw NSError(
-                domain: "SpeechService",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "音频格式未就绪（sampleRate=\(recordingFormat.sampleRate)），请稍后再试"]
-            )
-        }
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            self?.recognitionRequest?.append(buffer)
-        }
-
-        audioEngine.prepare()
-        try audioEngine.start()
-
-        isRecording = true
-        transcribedText = ""
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            guard let self = self, self.isRecording else { return }
-            self.startNewRecognitionTask(inputNode: inputNode)
-            self.startSilenceMonitor()
-        }
-    }
-
-    private func startNewRecognitionTask(inputNode: AVAudioInputNode) {
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        self.recognitionRequest = request
-
-        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
-            self?.handleRecognitionResult(result: result, error: error, inputNode: inputNode)
-        }
-    }
-
-    private func handleRecognitionResult(result: SFSpeechRecognitionResult?, error: Error?, inputNode: AVAudioInputNode) {
-        if let result = result {
-            let currentSegment = result.bestTranscription.formattedString
-            let fullText = self.accumulatedText.isEmpty ? currentSegment : self.accumulatedText + currentSegment
-
-            DispatchQueue.main.async {
-                self.transcribedText = fullText
-            }
+    func startRecording() async throws {
+        let session = UUID()
+        let started: Bool = try await runOnMainThrowing {
+            self.sessionID = session
+            self.wantsRecording = true
+            self.stopTimeoutWork?.cancel()
+            self.stopTimeoutWork = nil
+            self.isStopping = false
+            self.stopPhase = .idle
+            self.onStopCompletion = nil
+            self.consecutiveRecognitionErrors = 0
+            self.teardownEngine(endRecognition: true)
+            self.accumulatedText = ""
+            self.transcribedText = ""
             self.lastTextUpdateTime = Date()
+            self.error = nil
 
-            if result.isFinal {
-                self.accumulatedText = fullText
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            return self.sessionID == session
+        }
+        guard started else { return }
 
-                if self.isStopping {
-                    self.finishStopping()
-                    return
+        // 首次授权或过热降频时，inputNode 可能短暂给出 sampleRate=0。
+        // installTap 对无效格式会抛 NSException（do-catch 拦不住），必须先校验并重试。
+        var lastError: Error?
+        for _ in 0..<8 {
+            let stillCurrent = await runOnMain { self.sessionID == session && self.wantsRecording }
+            guard stillCurrent else { return }
+
+            do {
+                try await runOnMainThrowing {
+                    guard self.sessionID == session, self.wantsRecording else { return }
+                    try self.installTapAndStartEngine()
                 }
-
-                self.recognitionTask?.cancel()
-                self.recognitionTask = nil
-
-                let newRequest = SFSpeechAudioBufferRecognitionRequest()
-                newRequest.shouldReportPartialResults = true
-                self.recognitionRequest = newRequest
-
-                self.recognitionTask = self.speechRecognizer?.recognitionTask(with: newRequest) { [weak self] result, error in
-                    self?.handleRecognitionResult(result: result, error: error, inputNode: inputNode)
-                }
+                lastError = nil
+                break
+            } catch {
+                lastError = error
+                try await Task.sleep(nanoseconds: 80_000_000)
             }
         }
 
-        if error != nil {
-            if self.isStopping {
+        if let lastError {
+            await runOnMain {
+                guard self.sessionID == session else { return }
+                self.teardownEngine(endRecognition: true)
+                self.publishRecording(false)
+            }
+            throw lastError
+        }
+
+        let armed = await runOnMain { () -> Bool in
+            guard self.sessionID == session, self.wantsRecording else {
+                if !self.isStopping {
+                    self.teardownEngine(endRecognition: true)
+                }
+                return false
+            }
+            self.publishRecording(true)
+            self.startSilenceMonitor()
+            return true
+        }
+        guard armed else { return }
+    }
+
+    func stopRecording(completion: (() -> Void)? = nil) {
+        let work = {
+            self.wantsRecording = false
+            self.silenceTimer?.invalidate()
+            self.silenceTimer = nil
+            self.onStopCompletion = completion
+            self.isStopping = true
+            self.publishRecording(false)
+
+            // 引擎还没起来（按住瞬间就松开）：没有可冲刷的尾音。
+            guard self.tapInstalled || self.recognitionRequest != nil else {
+                self.stopPhase = .idle
                 self.finishStopping()
                 return
             }
 
-            self.recognitionRequest = nil
-            self.recognitionTask = nil
+            // 松手后继续录一小段。语音识别有 300~600ms 滞后，
+            // 立刻停引擎会丢掉最后一两个字。
+            self.stopPhase = .flushing
+            self.stopTimeoutWork?.cancel()
+            let endAudioWork = DispatchWorkItem { [weak self] in
+                self?.endAudioAndWaitForFinal()
+            }
+            self.stopTimeoutWork = endAudioWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: endAudioWork)
+        }
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
 
-            if self.isRecording {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                    guard let self = self, self.isRecording else { return }
-                    self.startNewRecognitionTask(inputNode: inputNode)
-                }
+    func cancelRecording() {
+        let work = {
+            self.wantsRecording = false
+            self.sessionID = UUID()
+            self.stopTimeoutWork?.cancel()
+            self.stopTimeoutWork = nil
+            self.isStopping = false
+            self.stopPhase = .idle
+            self.onStopCompletion = nil
+            self.silenceTimer?.invalidate()
+            self.silenceTimer = nil
+            self.teardownEngine(endRecognition: true)
+            self.accumulatedText = ""
+            self.transcribedText = ""
+            self.publishRecording(false)
+        }
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
+    // MARK: - Engine
+
+    private func installTapAndStartEngine() throws {
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            throw NSError(
+                domain: "SpeechService",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "音频格式未就绪（sampleRate=\(recordingFormat.sampleRate)）"]
+            )
+        }
+
+        // 先建识别请求，再装 tap，否则开头几帧音频会 append 到 nil。
+        if recognitionRequest == nil {
+            startNewRecognitionTask(force: true)
+        }
+
+        // 重复 installTap 会抛无法捕获的 NSException。先摘掉旧 tap 再装。
+        removeTapIfNeeded()
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            self?.recognitionRequest?.append(buffer)
+        }
+        tapInstalled = true
+
+        audioEngine.prepare()
+        do {
+            try audioEngine.start()
+        } catch {
+            removeTapIfNeeded()
+            throw error
+        }
+    }
+
+    private func teardownEngine(endRecognition: Bool) {
+        audioEngineStopAndRemoveTap()
+        if endRecognition {
+            recognitionGeneration += 1
+            recognitionRequest?.endAudio()
+            recognitionTask?.cancel()
+            recognitionRequest = nil
+            recognitionTask = nil
+        }
+    }
+
+    private func audioEngineStopAndRemoveTap() {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        removeTapIfNeeded()
+    }
+
+    private func removeTapIfNeeded() {
+        guard tapInstalled else { return }
+        audioEngine.inputNode.removeTap(onBus: 0)
+        tapInstalled = false
+    }
+
+    private func publishRecording(_ recording: Bool) {
+        if Thread.isMainThread {
+            isRecording = recording
+        } else {
+            DispatchQueue.main.async { self.isRecording = recording }
+        }
+    }
+
+    // MARK: - Recognition
+
+    private func startNewRecognitionTask(force: Bool = false) {
+        let canRun = force || (isRecording && !isStopping) || stopPhase == .flushing
+        guard canRun else { return }
+        guard speechRecognizer?.isAvailable == true else { return }
+
+        recognitionGeneration += 1
+        let generation = recognitionGeneration
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        request.taskHint = .dictation
+        if #available(iOS 16.0, *) {
+            request.addsPunctuation = true
+        }
+        recognitionRequest = request
+        let session = sessionID
+
+        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
+            DispatchQueue.main.async {
+                guard let self,
+                      generation == self.recognitionGeneration,
+                      session == self.sessionID else { return }
+                self.handleRecognitionResult(result: result, error: error, session: session)
             }
         }
     }
 
+    private func handleRecognitionResult(result: SFSpeechRecognitionResult?, error: Error?, session: UUID) {
+        guard session == sessionID else { return }
+
+        if let result {
+            consecutiveRecognitionErrors = 0
+            let currentSegment = result.bestTranscription.formattedString
+            let fullText = accumulatedText.isEmpty ? currentSegment : accumulatedText + currentSegment
+            transcribedText = fullText
+            lastTextUpdateTime = Date()
+
+            if result.isFinal {
+                accumulatedText = fullText
+                if stopPhase == .waitingFinal {
+                    finishStopping()
+                    return
+                }
+                // 冲刷尾音期间的分段结束：开下一段继续收最后几个字，不要立刻收工。
+                recognitionTask = nil
+                startNewRecognitionTask()
+                return
+            }
+        }
+
+        if let error {
+            if stopPhase == .waitingFinal {
+                finishStopping()
+                return
+            }
+
+            let nsError = error as NSError
+            let cancelled = nsError.code == 1 || nsError.code == 216
+            recognitionRequest = nil
+            recognitionTask = nil
+
+            let canRestart = (isRecording && !isStopping) || stopPhase == .flushing
+            guard canRestart, !cancelled else { return }
+
+            consecutiveRecognitionErrors += 1
+            guard consecutiveRecognitionErrors <= 5 else {
+                self.error = error.localizedDescription
+                return
+            }
+
+            let delay = 0.15 * Double(consecutiveRecognitionErrors)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.sessionID == session else { return }
+                let canRestart = (self.isRecording && !self.isStopping) || self.stopPhase == .flushing
+                guard canRestart else { return }
+                self.startNewRecognitionTask()
+            }
+        }
+    }
+
+    private func endAudioAndWaitForFinal() {
+        guard isStopping, stopPhase == .flushing else { return }
+        stopPhase = .waitingFinal
+        recognitionRequest?.endAudio()
+        audioEngineStopAndRemoveTap()
+
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.finishStopping()
+        }
+        stopTimeoutWork = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: timeout)
+    }
+
     private func finishStopping() {
-        isStopping = false
-        recognitionRequest = nil
-        recognitionTask = nil
+        guard isStopping || onStopCompletion != nil else { return }
+        stopTimeoutWork?.cancel()
+        stopTimeoutWork = nil
 
         if !transcribedText.isEmpty {
             accumulatedText = transcribedText
+        } else if !accumulatedText.isEmpty {
+            transcribedText = accumulatedText
         }
 
+        let completion = onStopCompletion
+        onStopCompletion = nil
+        isStopping = false
+        stopPhase = .idle
+        wantsRecording = false
+        recognitionGeneration += 1
+        audioEngineStopAndRemoveTap()
+        recognitionRequest = nil
+        recognitionTask = nil
+
         DispatchQueue.main.async {
-            self.transcribedText = self.accumulatedText
-            self.onStopCompletion?()
-            self.onStopCompletion = nil
+            completion?()
         }
     }
 
     private func startSilenceMonitor() {
         silenceTimer?.invalidate()
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self else { return }
             guard self.isRecording, let lastUpdate = self.lastTextUpdateTime else { return }
-
-            let elapsed = Date().timeIntervalSince(lastUpdate)
-            if elapsed >= self.silenceTimeout {
+            if Date().timeIntervalSince(lastUpdate) >= self.silenceTimeout {
                 DispatchQueue.main.async {
                     self.stopRecording()
                 }
@@ -184,37 +384,27 @@ class SpeechService: ObservableObject {
         }
     }
 
-    func stopRecording(completion: (() -> Void)? = nil) {
-        guard isRecording else { return }
+    // MARK: - Thread hop
 
-        onStopCompletion = completion
-        isRecording = false
-        isStopping = true
-        silenceTimer?.invalidate()
-        silenceTimer = nil
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self = self else { return }
-            self.audioEngine.stop()
-            self.audioEngine.inputNode.removeTap(onBus: 0)
-            self.recognitionRequest?.endAudio()
+    private func runOnMain<T>(_ work: @escaping () -> T) async -> T {
+        if Thread.isMainThread { return work() }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume(returning: work())
+            }
         }
     }
 
-    func cancelRecording() {
-        isRecording = false
-        silenceTimer?.invalidate()
-        silenceTimer = nil
-
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-
-        recognitionRequest?.endAudio()
-        recognitionTask?.cancel()
-        recognitionRequest = nil
-        recognitionTask = nil
-
-        accumulatedText = ""
-        transcribedText = ""
+    private func runOnMainThrowing<T>(_ work: @escaping () throws -> T) async throws -> T {
+        if Thread.isMainThread { return try work() }
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.main.async {
+                do {
+                    continuation.resume(returning: try work())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 }

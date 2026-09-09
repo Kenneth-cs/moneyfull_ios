@@ -97,30 +97,33 @@ class AppStore: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self, self.suppressRefreshCount == 0 else { return }
-            
-            // ── 实体类型过滤 ──────────────────────────────────────────
-            // CloudKit 同步时会更新内部元数据（ckRecordID、ckExportedAtDate 等），
-            // 这些更新也会触发此通知但不涉及财务数据，直接忽略可以显著降低噪音。
-            // 只有 Transaction 或 Project 发生变化时，才有必要刷新 UI。
-            let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
-            let updated  = notification.userInfo?[NSUpdatedObjectsKey]  as? Set<NSManagedObject> ?? []
-            let deleted  = notification.userInfo?[NSDeletedObjectsKey]  as? Set<NSManagedObject> ?? []
-            let allChanged = inserted.union(updated).union(deleted)
-            
-            guard !allChanged.isEmpty else { return }
-            
-            let changedEntityNames = Set(allChanged.compactMap { $0.entity.name })
-            // 财务相关实体：Transaction（交易）、Project（项目）
-            let financialEntities: Set<String> = ["Transaction", "Project"]
-            guard !changedEntityNames.isDisjoint(with: financialEntities) else {
-                // 仅 Category / AppNotice / BudgetItem 等辅助数据变化，无需扫描项目收支
-                return
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.suppressRefreshCount == 0 else { return }
+
+                // ── 实体类型过滤 ──────────────────────────────────────────
+                // CloudKit 同步时会更新内部元数据（ckRecordID、ckExportedAtDate 等），
+                // 这些更新也会触发此通知但不涉及财务数据，直接忽略可以显著降低噪音。
+                // 只有 Transaction 或 Project 发生变化时，才有必要刷新 UI。
+                let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
+                let updated  = notification.userInfo?[NSUpdatedObjectsKey]  as? Set<NSManagedObject> ?? []
+                let deleted  = notification.userInfo?[NSDeletedObjectsKey]  as? Set<NSManagedObject> ?? []
+                let allChanged = inserted.union(updated).union(deleted)
+
+                guard !allChanged.isEmpty else { return }
+
+                let changedEntityNames = Set(allChanged.compactMap { $0.entity.name })
+                // 财务相关实体：Transaction（交易）、Project（项目）
+                let financialEntities: Set<String> = ["Transaction", "Project"]
+                guard !changedEntityNames.isDisjoint(with: financialEntities) else {
+                    // 仅 Category / AppNotice / BudgetItem 等辅助数据变化，无需扫描项目收支
+                    return
+                }
+
+                // CloudKit 批量导入期间：触发轻量刷新（跳过全量 refreshProjects() 扫描）
+                // 导入结束时由下方 cloudKitEventObserver 触发一次全量刷新，确保数据最终正确
+                self.triggerDebouncedRefresh(fullRefresh: false)
             }
-            
-            // CloudKit 批量导入期间：触发轻量刷新（跳过全量 refreshProjects() 扫描）
-            // 导入结束时由下方 cloudKitEventObserver 触发一次全量刷新，确保数据最终正确
-            self.triggerDebouncedRefresh(fullRefresh: false)
         }
         
         // 监听 CloudKit 的同步完成事件（import 操作结束，触发一次全量刷新）

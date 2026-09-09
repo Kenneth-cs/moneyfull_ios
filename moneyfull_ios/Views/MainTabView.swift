@@ -150,6 +150,7 @@ struct CustomBottomTabBar: View {
     @Binding var isAddRecordPresented: Bool
     @Binding var isAIChatPresented: Bool
     @Binding var aiInitialText: String?
+    @State private var voicePressNonce = 0
     private let selectionFeedback = UISelectionFeedbackGenerator()
     private let speechService = SpeechService.shared
     
@@ -170,20 +171,25 @@ struct CustomBottomTabBar: View {
                     },
                     onLongPressStart: {
                         AnalyticsManager.shared.trackEvent(eventId: "ai_voice_start", eventName: "长按语音记账", params: ["source": "tab_bar"])
+                        voicePressNonce += 1
+                        let nonce = voicePressNonce
                         Task {
                             let granted = await speechService.requestPermission()
+                            guard nonce == voicePressNonce else { return }
                             if granted {
-                                try? speechService.startRecording()
+                                try? await speechService.startRecording()
                             }
                         }
                     },
                     onLongPressEnd: {
-                        speechService.stopRecording()
-                        let transcribed = speechService.transcribedText
-                        if !transcribed.isEmpty {
-                            aiInitialText = transcribed
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                isAIChatPresented = true
+                        voicePressNonce += 1
+                        speechService.stopRecording {
+                            let transcribed = speechService.transcribedText
+                            if !transcribed.isEmpty {
+                                aiInitialText = transcribed
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    isAIChatPresented = true
+                                }
                             }
                         }
                     }

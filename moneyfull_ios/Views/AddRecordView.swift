@@ -7,14 +7,58 @@ struct AddRecordView: View {
     
     // 预填参数
     var project: Project? = nil
+    var sharedProject: JoinedSharedProject? = nil
     var prefilledAmount: String = ""
     var prefilledNote: String = ""
     var prefilledType: TransactionType? = nil
     
+    // 统一项目类型，用于记一笔页面选择
+    enum UnifiedProject: Equatable, Hashable {
+        case local(Project)
+        case shared(JoinedSharedProject)
+        
+        var id: String {
+            switch self {
+            case .local(let p): return p.id.uuidString
+            case .shared(let p): return p.projectId
+            }
+        }
+        
+        var name: String {
+            switch self {
+            case .local(let p): return p.name
+            case .shared(let p): return p.name
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .local(let p): return p.icon
+            case .shared(_): return "person.2.fill" // 共享项目默认图标
+            }
+        }
+        
+        var colorHex: String {
+            switch self {
+            case .local(let p): return p.colorHex
+            case .shared(_): return "#4A90E2" // 共享项目默认蓝色
+            }
+        }
+        
+        var isShared: Bool {
+            switch self {
+            case .local(_): return false
+            case .shared(_): return true
+            }
+        }
+    }
+    
+    @State private var selectedUnifiedProject: UnifiedProject? = nil
+    @State private var allProjects: [UnifiedProject] = []
+    
     @State private var type: TransactionType = .expense
     @State private var amount: String = ""
     @State private var selectedCategory: Category? = nil
-    @State private var selectedProject: Project? = nil
     @State private var note: String = ""
     @State private var date: Date = Date()
     @State private var showDatePicker = false
@@ -27,6 +71,12 @@ struct AddRecordView: View {
     // V7 新增：现金流类型覆盖
     @State private var showMoreOptions = false
     @State private var cashFlowType: String = "operating" // "operating" | "personal"
+    
+    // 共享记账字段（仅共享项目时显示）
+    @State private var payerName: String = ""
+    @State private var selectedParticipants: [String] = []
+    @State private var splitMethod: String = "equal"
+    @State private var showParticipantPicker = false
     
     // 表达式计算状态
     @State private var expression: String = ""  // 完整表达式，如 "100+50"
@@ -45,6 +95,17 @@ struct AddRecordView: View {
             return expression + (amount.isEmpty ? "" : amount)
         }
         return amount.isEmpty ? "0" : amount
+    }
+    
+    private var isSharedProject: Bool {
+        return selectedUnifiedProject?.isShared ?? false
+    }
+    
+    private var currentSharedProject: JoinedSharedProject? {
+        if case .shared(let sp) = selectedUnifiedProject {
+            return sp
+        }
+        return nil
     }
     
     var body: some View {
@@ -165,13 +226,13 @@ struct AddRecordView: View {
                         
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ForEach(store.activeProjects) { project in
-                                    let isSelected = selectedProject?.id == project.id
+                                ForEach(allProjects, id: \.id) { project in
+                                    let isSelected = selectedUnifiedProject?.id == project.id
                                     Button(action: {
                                         impactFeedback.impactOccurred()
-                                        selectedProject = project
+                                        selectedUnifiedProject = project
                                         // 切换到搞钱模式项目时自动展开更多选项
-                                        if type == .expense && project.projectMode == "earning" {
+                                        if type == .expense, case .local(let p) = project, p.projectMode == "earning" {
                                             showMoreOptions = true
                                         } else {
                                             showMoreOptions = false
@@ -203,6 +264,20 @@ struct AddRecordView: View {
                         }
                     }
                     
+                    // MARK: 共享项目额外字段（归属项目下方，分类上方）
+                    if isSharedProject, let sp = currentSharedProject {
+                        VStack(spacing: 0) {
+                            payerRow(sp: sp)
+                            Divider().padding(.leading, 24)
+                            participantsRow(sp: sp)
+                            Divider().padding(.leading, 24)
+                            splitMethodRow()
+                        }
+                        .background(Color.App.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .padding(.horizontal, 24)
+                    }
+
                     // MARK: 分类选择
                     CategorySelectionView(
                         selectedCategory: $selectedCategory,
@@ -230,7 +305,7 @@ struct AddRecordView: View {
                     .padding(.horizontal, 24)
                     
                     // MARK: 更多选项（仅在搞钱模式项目下的支出录入中出现）
-                    if type == .expense && selectedProject?.projectMode == "earning" {
+                    if case .local(let lp) = selectedUnifiedProject, type == .expense && lp.projectMode == "earning" {
                         VStack(spacing: 12) {
                             Button(action: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -360,7 +435,7 @@ struct AddRecordView: View {
         .background(Color.App.backgroundGray.ignoresSafeArea())
         // 项目选择弹窗
         .sheet(isPresented: $showProjectPicker) {
-            ProjectPickerView(selected: $selectedProject, projects: store.activeProjects)
+            ProjectPickerView(selected: $selectedUnifiedProject, projects: allProjects)
         }
         // 日期选择弹窗
         .sheet(isPresented: $showDatePicker) {
@@ -379,12 +454,26 @@ struct AddRecordView: View {
                 }
             }
         }
+        // 参与人选择
+        .sheet(isPresented: $showParticipantPicker) {
+            if let sp = currentSharedProject {
+                ParticipantPickerSheet(members: sp.memberNames, selectedParticipants: $selectedParticipants)
+            }
+        }
         .onAppear {
+            // 初始化项目列表
+            var projects: [UnifiedProject] = []
+            projects.append(contentsOf: store.activeProjects.map { .local($0) })
+            projects.append(contentsOf: SharedProjectService.shared.joinedProjects.map { .shared($0) })
+            allProjects = projects
+
             // 使用预填参数
-            if let project = project {
-                selectedProject = project
-            } else if selectedProject == nil {
-                selectedProject = store.activeProjects.first
+            if let sp = sharedProject {
+                selectedUnifiedProject = .shared(sp)
+            } else if let project = project {
+                selectedUnifiedProject = .local(project)
+            } else if selectedUnifiedProject == nil {
+                selectedUnifiedProject = allProjects.first
             }
             if !prefilledAmount.isEmpty {
                 amount = prefilledAmount
@@ -398,10 +487,31 @@ struct AddRecordView: View {
             if selectedCategory == nil {
                 selectedCategory = store.categories.first
             }
+
+            // 初始化共享项目字段：使用该项目绑定的昵称（不受全局昵称影响）
+            if let sp = currentSharedProject {
+                if payerName.isEmpty {
+                    payerName = sp.participantName
+                }
+                if selectedParticipants.isEmpty {
+                    selectedParticipants = sp.memberNames
+                }
+            }
+        }
+        .onChange(of: selectedUnifiedProject) { _, newProject in
+            // 每次切换项目都强制重置付款人和参与人，避免旧项目数据残留
+            if case .shared(let sp) = newProject {
+                payerName = sp.participantName
+                selectedParticipants = sp.memberNames   // 无条件覆盖
+            } else {
+                // 切回本地项目时清空共享专属字段
+                payerName = ""
+                selectedParticipants = []
+            }
         }
         .onChange(of: selectedCategory) { _, newCat in
             // 分类切换时自动更新现金流类型
-            if let cat = newCat, type == .expense && selectedProject?.projectMode == "earning" {
+            if case .local(let lp) = selectedUnifiedProject, let cat = newCat, type == .expense && lp.projectMode == "earning" {
                 cashFlowType = cat.isDirectCost ? "operating" : "personal"
             }
         }
@@ -422,7 +532,7 @@ struct AddRecordView: View {
             // 切换到收入时隐藏更多选项
             if t == .income { showMoreOptions = false }
             // 切换到支出且是搞钱模式时自动展开
-            if t == .expense && selectedProject?.projectMode == "earning" { showMoreOptions = true }
+            if case .local(let lp) = selectedUnifiedProject, t == .expense && lp.projectMode == "earning" { showMoreOptions = true }
         }) {
             Text(label)
                 .font(.system(size: 14, weight: .bold))
@@ -435,6 +545,102 @@ struct AddRecordView: View {
         }
     }
     
+    // MARK: - 付款人行
+    @ViewBuilder
+    private func payerRow(sp: JoinedSharedProject) -> some View {
+        HStack {
+            Text("付款人")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(Color.App.textBlack)
+            Spacer()
+            Menu {
+                ForEach(sp.memberNames, id: \.self) { name in
+                    Button(action: { payerName = name }) {
+                        if (payerName.isEmpty ? sp.participantName : payerName) == name {
+                            Label(name, systemImage: "checkmark")
+                        } else {
+                            Text(name)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.orange.opacity(0.2))
+                        .frame(width: 22, height: 22)
+                        .overlay(Image(systemName: "person.fill").font(.system(size: 10)).foregroundColor(.orange))
+                    Text(payerName.isEmpty ? sp.participantName : payerName)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Image(systemName: "chevron.right").font(.system(size: 11)).foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+    }
+
+    // MARK: - 参与人行（可点击，弹出多选 sheet）
+    @ViewBuilder
+    private func participantsRow(sp: JoinedSharedProject) -> some View {
+        Button(action: { showParticipantPicker = true }) {
+            HStack {
+                Text("参与人")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(Color.App.textBlack)
+                Spacer()
+                HStack(spacing: 4) {
+                    let isAll = selectedParticipants.isEmpty ||
+                                Set(selectedParticipants) == Set(sp.memberNames)
+                    Text(isAll
+                         ? "全部成员 (\(sp.memberCount)人)"
+                         : selectedParticipants.joined(separator: "、"))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11))
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 分摊方式行（Menu 选择）
+    @ViewBuilder
+    private func splitMethodRow() -> some View {
+        HStack {
+            Text("分摊方式")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(Color.App.textBlack)
+            Spacer()
+            Menu {
+                Button { splitMethod = "equal" } label: {
+                    if splitMethod == "equal" { Label("平均分摊", systemImage: "checkmark") }
+                    else { Text("平均分摊") }
+                }
+                Button { splitMethod = "payer_full" } label: {
+                    if splitMethod == "payer_full" { Label("全由付款人", systemImage: "checkmark") }
+                    else { Text("全由付款人") }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(splitMethod == "payer_full" ? "全由付款人" : "平均分摊")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11))
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+    }
+
     // MARK: - 现金流类型切换按钮
     @ViewBuilder
     private func cashFlowTypeButton(label: String, type: String) -> some View {
@@ -591,45 +797,80 @@ struct AddRecordView: View {
     
     // MARK: - 保存账单
     private func handleSave() {
-        guard let project = selectedProject,
+        guard let unifiedProject = selectedUnifiedProject,
               let category = selectedCategory,
               let amountValue = Double(amount), amountValue > 0 else {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return
         }
         
-        // 根据分类自动判断现金流类型（如果用户没有手动覆盖）
-        let finalCashFlowType: String
-        if type == .expense && project.projectMode == "earning" {
-            // 如果用户没有展开更多选项，则根据分类自动判断
-            if !showMoreOptions {
-                finalCashFlowType = category.isDirectCost ? "operating" : "personal"
+        switch unifiedProject {
+        case .local(let project):
+            // 根据分类自动判断现金流类型（如果用户没有手动覆盖）
+            let finalCashFlowType: String
+            if type == .expense && project.projectMode == "earning" {
+                // 如果用户没有展开更多选项，则根据分类自动判断
+                if !showMoreOptions {
+                    finalCashFlowType = category.isDirectCost ? "operating" : "personal"
+                } else {
+                    finalCashFlowType = cashFlowType
+                }
             } else {
-                finalCashFlowType = cashFlowType
+                finalCashFlowType = "operating" // 非搞钱模式或收入默认为经营
             }
-        } else {
-            finalCashFlowType = "operating" // 非搞钱模式或收入默认为经营
-        }
-        
-        store.addTransaction(
-            to: project,
-            amount: amountValue,
-            type: type,
-            categoryName: category.name,
-            categoryIcon: category.icon,
-            categoryColorHex: category.colorHex,
-            note: note,
-            date: date,
-            cashFlowType: finalCashFlowType
-        )
-        
-        // 保存记忆规则
-        if !note.isEmpty {
-            try? ContextManager.shared.saveMemoryRule(
-                keyword: note,
+            
+            store.addTransaction(
+                to: project,
+                amount: amountValue,
+                type: type,
                 categoryName: category.name,
-                projectName: project.name
+                categoryIcon: category.icon,
+                categoryColorHex: category.colorHex,
+                note: note,
+                date: date,
+                cashFlowType: finalCashFlowType
             )
+            
+            // 保存记忆规则
+            if !note.isEmpty {
+                try? ContextManager.shared.saveMemoryRule(
+                    keyword: note,
+                    categoryName: category.name,
+                    projectName: project.name
+                )
+            }
+            
+        case .shared(let sp):
+            // 保存到共享账本（fire-and-forget，成功后通知详情页刷新）
+            Task {
+                do {
+                    let actualAmount = type == .expense ? -amountValue : amountValue
+                    let finalPayer = payerName.isEmpty ? "我" : payerName
+                    let isoDate = ISO8601DateFormatter().string(from: date)
+                    let txDict: [String: Any] = [
+                        "id": UUID().uuidString,
+                        "amount": actualAmount,
+                        "category": category.name,
+                        "note": note,
+                        "transactionAt": isoDate,
+                        "payerName": finalPayer,
+                        "participants": selectedParticipants,
+                        "splitMethod": splitMethod
+                    ]
+                    _ = try await SharedProjectService.shared.writeTransactions(
+                        inviteCode: sp.inviteCode,
+                        transactions: [txDict]
+                    )
+                    // 写入成功：通知详情页刷新
+                    NotificationCenter.default.post(
+                        name: .sharedTransactionDidWrite,
+                        object: nil,
+                        userInfo: ["projectId": sp.projectId]
+                    )
+                } catch {
+                    print("保存共享账单失败: \(error)")
+                }
+            }
         }
         
         // 更新分类使用频率和最后使用时间
@@ -649,7 +890,7 @@ struct AddRecordView: View {
             params: [
                 "type": type == .expense ? "expense" : "income",
                 "category": category.name,
-                "is_custom_project": project.name != "日常收支",
+                "is_custom_project": unifiedProject.name != "日常收支",
                 "amount_level": amountLevel
             ]
         )
@@ -739,12 +980,12 @@ struct BlinkingCursor: View {
 // MARK: - 项目选择弹窗
 struct ProjectPickerView: View {
     @Environment(\.presentationMode) var presentationMode
-    @Binding var selected: Project?
-    let projects: [Project]
+    @Binding var selected: AddRecordView.UnifiedProject?
+    let projects: [AddRecordView.UnifiedProject]
     
     var body: some View {
         NavigationView {
-            List(projects) { project in
+            List(projects, id: \.id) { project in
                 Button(action: {
                     selected = project
                     presentationMode.wrappedValue.dismiss()
@@ -1019,4 +1260,64 @@ struct QuickAddCategorySheet: View {
 #Preview {
     AddRecordView()
         .environmentObject(AppStore(modelContext: try! ModelContainer(for: Project.self, Transaction.self, Category.self, ChatHistory.self, MemoryRule.self).mainContext))
+}
+
+// MARK: - 参与人多选 Sheet
+struct ParticipantPickerSheet: View {
+    let members: [String]
+    @Binding var selectedParticipants: [String]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(members, id: \.self) { member in
+                Button(action: {
+                    if selectedParticipants.contains(member) {
+                        // 至少保留一人
+                        if selectedParticipants.count > 1 {
+                            selectedParticipants.removeAll { $0 == member }
+                        }
+                    } else {
+                        selectedParticipants.append(member)
+                    }
+                }) {
+                    HStack {
+                        Circle()
+                            .fill(Color(hex: "#E6F5EC"))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Text(String(member.prefix(1)))
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color(hex: "#2E8B57"))
+                            )
+                        Text(member)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: selectedParticipants.contains(member)
+                              ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 22))
+                            .foregroundColor(selectedParticipants.contains(member)
+                                             ? Color(hex: "#2E8B57") : Color.gray.opacity(0.3))
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("选择参与人")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("全选") { selectedParticipants = members }
+                        .foregroundColor(Color(hex: "#2E8B57"))
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                        .font(.system(size: 16, weight: .bold))
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
 }

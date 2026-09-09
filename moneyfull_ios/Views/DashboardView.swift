@@ -26,6 +26,7 @@ struct DashboardView: View {
     @EnvironmentObject var storeManager: StoreManager
     @Binding var selectedTab: Int
     @Binding var detailProject: Project?
+    @State private var sharedProjects: [JoinedSharedProject] = []
     var onResetProjectNav: (() -> Void)? = nil
     @State private var editingTransaction: Transaction?
     @State private var viewingTransaction: Transaction?
@@ -399,7 +400,7 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal, 24)
                     
-                    if sortedActiveProjects.isEmpty {
+                    if sortedActiveProjects.isEmpty && sharedProjects.isEmpty {
                         // 空状态：小满引导新建项目
                         VStack(spacing: 12) {
                             Text("🦫")
@@ -414,7 +415,7 @@ struct DashboardView: View {
                         .padding(.vertical, 24)
                         .padding(.horizontal, 24)
                     } else {
-                        // 横向可滑动卡片列表（onTapGesture 不会被 ScrollView 滑动误触发）
+                        // 横向可滑动卡片列表
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 14) {
                                 ForEach(sortedActiveProjects) { project in
@@ -425,6 +426,13 @@ struct DashboardView: View {
                                             AnalyticsManager.shared.trackEvent(eventId: "project_view_detail", eventName: "查看项目详情", params: ["project_status": "active", "source": "dashboard"])
                                             detailProject = project
                                         }
+                                }
+                                ForEach(sharedProjects) { sp in
+                                    NavigationLink(destination: SharedProjectDetailView(project: sp)) {
+                                        SharedProjectSmallCard(project: sp)
+                                            .frame(width: 160)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
                                 }
                             }
                             .padding(.horizontal, 24)
@@ -519,8 +527,12 @@ struct DashboardView: View {
         }
         // 首次进入时：异步检测 iCloud 状态 + 里程碑
         .onAppear {
+            sharedProjects = SharedProjectService.shared.joinedProjects
             checkExportBannerIfNeeded()
             updateStats()  // 确保预算统计立即就绪
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sharedProjectsDidUpdate)) { _ in
+            sharedProjects = SharedProjectService.shared.joinedProjects
         }
         // 预算设置 Sheet 关闭后显式刷新（不依赖 dataVersion 变化）
         .sheet(isPresented: $isBudgetSheetPresented, onDismiss: {
@@ -536,18 +548,18 @@ struct DashboardView: View {
             guard !Task.isCancelled else { return }
             updateStats()
         }
-        .onChange(of: selectedPeriod) {
+        .onChange(of: selectedPeriod) { _, _ in
             updateStats()
         }
         // 切到预算日历时自动锁定「本月」维度
-        .onChange(of: heroTab) {
+        .onChange(of: heroTab) { _, _ in
             if heroTab == .calendar, selectedPeriod != .month {
                 selectedPeriod = .month
                 updateStats()
             }
         }
         // 每次数据变更时重新检测（新记录写入后可能触发新里程碑）
-        .onChange(of: store.dataVersion) {
+        .onChange(of: store.dataVersion) { _, _ in
             checkExportBannerIfNeeded()
         }
     }
@@ -688,7 +700,7 @@ struct ProjectCard: View {
                                     color: Color.App.projectIconColor(for: project.colorHex))
                     )
                 Spacer(minLength: 4)
-                Text("进行中")
+                Text("个人")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(Color.App.darkGreen)
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -728,6 +740,42 @@ struct ProjectCard: View {
                     .foregroundColor(.gray)
                 Spacer().frame(height: 6)
             }
+        }
+        .padding(16)
+        .background(Color.App.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 5)
+    }
+}
+
+// MARK: - 共享项目卡片（小版）
+struct SharedProjectSmallCard: View {
+    let project: JoinedSharedProject
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Circle().fill(Color.blue.opacity(0.3)).frame(width: 40, height: 40)
+                    .overlay(Image(systemName: "person.2.fill").foregroundColor(.blue).font(.system(size: 16)))
+                Spacer(minLength: 4)
+                Text("👥 \(project.memberCount)人")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+            
+            Text(project.name)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(Color.App.textBlack)
+                .lineLimit(1)
+            
+            Text("共享账本")
+                .font(.system(size: 10))
+                .foregroundColor(.gray)
+            
+            Spacer().frame(height: 6)
         }
         .padding(16)
         .background(Color.App.cardBackground)

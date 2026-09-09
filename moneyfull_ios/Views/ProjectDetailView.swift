@@ -38,6 +38,11 @@ struct ProjectDetailView: View {
     @State private var showPaywall = false
     @State private var showBudgetManagement = false
     @State private var showLifestyleDashboard = false
+
+    // MARK: - 分享海报
+    @State private var showShareSheet = false
+    @State private var posterImage: UIImage?
+    @State private var isGeneratingPoster = false
     
     // MARK: - 缓存数据
     @State private var _groupedTransactions: [(key: String, value: [Transaction])] = []
@@ -157,7 +162,7 @@ struct ProjectDetailView: View {
             let monthFmt = DateFormatter()
             monthFmt.dateFormat = "M月"
             let ascSorted = snapshots.sorted { $0.date < $1.date }
-            var trendData: [(label: String, expense: Double, income: Double, saving: Double)] = []
+            var localTrendData: [(label: String, expense: Double, income: Double, saving: Double)] = []
             if let first = ascSorted.first {
                 var current = calendar.date(from: calendar.dateComponents([.year, .month], from: first.date))!
                 let endDate = Date()
@@ -167,15 +172,16 @@ struct ProjectDetailView: View {
                     let monthTxs = snapshots.filter { $0.date >= current && $0.date < next }
                     let exp = monthTxs.filter { $0.type == .expense }.reduce(0) { $0 + abs($1.amount) }
                     let inc = monthTxs.filter { $0.type == .income }.reduce(0) { $0 + abs($1.amount) }
-                    trendData.append((label: monthFmt.string(from: current), expense: exp, income: inc, saving: inc - exp))
+                    localTrendData.append((label: monthFmt.string(from: current), expense: exp, income: inc, saving: inc - exp))
                     current = next
                 }
             }
 
+            let finalTrendData = localTrendData
             await MainActor.run {
                 self._projectCategorySegments = categorySegments
                 self._projectTotalExpense = totalExpense
-                self._projectTrendData = trendData
+                self._projectTrendData = finalTrendData
             }
         }
     }
@@ -312,6 +318,7 @@ struct ProjectDetailView: View {
                             Label("编辑项目", systemImage: "pencil")
                         }
                         NavigationLink {
+
                             ProjectReviewView(
                                 project: project,
                                 projectMode: project.projectMode == "earning" ? .earning : .lifestyle,
@@ -351,7 +358,8 @@ struct ProjectDetailView: View {
             // MARK: 主内容滚动区
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 24) {
-                    // 项目概览卡片
+                    // 项目概览卡片（分享 icon 叠在右上角）
+                    ZStack(alignment: .topTrailing) {
                     VStack(alignment: .leading, spacing: 20) {
                         // 项目图标 + 描述 + 模式切换
                         HStack(spacing: 14) {
@@ -425,6 +433,23 @@ struct ProjectDetailView: View {
                     .background(Color.App.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 32))
                     .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
+
+                    // 分享 icon 叠在卡片右上角（无背景圆圈，绿色图标）
+                    Button {
+                        AnalyticsManager.shared.trackShareProjectPosterClick(projectMode: project.projectMode)
+                        generateAndSharePoster()
+                    } label: {
+                        if isGeneratingPoster {
+                            ProgressView().scaleEffect(0.75).frame(width: 20, height: 20)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(Color(hex: "#2E8B57"))
+                        }
+                    }
+                    .disabled(isGeneratingPoster)
+                    .padding(18)
+                    } // ZStack end
                     .padding(.horizontal, 24)
 
                     // MARK: ⑤ 看板入口卡片
@@ -488,10 +513,43 @@ struct ProjectDetailView: View {
             }
         }
         .background(Color.App.backgroundGray.ignoresSafeArea())
+        // 海报生成加载蒙层
+        .overlay {
+            if isGeneratingPoster {
+                ZStack {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                            .scaleEffect(1.4)
+                        Text("正在生成海报…")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(Color.black.opacity(0.6))
+                    )
+                }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: isGeneratingPoster)
+            }
+        }
         .sheet(isPresented: $showEditProject) {
             EditProjectView(project: project)
                 .environmentObject(store)
                 .environmentObject(storeManager)
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let img = posterImage {
+                ShareSheet(activityItems: [img])
+                    .onDisappear {
+                        AnalyticsManager.shared.trackShareProjectPosterShared(shareMethod: "system_sheet")
+                    }
+            }
         }
         .sheet(item: $editingTransaction) { tx in
             EditTransactionView(transaction: tx)
@@ -896,6 +954,43 @@ extension ProjectDetailView {
                 .minimumScaleFactor(0.7).lineLimit(1)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - 分享海报渲染
+
+    @MainActor
+    private func generateAndSharePoster() {
+        guard !isGeneratingPoster else { return }
+        withAnimation { isGeneratingPoster = true }
+
+        Task { @MainActor in
+            // 等一帧让蒙层动画先渲染出来，再开始重计算
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
+            let mode: ProjectMode = project.projectMode == "earning" ? .earning : .lifestyle
+            // 按日期降序排列全部账单
+            let sortedTx = (project.transactions ?? [])
+                .sorted { $0.date > $1.date }
+            let posterView = ProjectSharePosterView(
+                project: project,
+                categorySegments: _projectCategorySegments,
+                projectMode: mode,
+                transactions: sortedTx
+            )
+            let renderer = ImageRenderer(content: posterView)
+            renderer.scale = 3.0
+            posterImage = renderer.uiImage
+
+            withAnimation { isGeneratingPoster = false }
+
+            if posterImage != nil {
+                // 埋点：海报生成成功
+                AnalyticsManager.shared.trackShareProjectPosterSuccess(projectMode: project.projectMode)
+                // 稍等蒙层消失动画，再弹分享面板
+                try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
+                showShareSheet = true
+            }
+        }
     }
 }
 

@@ -1,10 +1,15 @@
 import SwiftUI
 import SwiftData
+enum ProjectMemberType { case justMe, invite }
+
 struct NewProjectView: View {
+    /// 从 banner 入口跳入时预选「一起记账」
+    var initialMemberType: ProjectMemberType = .justMe
+
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var storeManager: StoreManager
-    
+
     @State private var name = ""
     @State private var desc = ""
     @State private var budgetText = ""
@@ -15,6 +20,13 @@ struct NewProjectView: View {
 
     // MARK: 新增：项目模式 & 预算规划
     @State private var projectMode: ProjectMode = .lifestyle
+    @State private var memberType: ProjectMemberType = .justMe
+    @State private var creatorName = "" // 共享账本的昵称
+    @State private var showShareSheet = false
+    @State private var createdSharedProject: CreateProjectResponse?
+    @State private var isCreatingShared = false
+    @State private var showCreateError = false
+    @State private var createErrorMessage = ""
     @State private var uiBudgetItems: [BudgetItemUI] = []
     @State private var budgetSupplement: String = ""
     @State private var isGeneratingBudget: Bool = false
@@ -65,6 +77,7 @@ struct NewProjectView: View {
                 projectNameSection
                 projectDescSection
                 projectModeSection
+                projectMemberSection
                 budgetSection
                 if totalBudget > 0 { budgetPlanningSection }
                 previewSection
@@ -97,26 +110,49 @@ struct NewProjectView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("创建") {
                     guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                    if canCreateProject {
-                        let budget = Double(budgetText) ?? 0
-                        let project = store.addProject(
-                            name: name, icon: selectedIcon, colorHex: selectedColor,
-                            desc: desc, budget: budget,
-                            projectMode: projectMode.rawValue,
-                            budgetCycle: budgetCycle.rawValue
-                        )
-                        for (index, item) in uiBudgetItems.enumerated() {
-                            store.addBudgetItem(to: project, categoryName: item.categoryName,
-                                               categoryIcon: item.categoryIcon, categoryColorHex: item.categoryColorHex,
-                                               amount: item.amount, sortOrder: index, alertThreshold: item.alertThreshold)
+                    
+                    if memberType == .invite {
+                        // 共享账本创建逻辑
+                        Task {
+                            isCreatingShared = true
+                            do {
+                                let finalName = creatorName.isEmpty ? "我" : creatorName
+                                let response = try await SharedProjectService.shared.createProject(
+                                    name: name,
+                                    creatorName: finalName
+                                )
+                                SharedProjectService.shared.myNickname = finalName
+                                createdSharedProject = response
+                                showShareSheet = true
+                            } catch {
+                                createErrorMessage = "创建失败: \(error.localizedDescription)"
+                                showCreateError = true
+                            }
+                            isCreatingShared = false
                         }
-                        dismiss()
                     } else {
-                        showUpgradeAlert = true
+                        // 个人账本创建逻辑
+                        if canCreateProject {
+                            let budget = Double(budgetText) ?? 0
+                            let project = store.addProject(
+                                name: name, icon: selectedIcon, colorHex: selectedColor,
+                                desc: desc, budget: budget,
+                                projectMode: projectMode.rawValue,
+                                budgetCycle: budgetCycle.rawValue
+                            )
+                            for (index, item) in uiBudgetItems.enumerated() {
+                                store.addBudgetItem(to: project, categoryName: item.categoryName,
+                                                   categoryIcon: item.categoryIcon, categoryColorHex: item.categoryColorHex,
+                                                   amount: item.amount, sortOrder: index, alertThreshold: item.alertThreshold)
+                            }
+                            dismiss()
+                        } else {
+                            showUpgradeAlert = true
+                        }
                     }
                 }
                 .font(.system(size: 16, weight: .bold))
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreatingShared)
             }
         }
         .alert("升级到专业版", isPresented: $showUpgradeAlert) {
@@ -124,6 +160,11 @@ struct NewProjectView: View {
             Button("查看订阅方案") { showPaywall = true }
         } message: {
             Text("免费版最多可创建 3 个项目。升级到专业版即可解锁无限项目，还有更多高级功能等你探索！")
+        }
+        .alert("创建失败", isPresented: $showCreateError) {
+            Button("确定", role: .cancel) { }
+        } message: {
+            Text(createErrorMessage)
         }
         .fullScreenCover(isPresented: $showPaywall) {
             PaywallView().environmentObject(storeManager)
@@ -140,6 +181,19 @@ struct NewProjectView: View {
                         Button("关闭") { showBudgetManagement = false }
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showShareSheet, onDismiss: {
+            dismiss() // 分享完邀请码后关闭新建页面
+        }) {
+            if let project = createdSharedProject {
+                ShareInviteCodeView(project: project)
+            }
+        }
+        .onAppear {
+            // 从 banner 入口进来时预选「一起记账」
+            if initialMemberType == .invite {
+                memberType = .invite
             }
         }
     }
@@ -176,6 +230,67 @@ extension NewProjectView {
             }
             if !aiSuggestion.isEmpty {
                 Text(aiSuggestion).font(.system(size: 11)).foregroundColor(.gray).padding(.top, 2)
+            }
+        }
+    }
+
+    var projectMemberSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("项目成员").sectionTitle()
+
+            HStack(spacing: 12) {
+                // 仅自己
+                Button { memberType = .justMe } label: {
+                    VStack(spacing: 8) {
+                        Image(systemName: "person.fill")
+                        Text("仅自己")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("个人项目\n仅自己可见")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(16)
+                    .background(memberType == .justMe ? Color.App.primaryGreen.opacity(0.3) : Color.App.tabBackground)
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(memberType == .justMe ? Color.App.darkGreen : Color.clear, lineWidth: 2))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+
+                // 一起记账（共享账本）
+                Button { memberType = .invite } label: {
+                    VStack(spacing: 8) {
+                        Image(systemName: "person.2.fill")
+                        Text("一起记账")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("和家人、朋友\n共享账本")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(16)
+                    .background(memberType == .invite ? Color(hex: "#E6F5EC") : Color.App.tabBackground)
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(memberType == .invite ? Color(hex: "#2E8B57") : Color.clear, lineWidth: 2))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if memberType == .invite {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("我在账本中的昵称").sectionTitle()
+                    TextField("例如：爸爸、小明...", text: $creatorName)
+                        .textFieldStyle()
+                        .focused($isAnyFieldFocused)
+                }
+                .padding(.top, 8)
+                
+                Text("创建后会生成 6 位邀请码，分享给成员即可加入，无需填写成员信息")
+                    .font(.system(size: 13))
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 4)
             }
         }
     }

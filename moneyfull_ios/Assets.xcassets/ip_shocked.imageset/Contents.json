@@ -1,1 +1,12 @@
-{"images":[{"filename":"zhengjing.png","idiom":"universal"}],"info":{"author":"xcode","version":1}}
+{
+  "images" : [
+    {
+      "filename" : "ip_shocked.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

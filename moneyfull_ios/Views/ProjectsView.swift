@@ -6,11 +6,15 @@ struct ProjectsView: View {
     @EnvironmentObject var storeManager: StoreManager
     @State private var selectedTab = 0
     @State private var showManage = false
+    @State private var showJoinSheet = false
+    @State private var showSharedEntrySheet = false  // banner 点击弹层
+    @State private var sharedCreateActive = false    // 触发主导航跳新建页
+    @State private var sharedProjects: [JoinedSharedProject] = []
     @Binding var detailProject: Project?
     
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 24) {
+            VStack(spacing: 8) {
                 // MARK: Header
                 ZStack {
                     Text("项目中心")
@@ -25,6 +29,15 @@ struct ProjectsView: View {
                     HStack {
                         Spacer()
                         Button(action: {
+                            showJoinSheet = true
+                        }) {
+                            Image(systemName: "person.badge.plus")
+                                .font(.system(size: 20))
+                                .foregroundColor(Color.App.darkGreen)
+                        }
+                        .padding(.trailing, 16)
+                        
+                        Button(action: {
                             AnalyticsManager.shared.trackEvent(eventId: "project_click_manage", eventName: "点击项目管理")
                             showManage = true
                         }) {
@@ -35,8 +48,27 @@ struct ProjectsView: View {
                     }
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 24)
-                
+                .padding(.top, 2)
+
+                // 隐式 NavigationLink：关闭弹层后 push 到新建项目页
+                NavigationLink(
+                    destination: NewProjectView(initialMemberType: .invite),
+                    isActive: $sharedCreateActive
+                ) { EmptyView() }
+
+                // MARK: 顶部 Banner（点击弹出共享记账入口选择）
+                Button { showSharedEntrySheet = true } label: {
+                    Image("projects_banner")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 100) // ← 调整 banner 高度
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.horizontal, 24)
+
                 // MARK: 进行中 / 已归档 Tab
                 HStack {
                     tabButton(label: "进行中", idx: 0)
@@ -88,6 +120,16 @@ struct ProjectsView: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
+                        
+                        // 共享项目（仅在进行中 Tab 显示）
+                        if selectedTab == 0 {
+                            ForEach(sharedProjects) { sp in
+                                NavigationLink(destination: SharedProjectDetailView(project: sp)) {
+                                    SharedProjectDetailCard(project: sp)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
                     }
                     
                     // 新建项目按钮（仅进行中 tab 显示）
@@ -135,6 +177,35 @@ struct ProjectsView: View {
         .sheet(isPresented: $showManage) {
             ProjectManageView()
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $showJoinSheet) {
+            JoinProjectView()
+        }
+        // 共享记账入口选择弹层
+        .sheet(isPresented: $showSharedEntrySheet) {
+            SharedEntrySheet(
+                onCreateShared: {
+                    // 先关弹层，稍后由 isActive NavigationLink 接手 push
+                    showSharedEntrySheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        sharedCreateActive = true
+                    }
+                },
+                onJoin: {
+                    showSharedEntrySheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        showJoinSheet = true
+                    }
+                }
+            )
+            .presentationDetents([.height(380)])
+            .presentationDragIndicator(.visible)
+        }
+        .onAppear {
+            sharedProjects = SharedProjectService.shared.joinedProjects
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sharedProjectsDidUpdate)) { _ in
+            sharedProjects = SharedProjectService.shared.joinedProjects
         }
     }
     
@@ -200,9 +271,17 @@ struct ProjectDetailCard: View {
                                             color: Color.App.projectIconColor(for: project.colorHex))
                             )
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(project.name)
-                                .font(.system(size: 20, weight: .heavy))
-                                .foregroundColor(Color.App.textBlack)
+                            HStack(alignment: .center, spacing: 6) {
+                                Text(project.name)
+                                    .font(.system(size: 20, weight: .heavy))
+                                    .foregroundColor(Color.App.textBlack)
+                                Text("个人")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(Color.gray)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(Color.gray.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
                             Text("创建于 \(project.createdAt.formattedChineseDate)")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.gray)
@@ -325,6 +404,163 @@ func progressColorPair(for colorHex: String) -> ProgressColorPair {
         return ProgressColorPair(start: "#FBCFE8", end: "#BE185D")
     default:
         return ProgressColorPair(start: "#A8E6CF", end: "#2C6956")
+    }
+}
+
+// MARK: - 共享项目卡片（大版）
+struct SharedProjectDetailCard: View {
+    let project: JoinedSharedProject
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 32)
+                .fill(Color.App.cardBackground)
+                .shadow(color: Color.black.opacity(0.05), radius: 16, x: 0, y: 4)
+
+            VStack(alignment: .leading, spacing: 18) {
+                // 标题行
+                HStack(alignment: .top) {
+                    HStack(spacing: 14) {
+                        Circle()
+                            .fill(Color.blue.opacity(0.3))
+                            .frame(width: 48, height: 48)
+                            .overlay(
+                                Image(systemName: "person.2.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.blue)
+                            )
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text(project.name)
+                                    .font(.system(size: 20, weight: .heavy))
+                                    .foregroundColor(Color.App.textBlack)
+                                Text("👥 共享 · \(project.memberCount)人")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(Color.blue.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                            Text(project.membersDisplay)
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    Spacer()
+                }
+
+                // 查看详情按钮
+                HStack {
+                    Text("查看详情")
+                    Image(systemName: "arrow.right")
+                }
+                .font(.system(size: 16, weight: .heavy))
+                .foregroundColor(.blue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.blue.opacity(0.15))
+                .clipShape(Capsule())
+            }
+            .padding(24)
+        }
+    }
+}
+
+// MARK: - 共享记账入口选择弹层
+struct SharedEntrySheet: View {
+    let onCreateShared: () -> Void
+    let onJoin: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 顶部 Banner
+            Image("shared_entry_banner")
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: 104)
+                .clipped()
+                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
+
+            // 选项区
+            VStack(spacing: 12) {
+                // 创建共享项目 → 关弹层 + 跳主导航
+                Button(action: onCreateShared) {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(hex: "#E6F5EC"))
+                                .frame(width: 52, height: 52)
+                            Image(systemName: "book.and.wrench.fill")
+                                .font(.system(size: 22))
+                                .foregroundColor(Color(hex: "#2E8B57"))
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("创建共享记账项目")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color(hex: "#1A1A1A"))
+                            Text("新建一个共享账本，邀请他人加入")
+                                .font(.system(size: 13))
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.gray.opacity(0.5))
+                    }
+                    .padding(16)
+                    .background(Color(hex: "#F8FFF9"))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(PlainButtonStyle())
+
+                // 加入共享项目
+                Button(action: onJoin) {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(hex: "#E8F0FE"))
+                                .frame(width: 52, height: 52)
+                            Image(systemName: "link.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundColor(Color(hex: "#4A6FD8"))
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("加入共享记账项目")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(Color(hex: "#1A1A1A"))
+                            Text("输入邀请码或扫码加入现有账本")
+                                .font(.system(size: 13))
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.gray.opacity(0.5))
+                    }
+                    .padding(16)
+                    .background(Color(hex: "#F5F8FF"))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+
+            // 取消
+            Button { dismiss() } label: {
+                Text("取消")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .background(Color(hex: "#F2F2F7").ignoresSafeArea())
     }
 }
 

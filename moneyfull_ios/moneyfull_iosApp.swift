@@ -7,6 +7,8 @@ struct moneyfull_iosApp: App {
     @StateObject private var storeManager = StoreManager.shared
     @StateObject private var budgetAlertService = BudgetAlertService.shared
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showJoinFromDeepLink = false
+    @State private var deepLinkInviteCode = ""
     
     private let modelContainer: ModelContainer
     
@@ -88,6 +90,45 @@ struct moneyfull_iosApp: App {
                     NotificationManager.shared.schedulePassiveBudgetChecks(
                         projects: projects
                     )
+                }
+                .onOpenURL { url in
+                    var extractedCode: String? = nil
+
+                    if url.scheme == "moneyfull", url.host == "join" {
+                        // 格式一：moneyfull://join?code=ABCDEF（查询参数）
+                        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                           let q = components.queryItems?.first(where: { $0.name == "code" })?.value,
+                           !q.isEmpty {
+                            extractedCode = q
+                        } else {
+                            // 格式二：moneyfull://join/ABCDEF（路径）
+                            let pathCode = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                            if !pathCode.isEmpty { extractedCode = pathCode }
+                        }
+                    }
+                    // 格式三：Universal Link https://originapex.cn/join/ABCDEF
+                    else if url.scheme == "https",
+                            url.host == "originapex.cn",
+                            url.pathComponents.count >= 3,
+                            url.pathComponents[1] == "join" {
+                        let pathCode = url.pathComponents[2]
+                        if !pathCode.isEmpty { extractedCode = pathCode }
+                    }
+
+                    if let code = extractedCode, !code.isEmpty {
+                        deepLinkInviteCode = code.uppercased()
+                        showJoinFromDeepLink = true
+                    }
+                }
+                .sheet(isPresented: $showJoinFromDeepLink) {
+                    JoinProjectView(prefilledCode: deepLinkInviteCode) { project in
+                        // 加入成功后通知 SharedProjectListView 导航到详情页
+                        NotificationCenter.default.post(
+                            name: .sharedProjectJoinedFromDeepLink,
+                            object: nil,
+                            userInfo: ["project": project]
+                        )
+                    }
                 }
         }
         .modelContainer(modelContainer)

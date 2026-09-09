@@ -86,7 +86,7 @@ struct AssessmentView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .frame(height: 220)     // 绿色区固定高度
+        .frame(height: 180)     // 绿色区固定高度
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(bgGreen)
     }

@@ -62,12 +62,11 @@ struct ProfileView: View {
                             .frame(width: 128, height: 128)
                             .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 5)
                             .overlay(
-                                Image(systemName: "person.crop.circle.fill")
+                                Image("user_avatar")
                                     .resizable()
-                                    .scaledToFit()
-                                    .foregroundColor(Color.App.primaryGreen.opacity(0.8))
+                                    .scaledToFill()
+                                    .frame(width: 128, height: 128)
                                     .clipShape(Circle())
-                                    .padding(8)
                             )
                             #if DEBUG
                             .onTapGesture {
