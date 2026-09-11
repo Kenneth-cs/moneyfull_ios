@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 @main
 struct moneyfull_iosApp: App {
@@ -82,6 +83,9 @@ struct moneyfull_iosApp: App {
                         for project in projects {
                             budgetAlertService.cancelPendingPush(for: project.id)
                         }
+                        // 检查剪贴板：H5 页面在跳转 App Store 前会把邀请码写入剪贴板
+                        // 格式：纯 6 位大写字母，或 "moneyfull-invite:XXXXXX"
+                        checkClipboardForInviteCode()
                     }
                 }
                 .onAppear {
@@ -146,5 +150,45 @@ struct moneyfull_iosApp: App {
             predicate: #Predicate { !$0.isArchived }
         )
         return (try? modelContainer.mainContext.fetch(descriptor)) ?? []
+    }
+
+    /// 检查剪贴板是否含有邀请码（H5 在跳 App Store 前写入）
+    /// 为避免误触，只在邀请码未使用过的情况下弹窗（用 UserDefaults 标记已消费的码）
+    private func checkClipboardForInviteCode() {
+        guard !showJoinFromDeepLink else { return }   // 已有弹窗，不重复
+        let raw = UIPasteboard.general.string ?? ""
+        var code: String? = nil
+
+        // 格式一："moneyfull-invite:ABCDEF"（H5 优先写入此格式，便于精确识别）
+        if raw.hasPrefix("moneyfull-invite:") {
+            let candidate = String(raw.dropFirst("moneyfull-invite:".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            if candidate.count == 6, candidate.allSatisfy({ $0.isLetter || $0.isNumber }) {
+                code = candidate
+            }
+        }
+        // 格式二：纯 6 位大写字母数字（兼容旧版 H5 只写邀请码的情况）
+        else {
+            let candidate = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            if candidate.count == 6, candidate.allSatisfy({ $0.isLetter || $0.isNumber }) {
+                code = candidate
+            }
+        }
+
+        guard let inviteCode = code else { return }
+
+        // 防止重复弹窗：用 UserDefaults 记录已消费的码
+        let consumedKey = "consumed_invite_\(inviteCode)"
+        guard !UserDefaults.standard.bool(forKey: consumedKey) else { return }
+
+        // 标记已消费并清空剪贴板，避免重复触发
+        UserDefaults.standard.set(true, forKey: consumedKey)
+        UIPasteboard.general.string = ""
+
+        // 延迟一帧再弹窗，确保 UI 已就绪
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            deepLinkInviteCode = inviteCode
+            showJoinFromDeepLink = true
+        }
     }
 }

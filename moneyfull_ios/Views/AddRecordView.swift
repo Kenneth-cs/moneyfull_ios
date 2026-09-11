@@ -11,6 +11,20 @@ struct AddRecordView: View {
     var prefilledAmount: String = ""
     var prefilledNote: String = ""
     var prefilledType: TransactionType? = nil
+    /// 编辑模式：传入已有 txID，保存时覆盖同一条记录（后端 ON DUPLICATE KEY UPDATE）
+    var prefilledTransactionId: String? = nil
+    /// 编辑模式：传入已有分类名，onAppear 时自动定位到该分类
+    var prefilledCategoryName: String? = nil
+    /// 编辑模式：预填付款人
+    var prefilledPayerName: String? = nil
+    /// 编辑模式：预填参与人列表
+    var prefilledParticipants: [String]? = nil
+    /// 编辑模式：预填平摊方式（与 AddRecordView 内部 key 一致："equal" / "payer_full" / "self"）
+    var prefilledSplitMethod: String? = nil
+    /// 锁定到当前传入的 sharedProject，隐藏项目切换 UI（共享项目详情页使用）
+    var lockToCurrentProject: Bool = false
+    /// 编辑模式保存后回调（amount, note, categoryName）
+    var onSaved: ((Double, String, String) -> Void)? = nil
     
     // 统一项目类型，用于记一笔页面选择
     enum UnifiedProject: Equatable, Hashable {
@@ -209,58 +223,60 @@ struct AddRecordView: View {
                     // 点击金额区展开键盘
                     .onTapGesture { showKeypad = true }
                     
-                    // MARK: 归属项目选择（横向卡片）
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("归属项目")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(Color.App.textBlack)
-                            Spacer()
-                            Button(action: { showProjectPicker = true }) {
-                                Image(systemName: "list.bullet")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.gray)
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                        
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(allProjects, id: \.id) { project in
-                                    let isSelected = selectedUnifiedProject?.id == project.id
-                                    Button(action: {
-                                        impactFeedback.impactOccurred()
-                                        selectedUnifiedProject = project
-                                        // 切换到搞钱模式项目时自动展开更多选项
-                                        if type == .expense, case .local(let p) = project, p.projectMode == "earning" {
-                                            showMoreOptions = true
-                                        } else {
-                                            showMoreOptions = false
-                                        }
-                                    }) {
-                                        HStack(spacing: 8) {
-                                            Image(systemName: project.icon)
-                                                .font(.system(size: 14))
-                                                .foregroundColor(Color(hex: project.colorHex))
-                                            Text(project.name)
-                                                .font(.system(size: 13, weight: .bold))
-                                                .foregroundColor(isSelected ? Color.App.textBlack : Color.gray)
-                                                .lineLimit(1)
-                                        }
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 10)
-                                        .background(
-                                            Capsule()
-                                                .fill(isSelected ? Color(hex: project.colorHex).opacity(0.3) : Color.App.tabBackground)
-                                        )
-                                        .overlay(
-                                            Capsule()
-                                                .strokeBorder(isSelected ? Color.App.darkGreen : Color.clear, lineWidth: 2)
-                                        )
-                                    }
+                    // MARK: 归属项目选择（横向卡片）—— lockToCurrentProject=true 时隐藏
+                    if !lockToCurrentProject {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("归属项目")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(Color.App.textBlack)
+                                Spacer()
+                                Button(action: { showProjectPicker = true }) {
+                                    Image(systemName: "list.bullet")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.gray)
                                 }
                             }
                             .padding(.horizontal, 24)
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(allProjects, id: \.id) { project in
+                                        let isSelected = selectedUnifiedProject?.id == project.id
+                                        Button(action: {
+                                            impactFeedback.impactOccurred()
+                                            selectedUnifiedProject = project
+                                            // 切换到搞钱模式项目时自动展开更多选项
+                                            if type == .expense, case .local(let p) = project, p.projectMode == "earning" {
+                                                showMoreOptions = true
+                                            } else {
+                                                showMoreOptions = false
+                                            }
+                                        }) {
+                                            HStack(spacing: 8) {
+                                                Image(systemName: project.icon)
+                                                    .font(.system(size: 14))
+                                                    .foregroundColor(Color(hex: project.colorHex))
+                                                Text(project.name)
+                                                    .font(.system(size: 13, weight: .bold))
+                                                    .foregroundColor(isSelected ? Color.App.textBlack : Color.gray)
+                                                    .lineLimit(1)
+                                            }
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 10)
+                                            .background(
+                                                Capsule()
+                                                    .fill(isSelected ? Color(hex: project.colorHex).opacity(0.3) : Color.App.tabBackground)
+                                            )
+                                            .overlay(
+                                                Capsule()
+                                                    .strokeBorder(isSelected ? Color.App.darkGreen : Color.clear, lineWidth: 2)
+                                            )
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 24)
+                            }
                         }
                     }
                     
@@ -485,26 +501,39 @@ struct AddRecordView: View {
                 type = prefilledType
             }
             if selectedCategory == nil {
-                selectedCategory = store.categories.first
+                // 编辑模式：优先按名字定位到已有分类
+                if let name = prefilledCategoryName {
+                    selectedCategory = store.categories.first(where: { $0.name == name })
+                        ?? store.categories.first
+                } else {
+                    selectedCategory = store.categories.first
+                }
             }
 
             // 初始化共享项目字段：使用该项目绑定的昵称（不受全局昵称影响）
             if let sp = currentSharedProject {
-                if payerName.isEmpty {
+                if let prefPayer = prefilledPayerName, !prefPayer.isEmpty {
+                    payerName = prefPayer
+                } else if payerName.isEmpty {
                     payerName = sp.participantName
                 }
-                if selectedParticipants.isEmpty {
+                if let prefPart = prefilledParticipants {
+                    selectedParticipants = prefPart
+                } else if selectedParticipants.isEmpty {
                     selectedParticipants = sp.memberNames
+                }
+                if let prefSplit = prefilledSplitMethod {
+                    splitMethod = prefSplit
                 }
             }
         }
         .onChange(of: selectedUnifiedProject) { _, newProject in
-            // 每次切换项目都强制重置付款人和参与人，避免旧项目数据残留
+            // 编辑模式下不覆盖（保留预填值）；新建模式下重置
+            guard prefilledTransactionId == nil else { return }
             if case .shared(let sp) = newProject {
                 payerName = sp.participantName
-                selectedParticipants = sp.memberNames   // 无条件覆盖
+                selectedParticipants = sp.memberNames
             } else {
-                // 切回本地项目时清空共享专属字段
                 payerName = ""
                 selectedParticipants = []
             }
@@ -848,7 +877,7 @@ struct AddRecordView: View {
                     let finalPayer = payerName.isEmpty ? "我" : payerName
                     let isoDate = ISO8601DateFormatter().string(from: date)
                     let txDict: [String: Any] = [
-                        "id": UUID().uuidString,
+                        "id": prefilledTransactionId ?? UUID().uuidString,   // 编辑模式复用同一 ID
                         "amount": actualAmount,
                         "category": category.name,
                         "note": note,
@@ -867,6 +896,10 @@ struct AddRecordView: View {
                         object: nil,
                         userInfo: ["projectId": sp.projectId]
                     )
+                    // 编辑模式：通知调用方更新 UI
+                    await MainActor.run {
+                        onSaved?(amountValue, note, category.name)
+                    }
                 } catch {
                     print("保存共享账单失败: \(error)")
                 }

@@ -180,6 +180,24 @@ struct AIChatView: View {
     @State private var selectedImage: UIImage?
     @State private var editingTransaction: Transaction?
     @State private var editingMessageIndex: Int?   // 记录当前被修改的账单对应的消息位置，用于 dismiss 后同步气泡文本
+    // 共享账单修改 Sheet
+    @State private var editingSharedTxID: String? = nil       // 仍用于 handleDeleteSharedTransaction
+    @State private var editingSharedInviteCode: String? = nil
+    /// 用于复用 SharedTransactionDetailSheet 的临时对象
+    /// 用于复用 AddRecordView 的编辑上下文
+    struct EditSharedTxContext: Identifiable {
+        let id = UUID()
+        let txID: String
+        let sharedProject: JoinedSharedProject
+        let initialAmount: Double
+        let initialNote: String
+        let initialType: TransactionType
+        let initialCategoryName: String
+        let messageID: UUID        // 对应气泡 ID，用于保存后更新文本
+    }
+    @State private var editingSharedTransaction: SharedTransaction? = nil     // 旧的，可弃用
+    @State private var editingSharedTransactionInviteCode: String = ""       // 旧的，可弃用
+    @State private var editSharedTxContext: EditSharedTxContext? = nil
     @State private var showToast = false
     @State private var toastMessage = ""
     @State private var showBackTapTutorial = false
@@ -361,6 +379,34 @@ struct AIChatView: View {
             EditTransactionView(transaction: tx)
                 .environmentObject(store)
         }
+        .sheet(item: $editSharedTxContext) { ctx in
+            AddRecordView(
+                sharedProject: ctx.sharedProject,
+                prefilledAmount: ctx.initialAmount.truncatingRemainder(dividingBy: 1) == 0
+                    ? String(Int(ctx.initialAmount))
+                    : String(format: "%.2f", ctx.initialAmount),
+                prefilledNote: ctx.initialNote,
+                prefilledType: ctx.initialType,
+                prefilledTransactionId: ctx.txID,
+                prefilledCategoryName: ctx.initialCategoryName,
+                lockToCurrentProject: true,     // 编辑时锁定项目，防止切换后旧记录残留
+                onSaved: { savedAmount, savedNote, savedCategory in
+                    let msgID = ctx.messageID
+                    if let idx = messages.firstIndex(where: { $0.id == msgID }) {
+                        let prefix = ctx.initialType == .expense ? "-" : "+"
+                        let amtStr = savedAmount.truncatingRemainder(dividingBy: 1) == 0
+                            ? String(Int(savedAmount)) : String(format: "%.2f", savedAmount)
+                        let projectName = ctx.sharedProject.name
+                        let newContent = "已记入「\(projectName)」\(prefix)¥\(amtStr)（\(savedCategory)）"
+                        messages[idx].content = newContent
+                        if let historyID = messages[idx].chatHistoryID {
+                            contextManager.updateChatHistoryContent(id: historyID, newContent: newContent)
+                        }
+                    }
+                }
+            )
+            .environmentObject(store)
+        }
         .sheet(isPresented: $showBackTapTutorial) {
             BackTapTutorialView()
         }
@@ -512,6 +558,12 @@ struct AIChatView: View {
                                 editingTransaction = tx
                             },
                             onDelete: { handleDeleteTransaction($0, message: message) },
+                            onEditShared: { txID, inviteCode, cardData in
+                                handleEditSharedTransaction(txID: txID, inviteCode: inviteCode, cardData: cardData)
+                            },
+                            onDeleteShared: { txID, inviteCode in
+                                handleDeleteSharedTransaction(txID: txID, inviteCode: inviteCode, message: message)
+                            },
                             onViewInsightDetail: { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 NotificationCenter.default.post(name: .navigateToAnalytics, object: nil)
                             }}
@@ -1042,6 +1094,52 @@ struct AIChatView: View {
     }
 
     private func handleTransactionConfirmed(_ cardData: TransactionCardData) {
+        // ── 共享账本路径 ──────────────────────────────────────────────
+        if cardData.isSharedProject, let inviteCode = cardData.sharedInviteCode, !inviteCode.isEmpty {
+            let myName = SharedProjectService.shared.joinedProjects
+                .first(where: { $0.inviteCode == inviteCode })?.participantName
+                ?? SharedProjectService.shared.myNickname
+
+            let txID = UUID().uuidString          // 生成后立刻存入消息，供后续删除/修改使用
+            let txDict: [String: Any] = [
+                "id": txID,                       // ← 后端用 t.id，必须是 "id"
+                "amount": cardData.type == "expense" ? -cardData.amount : cardData.amount,
+                "category": cardData.categoryName,
+                "note": cardData.note,
+                "participantName": myName,
+                "payerName": myName,
+                "participants": [],
+                "splitMethod": "equal",
+                "transactionAt": ISO8601DateFormatter().string(from: Date())
+            ]
+
+            let prefix = cardData.type == "expense" ? "-" : "+"
+            let content = "已记入「\(cardData.projectName ?? "共享账本")」\(prefix)¥\(cardData.amount)（\(cardData.categoryName)）"
+            let historyID = try? contextManager.saveChatHistory(role: "assistant", content: content)
+            messages.append(ChatMessage(
+                role: .assistant, content: content, timestamp: Date(),
+                chatHistoryID: historyID,
+                confirmedSharedTransactionID: txID,
+                confirmedSharedInviteCode: inviteCode,
+                confirmedSharedCardData: cardData
+            ))
+
+            Task {
+                do {
+                    _ = try await SharedProjectService.shared.writeTransactions(
+                        inviteCode: inviteCode, transactions: [txDict]
+                    )
+                    await SharedProjectService.shared.syncAll()
+                } catch {
+                    #if DEBUG
+                    print("❌ AI 写入共享账本失败: \(error)")
+                    #endif
+                }
+            }
+            return
+        }
+
+        // ── 个人项目路径 ──────────────────────────────────────────────
         let project: Project
         if let name = cardData.projectName,
            let found = store.activeProjects.first(where: { $0.name == name }) {
@@ -1086,6 +1184,45 @@ struct AIChatView: View {
             messages[idx].confirmedTransaction = nil
         }
         _ = try? contextManager.saveChatHistory(role: "assistant", content: "🗑️ 已删除")
+    }
+
+    private func handleDeleteSharedTransaction(txID: String, inviteCode: String, message: ChatMessage) {
+        Task {
+            do {
+                try await SharedProjectService.shared.deleteTransaction(inviteCode: inviteCode, transactionId: txID)
+                await SharedProjectService.shared.syncAll()
+                await MainActor.run {
+                    if let idx = messages.firstIndex(where: { $0.id == message.id }) {
+                        messages[idx].isDeleted = true
+                        messages[idx].confirmedSharedTransactionID = nil
+                        messages[idx].confirmedSharedInviteCode = nil
+                        messages[idx].confirmedSharedCardData = nil
+                    }
+                    _ = try? contextManager.saveChatHistory(role: "assistant", content: "🗑️ 已删除")
+                }
+            } catch {
+                await MainActor.run {
+                    toastMessage = "删除失败，请重试"
+                    showToast = true
+                }
+            }
+        }
+    }
+
+    private func handleEditSharedTransaction(txID: String, inviteCode: String, cardData: TransactionCardData) {
+        guard let sp = SharedProjectService.shared.joinedProjects.first(where: { $0.inviteCode == inviteCode }),
+              let msgIdx = messages.firstIndex(where: { $0.confirmedSharedTransactionID == txID })
+        else { return }
+        let initialType: TransactionType = cardData.type == "expense" ? .expense : .income
+        editSharedTxContext = EditSharedTxContext(
+            txID: txID,
+            sharedProject: sp,
+            initialAmount: cardData.amount,
+            initialNote: cardData.note,
+            initialType: initialType,
+            initialCategoryName: cardData.categoryName,
+            messageID: messages[msgIdx].id
+        )
     }
 
     private func handleSaveMemory(keyword: String, categoryName: String, projectName: String?) {
@@ -1299,6 +1436,35 @@ struct AIChatView: View {
                 }
             } else {
                 // 普通交易记录
+                // 如果当前有个人活跃项目，强制覆盖 AI 对共享项目的选择（防止 AI 惯性使用共享项目）
+                let hasPersonalActive = store.activeProjects.contains(where: { $0.isActiveProject })
+                let activeSharedCode = UserDefaults.standard.string(forKey: "activeSharedProjectInviteCode")
+                let effectiveIsShared: Bool
+                let effectiveInviteCode: String?
+                if hasPersonalActive {
+                    // 个人项目活跃：无论 AI 说什么，不走共享路径
+                    effectiveIsShared = false
+                    effectiveInviteCode = nil
+                } else if let code = activeSharedCode, !code.isEmpty {
+                    // 共享账本活跃：强制使用该账本（即使 AI 没输出或输出了别的 invite_code）
+                    effectiveIsShared = true
+                    effectiveInviteCode = code
+                } else {
+                    effectiveIsShared = result.isShared == true
+                    effectiveInviteCode = result.inviteCode
+                }
+                // 同步修正 project_name 到正确的账本名
+                let effectiveProjectName: String?
+                if effectiveIsShared, let code = effectiveInviteCode {
+                    effectiveProjectName = SharedProjectService.shared.joinedProjects
+                        .first(where: { $0.inviteCode == code })?.name ?? result.projectName
+                } else if hasPersonalActive,
+                          let activeName = store.activeProjects.first(where: { $0.isActiveProject })?.name {
+                    effectiveProjectName = activeName
+                } else {
+                    effectiveProjectName = result.projectName
+                }
+
                 let card = ChatMessage(
                     role: .assistant,
                     content: "我帮你记录了这笔交易：",
@@ -1311,7 +1477,9 @@ struct AIChatView: View {
                         categoryIcon: result.categoryIcon ?? "tag.fill",
                         categoryColorHex: result.categoryColorHex ?? "#A8E6CF",
                         note: result.note ?? "",
-                        projectName: result.projectName
+                        projectName: effectiveProjectName,
+                        isSharedProject: effectiveIsShared,
+                        sharedInviteCode: effectiveInviteCode
                     )
                 )
                 messages.append(card)
@@ -1440,6 +1608,11 @@ struct ChatMessage: Identifiable {
     var ctaAction: OnboardingCTAAction? = nil
     /// 对应 ChatHistory 数据库记录的 ID，用于修改账单后同步更新历史文本
     var chatHistoryID: UUID? = nil
+    /// 共享账单的服务端 ID（用于删除/修改）
+    var confirmedSharedTransactionID: String? = nil
+    var confirmedSharedInviteCode: String? = nil
+    /// 共享账单原始数据（用于修改时回填）
+    var confirmedSharedCardData: TransactionCardData? = nil
 
     init(role: ChatRole, content: String, timestamp: Date,
          transactionCard: TransactionCardData? = nil,
@@ -1453,7 +1626,10 @@ struct ChatMessage: Identifiable {
          animationItems: [String]? = nil,
          onboardingImageName: String? = nil,
          ctaAction: OnboardingCTAAction? = nil,
-         chatHistoryID: UUID? = nil) {
+         chatHistoryID: UUID? = nil,
+         confirmedSharedTransactionID: String? = nil,
+         confirmedSharedInviteCode: String? = nil,
+         confirmedSharedCardData: TransactionCardData? = nil) {
         self.role = role
         self.content = content
         self.timestamp = timestamp
@@ -1469,6 +1645,9 @@ struct ChatMessage: Identifiable {
         self.onboardingImageName = onboardingImageName
         self.ctaAction = ctaAction
         self.chatHistoryID = chatHistoryID
+        self.confirmedSharedTransactionID = confirmedSharedTransactionID
+        self.confirmedSharedInviteCode = confirmedSharedInviteCode
+        self.confirmedSharedCardData = confirmedSharedCardData
     }
 }
 
@@ -1490,14 +1669,18 @@ struct TransactionCardData {
     var categoryName: String; var categoryIcon: String; var categoryColorHex: String
     var note: String; var projectName: String?
     var isNewCategory: Bool; var suggestedCategory: String?; var parentGroup: String?
+    // 共享账本
+    var isSharedProject: Bool; var sharedInviteCode: String?
     init(amount: Double, type: String, groupName: String = "",
          categoryName: String, categoryIcon: String, categoryColorHex: String,
          note: String, projectName: String? = nil,
-         isNewCategory: Bool = false, suggestedCategory: String? = nil, parentGroup: String? = nil) {
+         isNewCategory: Bool = false, suggestedCategory: String? = nil, parentGroup: String? = nil,
+         isSharedProject: Bool = false, sharedInviteCode: String? = nil) {
         self.amount = amount; self.type = type; self.groupName = groupName
         self.categoryName = categoryName; self.categoryIcon = categoryIcon; self.categoryColorHex = categoryColorHex
         self.note = note; self.projectName = projectName
         self.isNewCategory = isNewCategory; self.suggestedCategory = suggestedCategory; self.parentGroup = parentGroup
+        self.isSharedProject = isSharedProject; self.sharedInviteCode = sharedInviteCode
     }
 }
 
@@ -1511,6 +1694,8 @@ struct ChatBubble: View {
     var onCreateProject: ((ProjectCreationData) -> Void)?
     var onEdit: ((Transaction) -> Void)?
     var onDelete: ((Transaction) -> Void)?
+    var onEditShared: ((String, String, TransactionCardData) -> Void)?   // (txID, inviteCode, cardData)
+    var onDeleteShared: ((String, String) -> Void)?                      // (txID, inviteCode)
     var onViewInsightDetail: (() -> Void)?
 
     @EnvironmentObject var store: AppStore
@@ -1620,9 +1805,14 @@ struct ChatBubble: View {
                 // 文本气泡（支持富文本）
                 else if !message.content.isEmpty {
                     bubbleContent
-                    // 入账后操作按钮
+                    // 个人账单操作按钮
                     if let tx = message.confirmedTransaction {
                         confirmedActionButtons(tx: tx)
+                    }
+                    // 共享账单操作按钮
+                    if let txID = message.confirmedSharedTransactionID,
+                       let inviteCode = message.confirmedSharedInviteCode {
+                        confirmedSharedActionButtons(txID: txID, inviteCode: inviteCode, message: message)
                     }
                 }
 
@@ -1715,6 +1905,37 @@ struct ChatBubble: View {
             }
 
             Button(action: { onDelete?(tx) }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash").font(.system(size: 11, weight: .semibold))
+                    Text("删除账单").font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+                .foregroundColor(Color(hex: "#EF4444"))
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(Color(hex: "#EF4444").opacity(0.1))
+                .clipShape(Capsule())
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    @ViewBuilder
+    private func confirmedSharedActionButtons(txID: String, inviteCode: String, message: ChatMessage) -> some View {
+        HStack(spacing: 10) {
+            // 修改按钮
+            if let cardData = message.confirmedSharedCardData {
+                Button(action: { onEditShared?(txID, inviteCode, cardData) }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pencil").font(.system(size: 11, weight: .semibold))
+                        Text("修改账单").font(.system(size: 12, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(ChatDesign.onPrimaryContainer)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(ChatDesign.primaryContainer.opacity(0.15))
+                    .clipShape(Capsule())
+                }
+            }
+            // 删除按钮
+            Button(action: { onDeleteShared?(txID, inviteCode) }) {
                 HStack(spacing: 4) {
                     Image(systemName: "trash").font(.system(size: 11, weight: .semibold))
                     Text("删除账单").font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -1944,29 +2165,39 @@ struct GuideSuggestionRow: View {
 
 // MARK: - Active Project Sheet View
 
+// MARK: - Active Project Sheet View
+
 struct ActiveProjectSheetView: View {
     @ObservedObject var store: AppStore
     @Environment(\.presentationMode) var presentationMode
-    
+
+    private let sharedProjects = SharedProjectService.shared.joinedProjects
+    @State private var activeSharedInviteCode: String? = UserDefaults.standard.string(forKey: "activeSharedProjectInviteCode")
+
+    /// 当前是否有任何活跃项目（个人或共享）
+    private var hasAnyActive: Bool {
+        store.activeProjects.contains(where: { $0.isActiveProject }) || activeSharedInviteCode != nil
+    }
+
     var body: some View {
         NavigationView {
             List {
-                Section(header: Text("设置活跃项目")) {
+                // ── 个人项目 Section ──
+                Section(header: Text("个人项目")) {
                     ForEach(store.activeProjects.filter { !$0.isArchived }) { project in
                         Button(action: {
+                            // 选个人项目时清掉共享活跃
+                            clearActiveShared()
                             store.toggleActiveProject(project)
                         }) {
                             HStack {
                                 Image(systemName: project.icon)
                                     .foregroundColor(Color(hex: project.colorHex))
                                     .frame(width: 30)
-                                
                                 Text(project.name)
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(Color.App.textBlack)
-                                
                                 Spacer()
-                                
                                 if project.isActiveProject {
                                     Image(systemName: "star.fill")
                                         .foregroundColor(Color.App.darkYellow)
@@ -1978,23 +2209,63 @@ struct ActiveProjectSheetView: View {
                         }
                     }
                 }
-                
-                Section(header: Text("说明"), footer: Text("设置活跃项目后，所有消费（除非有直接指令）都会优先记入该项目。适合旅游、装修等阶段性项目。")) {
-                    HStack {
-                        Image(systemName: "info.circle")
-                            .foregroundColor(.gray)
-                        Text("活跃项目全局唯一")
-                            .font(.system(size: 14))
-                            .foregroundColor(.gray)
+
+                // ── 共享账本 Section ──
+                if !sharedProjects.isEmpty {
+                    Section(header: Text("共享账本")) {
+                        ForEach(sharedProjects) { sp in
+                            Button(action: {
+                                // 选共享项目时清掉个人活跃
+                                if let personal = store.activeProjects.first(where: { $0.isActiveProject }) {
+                                    store.toggleActiveProject(personal)
+                                }
+                                let newCode = activeSharedInviteCode == sp.inviteCode ? nil : sp.inviteCode
+                                activeSharedInviteCode = newCode
+                                UserDefaults.standard.set(newCode, forKey: "activeSharedProjectInviteCode")
+                            }) {
+                                HStack {
+                                    Image(systemName: "person.2.fill")
+                                        .foregroundColor(Color(hex: "#4CAF50"))
+                                        .frame(width: 30)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(sp.name)
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text(sp.membersDisplay)
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    if activeSharedInviteCode == sp.inviteCode {
+                                        Image(systemName: "star.fill")
+                                            .foregroundColor(Color.App.darkYellow)
+                                    } else {
+                                        Image(systemName: "star")
+                                            .foregroundColor(.gray.opacity(0.4))
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                
-                if store.activeProjects.contains(where: { $0.isActiveProject }) {
+
+                // ── 说明 Section ──
+                Section(header: Text("说明"),
+                        footer: Text("设置活跃项目后，所有消费（除非有直接指令）都会优先记入该项目。适合旅游、装修等阶段性项目。")) {
+                    HStack {
+                        Image(systemName: "info.circle").foregroundColor(.gray)
+                        Text("活跃项目全局唯一")
+                            .font(.system(size: 14)).foregroundColor(.gray)
+                    }
+                }
+
+                if hasAnyActive {
                     Section {
                         Button(action: {
                             if let active = store.activeProjects.first(where: { $0.isActiveProject }) {
                                 store.toggleActiveProject(active)
                             }
+                            clearActiveShared()
                         }) {
                             HStack {
                                 Spacer()
@@ -2012,12 +2283,15 @@ struct ActiveProjectSheetView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("完成") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
+                    Button("完成") { presentationMode.wrappedValue.dismiss() }
                 }
             }
         }
+    }
+
+    private func clearActiveShared() {
+        activeSharedInviteCode = nil
+        UserDefaults.standard.removeObject(forKey: "activeSharedProjectInviteCode")
     }
 }
 

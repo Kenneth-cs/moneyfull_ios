@@ -181,13 +181,14 @@ struct SharedProjectDetailView: View {
         .sheet(isPresented: $showAddSheet, onDismiss: {
             Task { await refreshTransactions() }
         }) {
-            AddRecordView(sharedProject: project)
+            AddRecordView(sharedProject: project, lockToCurrentProject: true)
         }
         // Q3：流水详情 sheet
         .sheet(item: $selectedTransaction) { tx in
             SharedTransactionDetailSheet(
                 transaction: tx,
                 inviteCode: project.inviteCode,
+                members: liveMembers,
                 onDeleted: { deletedId in
                     transactions.removeAll { $0.id == deletedId }
                     selectedTransaction = nil
@@ -381,7 +382,7 @@ struct SharedProjectDetailView: View {
                     Text("总支出")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.gray)
-                    Text("¥ \(totalAmount, specifier: "%.0f")")
+                    Text("¥ \(totalAmount, specifier: "%.2f")")
                         .font(.system(size: 36, weight: .heavy))
                         .foregroundColor(Color.App.textBlack)
                 }
@@ -397,7 +398,7 @@ struct SharedProjectDetailView: View {
                         Text("\(item.0)支付")
                             .font(.system(size: 12))
                             .foregroundColor(.gray)
-                        Text("¥ \(item.1, specifier: "%.0f")")
+                        Text("¥ \(item.1, specifier: "%.2f")")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundColor(Color.App.textBlack)
                     }
@@ -815,26 +816,37 @@ struct SharedTransactionRow: View {
 struct SharedTransactionDetailSheet: View {
     let transaction: SharedTransaction
     let inviteCode: String
+    var members: [String] = []          // 账本全部成员昵称，用于付款人/参与人选择
     var onDeleted: (String) -> Void
     var onUpdated: (SharedTransaction) -> Void
 
     @Environment(\.dismiss) private var dismiss
     private var isOwn: Bool { transaction.deviceId == SharedProjectService.shared.deviceId }
 
-    // 编辑状态
+    // 内置编辑状态（保留，用于无 sharedProject 时的兜底）
     @State private var editAmount: String = ""
     @State private var editNote: String = ""
     @State private var editCategory: String = ""
     @State private var editDate: Date = Date()
+    @State private var editPayerName: String = ""
+    @State private var editParticipants: Set<String> = []
+    @State private var editSplitMethod: String = "equal"
     @State private var isEditing = false
     @State private var isSaving = false
     @State private var showDeleteAlert = false
     @State private var errorMessage: String?
+    /// 点「编辑」时弹出 AddRecordView（复用完整记一笔界面）
+    @State private var showEditAddRecord = false
 
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy年M月d日 HH:mm"; return f
     }()
     private let categories = ["餐饮","购物","交通","娱乐","医疗","教育","居住","人情","收入","其他"]
+    private let splitMethodOptions: [(key: String, label: String)] = [
+        ("equal",      "平均分摊"),
+        ("payer_full", "全由付款人"),
+        ("self",       "仅本人")
+    ]
 
     var body: some View {
         NavigationStack {
@@ -920,12 +932,84 @@ struct SharedTransactionDetailSheet: View {
                         Divider().padding(.leading, 16)
 
                         // 付款人
-                        DetailRow(label: "付款人", value: transaction.displayPayerName)
+                        if isEditing && !members.isEmpty {
+                            HStack {
+                                Text("付款人")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.gray)
+                                    .frame(width: 52, alignment: .leading)
+                                Picker("", selection: $editPayerName) {
+                                    ForEach(members, id: \.self) { Text($0).tag($0) }
+                                }
+                                .pickerStyle(.menu)
+                                .foregroundColor(Color.App.textBlack)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                        } else {
+                            DetailRow(label: "付款人", value: transaction.displayPayerName)
+                        }
                         Divider().padding(.leading, 16)
 
-                        // 参与人（显示所有成员昵称）
-                        DetailRow(label: "参与人", value: txParticipantsText)
+                        // 参与人（编辑时多选）
+                        if isEditing && !members.isEmpty {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("参与人")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.gray)
+                                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
+                                ForEach(members, id: \.self) { member in
+                                    Button(action: {
+                                        if editParticipants.contains(member) {
+                                            editParticipants.remove(member)
+                                        } else {
+                                            editParticipants.insert(member)
+                                        }
+                                    }) {
+                                        HStack {
+                                            Text(member)
+                                                .font(.system(size: 15))
+                                                .foregroundColor(Color.App.textBlack)
+                                            Spacer()
+                                            Image(systemName: editParticipants.contains(member) ? "checkmark.circle.fill" : "circle")
+                                                .foregroundColor(editParticipants.contains(member) ? Color.App.darkGreen : .gray.opacity(0.4))
+                                        }
+                                        .padding(.horizontal, 16).padding(.vertical, 10)
+                                    }
+                                }
+                                Text("不选则默认全体成员参与")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray.opacity(0.6))
+                                    .padding(.horizontal, 16).padding(.bottom, 10)
+                            }
+                        } else {
+                            DetailRow(label: "参与人", value: txParticipantsText)
+                        }
                         Divider().padding(.leading, 16)
+
+                        // 平摊方式
+                        if isEditing {
+                            HStack {
+                                Text("平摊方式")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.gray)
+                                    .frame(width: 64, alignment: .leading)
+                                Picker("", selection: $editSplitMethod) {
+                                    ForEach(splitMethodOptions, id: \.key) { opt in
+                                        Text(opt.label).tag(opt.key)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .foregroundColor(Color.App.textBlack)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                            Divider().padding(.leading, 16)
+                        } else {
+                            let splitLabel = splitMethodOptions.first(where: { $0.key == (transaction.splitMethod ?? "equal") })?.label ?? "平均分摊"
+                            DetailRow(label: "平摊方式", value: splitLabel)
+                            Divider().padding(.leading, 16)
+                        }
 
                         // 时间
                         DetailRow(label: "时间",
@@ -981,11 +1065,7 @@ struct SharedTransactionDetailSheet: View {
                             .disabled(isSaving || editAmount.isEmpty)
                         } else {
                             Button("编辑") {
-                                editAmount = String(format: "%.2f", abs(transaction.amount))
-                                editNote = transaction.note ?? ""
-                                editCategory = transaction.category ?? "其他"
-                                editDate = transaction.transactionAt
-                                isEditing = true
+                                showEditAddRecord = true
                             }
                         }
                     }
@@ -997,7 +1077,49 @@ struct SharedTransactionDetailSheet: View {
             } message: { Text("删除后无法恢复。") }
         }
         .presentationDetents([.large])
-    }
+        // 编辑：复用完整记一笔界面，锁定当前共享项目
+        .sheet(isPresented: $showEditAddRecord) {
+            if let sp = SharedProjectService.shared.joinedProjects.first(where: { $0.inviteCode == inviteCode }) {
+                let initialAmount = abs(transaction.amount)
+                let initialType: TransactionType = transaction.amount < 0 ? .expense : .income
+                let participants = transaction.participants ?? []
+                AddRecordView(
+                    sharedProject: sp,
+                    prefilledAmount: initialAmount.truncatingRemainder(dividingBy: 1) == 0
+                        ? String(Int(initialAmount)) : String(format: "%.2f", initialAmount),
+                    prefilledNote: transaction.note ?? "",
+                    prefilledType: initialType,
+                    prefilledTransactionId: transaction.id,
+                    prefilledCategoryName: transaction.category,
+                    prefilledPayerName: transaction.payerName ?? transaction.participantName,
+                    prefilledParticipants: participants.isEmpty ? nil : participants,
+                    prefilledSplitMethod: transaction.splitMethod,
+                    lockToCurrentProject: true,
+                    onSaved: { savedAmount, savedNote, savedCategory in
+                        // 构造更新后的对象通知父视图刷新
+                        let sign: Double = initialType == .expense ? -1 : 1
+                        let updated = SharedTransaction(
+                            id: transaction.id,
+                            deviceId: transaction.deviceId,
+                            participantName: transaction.participantName,
+                            payerName: transaction.payerName,
+                            participants: participants.isEmpty ? nil : participants,
+                            splitMethod: transaction.splitMethod,
+                            amount: sign * savedAmount,
+                            category: savedCategory,
+                            note: savedNote,
+                            transactionAt: transaction.transactionAt,
+                            isDeleted: transaction.isDeleted,
+                            serverUpdatedAt: transaction.serverUpdatedAt
+                        )
+                        onUpdated(updated)
+                        showEditAddRecord = false
+                    }
+                )
+                // AppStore EnvironmentObject 由上层 SharedProjectDetailView 自动继承，无需手动传入
+            }
+        }
+    }   // end var body
 
     // 分类图标
     private var txCategoryIcon: String {
@@ -1029,26 +1151,29 @@ struct SharedTransactionDetailSheet: View {
         isSaving = true
         errorMessage = nil
         let sign: Double = transaction.amount < 0 ? -1 : 1
+        let participantsList = editParticipants.isEmpty ? [] : Array(editParticipants).sorted()
         let txDict: [String: Any] = [
             "id": transaction.id,
             "amount": sign * amountValue,
             "category": editCategory,
             "note": editNote,
             "transactionAt": ISO8601DateFormatter().string(from: editDate),
-            "payerName": transaction.payerName ?? transaction.participantName ?? "我",
-            "participants": transaction.participants ?? [],
-            "splitMethod": transaction.splitMethod ?? "equal"
+            "payerName": editPayerName.isEmpty ? (transaction.payerName ?? transaction.participantName ?? "我") : editPayerName,
+            "participants": participantsList,
+            "splitMethod": editSplitMethod
         ]
         do {
             _ = try await SharedProjectService.shared.writeTransactions(inviteCode: inviteCode, transactions: [txDict])
             // 构造更新后的本地对象（服务端会通过 sharedTransactionDidWrite 通知刷新）
             NotificationCenter.default.post(name: .sharedTransactionDidWrite, object: nil,
                                             userInfo: ["projectId": transaction.deviceId])
+            let updatedPayer = editPayerName.isEmpty ? transaction.payerName : editPayerName
+            let updatedParticipants: [String]? = participantsList.isEmpty ? nil : participantsList
             let updated = SharedTransaction(
                 id: transaction.id, deviceId: transaction.deviceId,
                 participantName: transaction.participantName,
-                payerName: transaction.payerName, participants: transaction.participants,
-                splitMethod: transaction.splitMethod,
+                payerName: updatedPayer, participants: updatedParticipants,
+                splitMethod: editSplitMethod,
                 amount: sign * amountValue, category: editCategory,
                 note: editNote, transactionAt: editDate,
                 isDeleted: transaction.isDeleted, serverUpdatedAt: transaction.serverUpdatedAt

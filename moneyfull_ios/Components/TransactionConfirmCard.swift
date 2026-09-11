@@ -144,11 +144,20 @@ struct TransactionConfirmCard: View {
                     showProjectPicker = true
                 }) {
                     HStack {
-                        Image(systemName: "folder.fill")
-                            .foregroundColor(.gray)
+                        Image(systemName: displayData.isSharedProject ? "person.2.fill" : "folder.fill")
+                            .foregroundColor(displayData.isSharedProject ? Color.App.darkGreen : .gray)
                         Text(displayData.projectName ?? "未选择项目")
                             .font(.system(size: 14))
-                            .foregroundColor(.gray)
+                            .foregroundColor(displayData.isSharedProject ? Color.App.darkGreen : .gray)
+                        if displayData.isSharedProject {
+                            Text("共享")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.App.darkGreen)
+                                .clipShape(Capsule())
+                        }
                         Spacer()
                         if !displayData.isNewCategory {
                             Image(systemName: "pencil.circle.fill")
@@ -263,12 +272,23 @@ struct TransactionConfirmCard: View {
         }
         .sheet(isPresented: $showProjectPicker) {
             ConfirmCardProjectPicker(
-                selectedProjectName: Binding(
-                    get: { editableData.projectName },
-                    set: { editableData.projectName = $0 }
-                ),
+                selectedProjectName: editableData.projectName,
+                isSelectedShared: editableData.isSharedProject,
                 projects: store.activeProjects,
-                onSave: { hasEdited = true; resumeTimer() },
+                onSelectPersonal: { name in
+                    editableData.projectName = name
+                    editableData.isSharedProject = false
+                    editableData.sharedInviteCode = nil
+                    hasEdited = true
+                    resumeTimer()
+                },
+                onSelectShared: { sp in
+                    editableData.projectName = sp.name
+                    editableData.isSharedProject = true
+                    editableData.sharedInviteCode = sp.inviteCode
+                    hasEdited = true
+                    resumeTimer()
+                },
                 onCancel: { resumeTimer() }
             )
         }
@@ -462,17 +482,25 @@ struct ConfirmCardCategoryPicker: View {
 // MARK: - 确认卡片项目选择器
 struct ConfirmCardProjectPicker: View {
     @Environment(\.presentationMode) var presentationMode
-    @Binding var selectedProjectName: String?
+    var selectedProjectName: String?
+    var isSelectedShared: Bool
     var projects: [Project]
-    var onSave: () -> Void
+    /// 选了个人项目时回调（项目名，nil = 不选择）
+    var onSelectPersonal: (String?) -> Void
+    /// 选了共享账本时回调
+    var onSelectShared: (JoinedSharedProject) -> Void
     var onCancel: () -> Void
+
+    private var sharedProjects: [JoinedSharedProject] {
+        SharedProjectService.shared.joinedProjects
+    }
 
     var body: some View {
         NavigationView {
             List {
+                // ── 不选择项目 ──
                 Button(action: {
-                    selectedProjectName = nil
-                    onSave()
+                    onSelectPersonal(nil)
                     presentationMode.wrappedValue.dismiss()
                 }) {
                     HStack {
@@ -487,30 +515,79 @@ struct ConfirmCardProjectPicker: View {
                         }
                     }
                 }
-                ForEach(projects) { project in
-                    Button(action: {
-                        selectedProjectName = project.name
-                        onSave()
-                        presentationMode.wrappedValue.dismiss()
-                    }) {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(Color(hex: project.colorHex).opacity(0.3))
-                                .frame(width: 36, height: 36)
-                                .overlay(
-                                    AppIconView(name: project.icon, size: 16,
-                                                color: Color(hex: project.colorHex))
-                                )
-                            Text(project.name)
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(Color.App.textBlack)
-                            Spacer()
-                            if selectedProjectName == project.name {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(Color.App.darkGreen)
+
+                // ── 个人项目 ──
+                if !projects.isEmpty {
+                    Section(header: Text("个人项目")) {
+                        ForEach(projects) { project in
+                            Button(action: {
+                                onSelectPersonal(project.name)
+                                presentationMode.wrappedValue.dismiss()
+                            }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color(hex: project.colorHex).opacity(0.3))
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            AppIconView(name: project.icon, size: 16,
+                                                        color: Color(hex: project.colorHex))
+                                        )
+                                    Text(project.name)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(Color.App.textBlack)
+                                    Spacer()
+                                    if !isSelectedShared && selectedProjectName == project.name {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(Color.App.darkGreen)
+                                    }
+                                }
+                                .padding(.vertical, 4)
                             }
                         }
-                        .padding(.vertical, 4)
+                    }
+                }
+
+                // ── 共享账本 ──
+                if !sharedProjects.isEmpty {
+                    Section(header: Text("共享账本")) {
+                        ForEach(sharedProjects) { sp in
+                            Button(action: {
+                                onSelectShared(sp)
+                                presentationMode.wrappedValue.dismiss()
+                            }) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.App.darkGreen.opacity(0.15))
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Image(systemName: "person.2.fill")
+                                                .font(.system(size: 14))
+                                                .foregroundColor(Color.App.darkGreen)
+                                        )
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(sp.name)
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundColor(Color.App.textBlack)
+                                        Text(sp.membersDisplay)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    Text("共享")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.App.darkGreen)
+                                        .clipShape(Capsule())
+                                    if isSelectedShared && selectedProjectName == sp.name {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(Color.App.darkGreen)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
                     }
                 }
             }

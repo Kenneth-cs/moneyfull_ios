@@ -40,8 +40,10 @@ class LLMService {
         5. **项目归属规则 (project_name)**，按以下优先级匹配（非常重要，必须严格执行）：
            - **第一层（最高优先级）：用户直接指令**
              * 如果用户明确提及项目名称（如"记到旅游里"、"记在装修"），直接归入该项目
+             * 如果项目名称与 Context 中 Shared Projects 里的某个账本名称匹配，必须同时输出 `"is_shared": true, "invite_code": "对应邀请码"`
            - **第二层：活跃项目（⭐标星项目）**
              * 检查 Context 中是否有标记为 `(当前活跃项目⭐)` 或 `(近期高频活跃)` 的项目
+             * 如果 Context 中有 `(当前活跃共享账本⭐)` 标记，该共享账本优先级等同于活跃项目，必须设 `"is_shared": true, "invite_code": "邀请码"`
              * 如果有，**无论 User Memory Rules 中记录了什么项目，都必须将 project_name 设为该活跃项目**
              * 活跃项目代表用户当前的记账意图，优先级高于一切历史记忆规则
            - **第三层：记忆规则**
@@ -50,6 +52,7 @@ class LLMService {
            - **第四层：语义推断**
              * 只在无活跃项目时，根据消费特征（如酒店、机票、景区）推断项目
            - **兜底**：以上都不满足时，project_name 设为 null（系统自动归入"日常收支"）
+           - **共享账本规则**：只要 project_name 对应 Shared Projects 中的某个账本，必须附加 `"is_shared": true, "invite_code": "邀请码"`
         
         6. **备注规则 (note)**：
            - 备注是用户消费的简短描述，**不包含金额信息**
@@ -59,7 +62,8 @@ class LLMService {
            - 如果用户没有提供额外描述，note 可以为分类名称（如 "咖啡"）
 
         7. **完整信息输出**：如果信息完整且分类存在，输出：
-           {"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注（不含金额）", "project_name": "项目名或null"}
+           - 普通项目：{"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注（不含金额）", "project_name": "项目名或null"}
+           - 共享账本：{"status": "success", "amount": 数字, "type": "expense/income", "groupName": "一级分类", "categoryName": "二级分类", "categoryIcon": "图标名", "categoryColorHex": "#颜色代码", "note": "备注", "project_name": "共享账本名", "is_shared": true, "invite_code": "邀请码"}
 
         8. **消费分析意图**：如果用户询问支出分析（如"分析餐饮支出"、"本月花了多少"），返回：
            {"status": "insight", "insight_type": "category_group", "target_group": "餐饮", "period": "last_month", "reply": "友好文案"}
@@ -206,6 +210,7 @@ class LLMService {
              * 如果用户明确提及项目名称（如"记到旅游里"、"记在装修"），直接归入该项目
            - **第二层：活跃项目（⭐标星项目）**
              * 优先归入标记为 `(当前活跃项目⭐)` 的项目
+             * 如果 Context 中有 `(当前活跃共享账本⭐)` 标记，该共享账本优先级等同于活跃项目，必须设 `"is_shared": true, "invite_code": "邀请码"`
              * 活跃项目是用户主动设置的，代表用户当前的记账意图，优先级高于记忆规则
              * **重要**：如果有活跃项目，所有消费（包括星巴克、机票等）都优先记入活跃项目
            - **第三层：记忆规则**
@@ -745,6 +750,9 @@ struct TransactionParseResult: Codable {
     let reply: String?
     let suggestedCategory: String?
     let parentGroup: String?
+    // 共享账本字段
+    var isShared: Bool? = nil
+    var inviteCode: String? = nil
     // 消费洞察字段（可选，有默认值）
     var insightType: String? = nil  // "category_group" | "monthly_overview"
     var targetGroup: String? = nil  // 目标一级分类名，如 "餐饮"
@@ -753,13 +761,15 @@ struct TransactionParseResult: Codable {
     var timeEntryHours: Double? = nil
     var timeEntryRate: Double? = nil
     var timeEntryNote: String? = nil
-    
+
     enum CodingKeys: String, CodingKey {
         case status, amount, type, groupName, categoryName
         case categoryIcon, categoryColorHex, note, reply
         case projectName = "project_name"
         case suggestedCategory = "suggested_category"
         case parentGroup = "parent_group"
+        case isShared = "is_shared"
+        case inviteCode = "invite_code"
         case insightType = "insight_type"
         case targetGroup = "target_group"
         case period

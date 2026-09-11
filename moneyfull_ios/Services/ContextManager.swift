@@ -82,6 +82,23 @@ class ContextManager {
             }
             context += "- \(project.name)\(marker)\n"
         }
+
+        // 共享账本列表（独立数据库，记账时需标注 is_shared）
+        let sharedProjects = SharedProjectService.shared.joinedProjects
+        let activeSharedInviteCode = UserDefaults.standard.string(forKey: "activeSharedProjectInviteCode")
+        if !sharedProjects.isEmpty {
+            context += "\nShared Projects (共享账本，记账时需设 is_shared=true 并带 invite_code):\n"
+            for sp in sharedProjects {
+                let members = sp.memberNames.joined(separator: "、")
+                let activeMarker = (sp.inviteCode == activeSharedInviteCode) ? " (当前活跃共享账本⭐，优先记入此账本)" : ""
+                context += "- \(sp.name) [invite_code: \(sp.inviteCode), 我的昵称: \(sp.participantName), 成员: \(members)]\(activeMarker)\n"
+            }
+        }
+        // 活跃共享项目单独强调（确保 AI 不遗漏）
+        if let code = activeSharedInviteCode,
+           let activeSP = sharedProjects.first(where: { $0.inviteCode == code }) {
+            context += "\n⚠️ 当前活跃账本是共享账本「\(activeSP.name)」(invite_code: \(code))。除非用户明确说记到个人项目，否则所有消费请设 is_shared=true，invite_code=\"\(code)\"。\n"
+        }
         
         // 记忆规则
         if !memoryRules.isEmpty {

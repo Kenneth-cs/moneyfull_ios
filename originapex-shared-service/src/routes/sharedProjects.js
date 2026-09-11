@@ -758,9 +758,25 @@ router.get('/join-page/:inviteCode', async (req, res) => {
     .btn-store{background:linear-gradient(135deg,#1c1c1e 0%,#3a3a3c 100%);box-shadow:0 6px 20px rgba(0,0,0,.3)}
     .hint{font-size:12px;color:#ccc;line-height:1.7}
     .hint strong{color:#999}
+    /* 微信引导浮层 */
+    #wechatTip{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.78);z-index:99;flex-direction:column;align-items:center;justify-content:center;padding:40px}
+    .wechat-card{background:#fff;border-radius:20px;padding:28px 24px;text-align:center;max-width:280px}
+    .wechat-card .arrow{font-size:40px;margin-bottom:12px}
+    .wechat-card h3{font-size:17px;font-weight:700;margin-bottom:8px}
+    .wechat-card p{font-size:13px;color:#666;line-height:1.8}
+    .wechat-card button{margin-top:18px;padding:10px 28px;background:#2C6957;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
   </style>
 </head>
 <body>
+  <!-- 微信内引导浮层 -->
+  <div id="wechatTip" style="display:none">
+    <div class="wechat-card">
+      <div class="arrow">↗️</div>
+      <h3>请在浏览器中打开</h3>
+      <p>点击右上角「···」<br>选择「在浏览器中打开」<br>然后再点击按钮即可直接加入账本</p>
+      <button onclick="document.getElementById('wechatTip').style.display='none'">知道了</button>
+    </div>
+  </div>
   <div class="card">
     <div class="app-icon">
       <img src="/shared-api/assets/logo.png" alt="钱小满" onerror="this.parentElement.innerHTML='💰'">
@@ -793,9 +809,18 @@ router.get('/join-page/:inviteCode', async (req, res) => {
 
     openBtn.addEventListener('click', function(e){
       e.preventDefault();
+      // 微信内置浏览器屏蔽自定义 scheme，引导用户去外部浏览器
+      if (/micromessenger/i.test(navigator.userAgent)) {
+        document.getElementById('wechatTip').style.display = 'flex';
+        return;
+      }
       window.location.href = deepLink;
       setTimeout(function(){
         if (!document.hidden) {
+          // App 未打开，先把邀请码写入剪贴板（iOS App 冷启后可自动读取）
+          try { navigator.clipboard.writeText('${inviteCode}'); } catch(e) {
+            try { var t=document.createElement('textarea'); t.value='moneyfull-invite:${inviteCode}'; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); } catch(e2) {}
+          }
           openBtn.style.display = 'none';
           storeBtn.style.display = 'block';
         }
